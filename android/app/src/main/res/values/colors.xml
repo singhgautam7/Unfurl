@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Saffron `surface` per tone, from specs/design/tokens.json. Only for the
+     moments before Flutter draws; MainActivity then paints the exact cached
+     surface (dynamic colour, true black) read from the app's preferences. -->
+<resources>
+    <color name="launch_light">#FEFBF9</color>
+    <color name="launch_dark">#1B1611</color>
+    <color name="launch_amoled">#000000</color>
+    <color name="launch_bg">@color/launch_light</color>
+    <color name="launch_system_amoled">@color/launch_light</color>
+</resources>

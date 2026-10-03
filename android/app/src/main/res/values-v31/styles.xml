@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="LaunchTheme" parent="@android:style/Theme.Light.NoTitleBar">
+        <item name="android:windowBackground">@drawable/launch_background</item>
+        <item name="android:windowSplashScreenBackground">@color/launch_bg</item>
+        <item name="android:forceDarkAllowed">false</item>
+        <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>
+    </style>
+    <!-- Splash themes MainActivity picks for the next cold start (Android 13+)
+         when the app's own mode or true black differs from the system's. -->
+    <style name="LaunchTheme.Light">
+        <item name="android:windowSplashScreenBackground">@color/launch_light</item>
+    </style>
+    <style name="LaunchTheme.Dark">
+        <item name="android:windowSplashScreenBackground">@color/launch_dark</item>
+    </style>
+    <style name="LaunchTheme.Amoled">
+        <item name="android:windowSplashScreenBackground">@color/launch_amoled</item>
+    </style>
+    <style name="LaunchTheme.SystemAmoled">
+        <item name="android:windowSplashScreenBackground">@color/launch_system_amoled</item>
+    </style>
+</resources>

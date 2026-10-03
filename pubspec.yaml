@@ -1,0 +1,84 @@
+name: unfurl
+description: "Unfurl, a free offline reader for PDFs, books and documents."
+publish_to: 'none'
+
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.13.5
+
+# Pinned exactly. Check pub.dev before bumping, and state the reason for any
+# new package in CLAUDE.md before adding it.
+dependencies:
+  flutter:
+    sdk: flutter
+
+  flutter_riverpod: 3.4.3
+  go_router: 18.0.2
+  shared_preferences: 2.5.5
+  dynamic_color: 2.1.0
+  drift: 2.35.1
+  drift_flutter: 0.3.1
+  path_provider: 2.1.6
+  path: 1.9.1
+  pdfrx: 2.6.5
+  archive: 4.3.0
+  xml: 7.1.0
+  markdown: 7.3.1
+  # The Quad type of InteractiveViewer.builder (already in the SDK's graph).
+  vector_math: 2.4.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: 6.0.0
+  drift_dev: 2.35.1
+  build_runner: 2.16.1
+
+flutter:
+  uses-material-design: true
+
+  assets:
+    # Mull's icon, for Define in Mull and the sibling-app card (same maker).
+    - assets/images/mull.png
+    # Shown under About, straight from the file in the repo root.
+    - PRIVACY_POLICY.md
+    # Licences shown under Licences.
+    - assets/fonts/instrument_sans/OFL.txt
+    - assets/fonts/literata/OFL.txt
+    - assets/fonts/atkinson/OFL.txt
+    - assets/fonts/opendyslexic/OFL.txt
+    - assets/fonts/material_symbols/LICENSE
+
+  fonts:
+    # Bundled, never fetched: Unfurl makes no network request. Instrument Sans
+    # is variable-only, so weights go through fontVariations in
+    # `core/theme/typography.dart`.
+    - family: Instrument Sans
+      fonts:
+        - asset: assets/fonts/instrument_sans/InstrumentSans-Variable.ttf
+        - asset: assets/fonts/instrument_sans/InstrumentSans-Italic-Variable.ttf
+          style: italic
+    # Reading fonts, page only. All OFL; bundled, never fetched.
+    - family: Literata
+      fonts:
+        - asset: assets/fonts/literata/Literata.ttf
+        - asset: assets/fonts/literata/Literata-Italic.ttf
+          style: italic
+    - family: Atkinson Hyperlegible Next
+      fonts:
+        - asset: assets/fonts/atkinson/AtkinsonHyperlegibleNext.ttf
+        - asset: assets/fonts/atkinson/AtkinsonHyperlegibleNext-Italic.ttf
+          style: italic
+    - family: OpenDyslexic
+      fonts:
+        - asset: assets/fonts/opendyslexic/OpenDyslexic-Regular.otf
+        - asset: assets/fonts/opendyslexic/OpenDyslexic-Bold.otf
+          weight: 700
+        - asset: assets/fonts/opendyslexic/OpenDyslexic-Italic.otf
+          style: italic
+    # The variable Material Symbols Rounded font, drawn at weight 350 by
+    # `AppIcon`. Release builds tree-shake it to the glyphs in `AppIcons`.
+    - family: Material Symbols Rounded
+      fonts:
+        - asset: assets/fonts/material_symbols/MaterialSymbolsRounded.ttf

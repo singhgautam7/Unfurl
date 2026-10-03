@@ -1,0 +1,6 @@
+name     | size   | modified
+---------+--------+---------
+reader.py|  4 KB  | Mon
+layout.c | 12 KB  | Tue
+def unfurl(page):
+    return [line.strip() for line in page]
