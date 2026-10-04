@@ -15,7 +15,8 @@ import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 import org.apache.commons.compress.archivers.sevenz.SevenZArchiveEntry
 import org.apache.commons.compress.archivers.sevenz.SevenZFile
-import org.apache.commons.compress.archivers.tar.TarArchiveInputStream
+import org.apache.commons.compress.archivers.tar.TarArchiveEntry
+import org.apache.commons.compress.archivers.tar.TarFile
 import org.apache.commons.compress.archivers.zip.ZipArchiveEntry
 import org.apache.commons.compress.archivers.zip.ZipArchiveInputStream
 import org.apache.commons.compress.archivers.zip.ZipFile
@@ -246,32 +247,30 @@ class Comics(private val context: Context) {
         }
     }
 
-    /** Tar has no index: one pass records where each entry's data sits, then pages are positional reads. */
+    /** Tar has no index: TarFile walks the headers once, then reads entries by position. */
     private class TarBook(channel: FileChannel, pfd: ParcelFileDescriptor) : Book(channel, pfd) {
         override val kind = "tar"
-        private val spans = LinkedHashMap<String, Pair<Long, Long>>()
+        private val dup: ParcelFileDescriptor = pfd.dup()
+        private val tar = TarFile(FileInputStream(dup.fileDescriptor).channel)
+        private val entries = LinkedHashMap<String, TarArchiveEntry>()
         override val names: List<String>
 
         init {
-            TarArchiveInputStream(Channels.newInputStream(channel.position(0))).let { tin ->
-                while (true) {
-                    val e = tin.nextEntry ?: break
-                    if (!e.isFile) continue
-                    if (isInfo(e.name)) info = String(tin.readBytes(), Charsets.UTF_8)
-                    else if (isImage(e.name)) spans[e.name] = e.dataOffset to e.size
-                }
+            for (e in tar.entries) {
+                if (!e.isFile) continue
+                if (isInfo(e.name)) info = tar.getInputStream(e).use { String(it.readBytes(), Charsets.UTF_8) }
+                else if (isImage(e.name)) entries[e.name] = e
             }
-            total = spans.size
-            names = spans.keys.toList()
+            total = entries.size
+            names = entries.keys.toList()
         }
 
-        override fun read(name: String): ByteArray? {
-            val (offset, size) = spans[name] ?: return null
-            val buf = ByteBuffer.allocate(size.toInt())
-            while (buf.hasRemaining()) {
-                if (channel.read(buf, offset + buf.position()) <= 0) break
-            }
-            return buf.array()
+        override fun read(name: String): ByteArray? = entries[name]?.let { e -> tar.getInputStream(e).use { it.readBytes() } }
+
+        override fun close() {
+            tar.close()
+            runCatching { dup.close() }
+            super.close()
         }
     }
 

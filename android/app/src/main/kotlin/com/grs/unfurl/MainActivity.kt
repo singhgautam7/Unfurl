@@ -89,6 +89,7 @@ class MainActivity : FlutterActivity() {
                 "volumes" -> result.success(explorer.volumes())
                 "quickAccess" -> result.success(explorer.quickAccess())
                 "mediaGeneration" -> result.success(Scanner.generation(this))
+                "memoryClass" -> result.success((getSystemService(ACTIVITY_SERVICE) as android.app.ActivityManager).memoryClass)
                 "listStart" -> {
                     explorer.start(
                         call.argument<Int>("id")!!,

@@ -308,6 +308,10 @@ abstract final class Platform {
 
   // ------------------------------------------------------------ all files
 
+  /// The app's heap budget in MB (`ActivityManager.memoryClass`), which sizes
+  /// the decoded-image cache; 256 when unknown.
+  static Future<int> memoryClass() async => await _call<int>('memoryClass') ?? 256;
+
   /// MediaStore's change counter (-1 before Android 11).
   static Future<int> mediaGeneration() async => await _call<int>('mediaGeneration') ?? -1;
 

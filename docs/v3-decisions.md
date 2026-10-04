@@ -78,3 +78,12 @@ are the ones worth a second opinion.
 15. **A damaged zip** (no central directory, a cut download) is salvaged by walking its local headers;
     readable pages are copied to the app's cache for that session and deleted on close. Other damaged
     archive types show the damaged state without salvage.
+
+## Comics viewer
+
+16. **Decoding goes through Flutter's image cache**: encoded page bytes cross the channel into a 48 MB
+    LRU; `ResizeImage` decodes each page at the size it is drawn (device pixels, never upscaled), on
+    the engine's IO thread. The image cache is sized to a quarter of `ActivityManager.memoryClass`
+    (64 to 256 MB). Prefetches (±2) are cancellable on both sides: the Kotlin queue serves the newest
+    request first and skips prefetches made before the last `comicCancel`.
+17. **Thumbnails** are 102 px PNGs in the cache directory, per fingerprint, for the last 40 comics.
