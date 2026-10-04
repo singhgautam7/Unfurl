@@ -14,6 +14,8 @@ import '../../core/theme/typography.dart';
 import '../../design_system/app_header.dart';
 import '../../design_system/app_icon.dart';
 import '../../design_system/containers.dart';
+import '../insights/insights_data.dart';
+import '../insights/insights_widgets.dart';
 import 'info_screens.dart';
 import 'settings_controller.dart';
 import 'settings_screen.dart';
@@ -31,6 +33,11 @@ class MoreScreen extends ConsumerWidget {
     return AppScaffold(
       title: 'More',
       children: <Widget>[
+        // V3-INSIGHTS: content, not a setting, so it leads the tab.
+        const SectionHeader(label: 'Insights'),
+        const SizedBox(height: Space.md),
+        const _InsightsPreview(),
+        const SizedBox(height: Space.section),
         const SectionHeader(label: 'General'),
         const SizedBox(height: Space.md),
         ListContainer(
@@ -84,6 +91,26 @@ class MoreScreen extends ConsumerWidget {
         const SizedBox(height: Space.section),
         const MadeInIndia(),
       ],
+    );
+  }
+}
+
+class _InsightsPreview extends ConsumerWidget {
+  const _InsightsPreview();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final InsightsData? d = ref.watch(insightsProvider).value;
+    final bool none = d == null || d.weekMs == 0;
+    final int daysSoFar = d == null ? 1 : d.today.weekday;
+    return InsightsCard(
+      value: none ? (d?.empty ?? true ? 'No reading yet' : '0 min') : formatMinutes(d.weekMs),
+      sub: none
+          ? (d?.empty ?? true ? 'This week · starts with your first session' : 'This week · nothing yet')
+          : 'This week · ${d.weekMs ~/ daysSoFar < 60000 ? 'under 1 min' : formatMinutes(d.weekMs ~/ daysSoFar)} a day',
+      week: d?.weekMinutes ?? List<int>.filled(7, 0),
+      today: d == null ? null : d.today.weekday - 1,
+      onTap: () => context.push(Routes.insights),
     );
   }
 }

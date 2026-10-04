@@ -70,6 +70,14 @@ abstract final class UnfurlType {
   /// ALL-CAPS section headers: 600 11 · letter-spacing .08em.
   static TextStyle get sectionHeader => _mono(11, 600, letterSpacing: 0.88);
 
+  /// V3-INSIGHTS: a stat tile's figure (600 21), the More card's (600 26), a
+  /// chart's total (600 17), a key-value figure (600 16.5), small mono (10.5).
+  static TextStyle get statValue => _sans(21, 1.15, 600, letterSpacing: -0.21);
+  static TextStyle get cardValue => _sans(26, 1.1, 600, letterSpacing: -0.26);
+  static TextStyle get chartTotal => _sans(17, 1.2, 600);
+  static TextStyle get kvValue => _sans(16.5, 1.2, 600);
+  static TextStyle get monoSmall => _mono(10.5, 500).copyWith(height: 1.35);
+
   /// A format badge on a cover or row: 600 9.5 · .04em (v3).
   static TextStyle get badge => _mono(9.5, 600, letterSpacing: 0.38).copyWith(height: 1);
 

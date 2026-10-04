@@ -194,6 +194,10 @@ class ReadingSessionTracker with WidgetsBindingObserver {
     }
   }
 
+  /// Reader mode: the book's length and what is left after the place read.
+  Future<void> words(String fingerprint, {required int total, required int left}) =>
+      store.setWords(fingerprint, total: total, left: left);
+
   /// Speeds for time-left estimates (this book's, else the reader's own).
   Future<Speeds> speeds(String fingerprint) => store.speeds(fingerprint);
 

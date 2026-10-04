@@ -197,6 +197,8 @@ class StatsStore {
             firstRead: Value<DateTime?>(b?.firstRead ?? f.startedAt),
             lastRead: Value<DateTime?>(f.endedAt),
             finishedAt: Value<DateTime?>(b?.finishedAt),
+            totalWords: Value<int?>(b?.totalWords),
+            wordsLeft: Value<int?>(b?.wordsLeft),
           ),
         );
   }
@@ -212,6 +214,13 @@ class StatsStore {
 
   Future<BookStat?> book(String fingerprint) =>
       (db.select(db.bookStats)..where((x) => x.fingerprint.equals(fingerprint))).getSingleOrNull();
+
+  /// Reader mode closed: how much of the book is left, for time-left estimates.
+  Future<void> setWords(String fingerprint, {required int total, required int left}) => db.customStatement(
+    'INSERT INTO book_stats (fingerprint, total_words, words_left) VALUES (?, ?, ?) '
+    'ON CONFLICT(fingerprint) DO UPDATE SET total_words = excluded.total_words, words_left = excluded.words_left',
+    <Object?>[fingerprint, total, left],
+  );
 
   /// The idle threshold's input for a document.
   Future<int> medianPageMs(String fingerprint) async => (await book(fingerprint))?.medianPageMs ?? 0;

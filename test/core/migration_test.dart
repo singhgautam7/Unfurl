@@ -54,7 +54,7 @@ void main() {
 
   test('schema 1 to 3: annotations and positions survive; v3 columns and tables work', () async {
     final AppDatabase db = AppDatabase(v1WithData());
-    expect(db.schemaVersion, 3);
+    expect(db.schemaVersion, 4);
     final Annotation a = (await db.select(db.annotations).get()).single;
     expect((a.quote, a.note), ('truth', 'a note'));
     final Document d = (await db.select(db.documents).get()).single;
@@ -62,7 +62,15 @@ void main() {
     expect((await db.select(db.entries).get()).single.issue, isNull);
     // The aggregates Insights reads, and their indexes.
     await db.into(db.dailyStats).insert(DailyStatsCompanion.insert(day: const Value<int>(20261004)));
-    await db.into(db.bookStats).insert(BookStatsCompanion.insert(fingerprint: 'fp1'));
+    await db
+        .into(db.bookStats)
+        .insert(
+          BookStatsCompanion.insert(
+            fingerprint: 'fp1',
+            totalWords: const Value<int?>(1000),
+            wordsLeft: const Value<int?>(400),
+          ),
+        );
     await db.into(db.bookDays).insert(BookDaysCompanion.insert(fingerprint: 'fp1', day: 20261004));
     expect((await db.select(db.dailyStats).get()).single.hourMs, '');
     final List<QueryRow> idx = await db.customSelect("SELECT name FROM sqlite_master WHERE type = 'index'").get();
@@ -116,6 +124,20 @@ void main() {
           ),
         );
     expect((await db.select(db.readingSessions).get()).single.open, isTrue);
+    await db.close();
+  });
+
+  test('schema 3 to 4: book word counts are added; sessions and stats survive', () async {
+    final File f = File('${Directory.systemTemp.createTempSync('unfurl').path}/v3.db');
+    final AppDatabase v3 = AppDatabase(NativeDatabase(f));
+    await v3.into(v3.bookStats).insert(BookStatsCompanion.insert(fingerprint: 'fp', readingMs: const Value<int>(5000)));
+    await v3.customStatement('ALTER TABLE book_stats DROP COLUMN total_words');
+    await v3.customStatement('ALTER TABLE book_stats DROP COLUMN words_left');
+    await v3.customStatement('PRAGMA user_version = 3');
+    await v3.close();
+    final AppDatabase db = AppDatabase(NativeDatabase(f));
+    final BookStat b = (await db.select(db.bookStats).get()).single;
+    expect((b.readingMs, b.totalWords), (5000, null));
     await db.close();
   });
 }

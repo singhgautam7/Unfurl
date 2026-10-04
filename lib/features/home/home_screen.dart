@@ -25,6 +25,7 @@ import '../../design_system/buttons.dart';
 import '../../design_system/containers.dart';
 import '../../design_system/covers.dart';
 import '../../formats/format_registry.dart';
+import '../insights/book_insights.dart';
 import '../library/library_screen.dart' show openBook;
 import '../files/files_screen.dart' show addFolder;
 
@@ -168,19 +169,31 @@ class HomeScreen extends ConsumerWidget {
                               final Document d = recentBooks[i];
                               return SizedBox(
                                 width: 96,
-                                child: CoverTile(
-                                  heroTag: 'home:${d.fingerprint}',
-                                  cover: CoverArt(
-                                    title: d.title ?? _stem(d.name),
-                                    author: d.author,
-                                    fingerprint: d.fingerprint,
-                                    format: Formats.of(d.name) ?? Formats.pdf,
-                                    badge: Formats.labelOf(d.name),
-                                    issue: d.issue,
+                                child: Builder(
+                                  builder: (BuildContext tile) => CoverTile(
+                                    onLongPress: () => _bookMenu(
+                                      context,
+                                      tile,
+                                      onOpen: () => _resume(context, d, 'home:${d.fingerprint}'),
+                                      uri: d.uri,
+                                      fingerprint: d.fingerprint,
+                                      title: d.title ?? _stem(d.name),
+                                      author: d.author,
+                                      name: d.name,
+                                    ),
+                                    heroTag: 'home:${d.fingerprint}',
+                                    cover: CoverArt(
+                                      title: d.title ?? _stem(d.name),
+                                      author: d.author,
+                                      fingerprint: d.fingerprint,
+                                      format: Formats.of(d.name) ?? Formats.pdf,
+                                      badge: Formats.labelOf(d.name),
+                                      issue: d.issue,
+                                    ),
+                                    progress: d.progress,
+                                    finished: d.finished,
+                                    onTap: () => _resume(context, d, 'home:${d.fingerprint}'),
                                   ),
-                                  progress: d.progress,
-                                  finished: d.finished,
-                                  onTap: () => _resume(context, d, 'home:${d.fingerprint}'),
                                 ),
                               );
                             },
@@ -218,19 +231,31 @@ class HomeScreen extends ConsumerWidget {
                               final String tag = 'home:lib:${b.entry.id}';
                               return SizedBox(
                                 width: 96,
-                                child: CoverTile(
-                                  heroTag: tag,
-                                  cover: CoverArt(
-                                    title: b.title,
-                                    author: b.author,
-                                    fingerprint: b.fingerprint,
-                                    format: b.format,
-                                    badge: Formats.labelOf(b.entry.name),
-                                    issue: b.issue,
+                                child: Builder(
+                                  builder: (BuildContext tileCtx) => CoverTile(
+                                    onLongPress: () => _bookMenu(
+                                      context,
+                                      tileCtx,
+                                      onOpen: () => openBook(context, b, heroTag: tag),
+                                      uri: b.entry.uri,
+                                      fingerprint: b.fingerprint,
+                                      title: b.title,
+                                      author: b.author,
+                                      name: b.entry.name,
+                                    ),
+                                    heroTag: tag,
+                                    cover: CoverArt(
+                                      title: b.title,
+                                      author: b.author,
+                                      fingerprint: b.fingerprint,
+                                      format: b.format,
+                                      badge: Formats.labelOf(b.entry.name),
+                                      issue: b.issue,
+                                    ),
+                                    progress: b.progress,
+                                    finished: b.finished,
+                                    onTap: () => openBook(context, b, heroTag: tag),
                                   ),
-                                  progress: b.progress,
-                                  finished: b.finished,
-                                  onTap: () => openBook(context, b, heroTag: tag),
                                 ),
                               );
                             },
@@ -511,3 +536,34 @@ class FileRow extends StatelessWidget {
 
 /// Opens a recent or an index row from anywhere (shared by Folder screens).
 void openRef(BuildContext context, DocRef ref) => unawaited(openDocument(context, ref));
+
+/// A book's menu on Home (long-press): Open, Share file, Insights.
+Future<void> _bookMenu(
+  BuildContext context,
+  BuildContext anchor, {
+  required VoidCallback onOpen,
+  required String uri,
+  required String title,
+  required String name,
+  String? fingerprint,
+  String? author,
+}) async {
+  final String? v = await showAppMenu<String>(
+    context: context,
+    anchorContext: anchor,
+    entries: const <AppMenuEntry<String>>[
+      AppMenuEntry<String>(value: 'open', label: 'Open', icon: AppIcons.openInNew),
+      AppMenuEntry<String>(value: 'share', label: 'Share file', icon: AppIcons.share),
+      kInsightsEntry,
+    ],
+  );
+  if (!context.mounted) return;
+  switch (v) {
+    case 'open':
+      onOpen();
+    case 'share':
+      await Platform.shareFile(uri, null);
+    case 'insights':
+      await showInsightsFor(context, uri: uri, fingerprint: fingerprint, title: title, author: author, name: name);
+  }
+}

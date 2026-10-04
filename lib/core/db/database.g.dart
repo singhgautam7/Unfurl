@@ -4788,6 +4788,24 @@ class $BookStatsTable extends BookStats with TableInfo<$BookStatsTable, BookStat
     requiredDuringInsert: false,
     defaultValue: const Constant(0),
   );
+  static const VerificationMeta _totalWordsMeta = const VerificationMeta('totalWords');
+  @override
+  late final GeneratedColumn<int> totalWords = GeneratedColumn<int>(
+    'total_words',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _wordsLeftMeta = const VerificationMeta('wordsLeft');
+  @override
+  late final GeneratedColumn<int> wordsLeft = GeneratedColumn<int>(
+    'words_left',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
   static const VerificationMeta _firstReadMeta = const VerificationMeta('firstRead');
   @override
   late final GeneratedColumn<DateTime> firstRead = GeneratedColumn<DateTime>(
@@ -4829,6 +4847,8 @@ class $BookStatsTable extends BookStats with TableInfo<$BookStatsTable, BookStat
     pagePages,
     longestMs,
     medianPageMs,
+    totalWords,
+    wordsLeft,
     firstRead,
     lastRead,
     finishedAt,
@@ -4880,6 +4900,12 @@ class $BookStatsTable extends BookStats with TableInfo<$BookStatsTable, BookStat
     if (data.containsKey('median_page_ms')) {
       context.handle(_medianPageMsMeta, medianPageMs.isAcceptableOrUnknown(data['median_page_ms']!, _medianPageMsMeta));
     }
+    if (data.containsKey('total_words')) {
+      context.handle(_totalWordsMeta, totalWords.isAcceptableOrUnknown(data['total_words']!, _totalWordsMeta));
+    }
+    if (data.containsKey('words_left')) {
+      context.handle(_wordsLeftMeta, wordsLeft.isAcceptableOrUnknown(data['words_left']!, _wordsLeftMeta));
+    }
     if (data.containsKey('first_read')) {
       context.handle(_firstReadMeta, firstRead.isAcceptableOrUnknown(data['first_read']!, _firstReadMeta));
     }
@@ -4910,6 +4936,8 @@ class $BookStatsTable extends BookStats with TableInfo<$BookStatsTable, BookStat
       pagePages: attachedDatabase.typeMapping.read(DriftSqlType.int, data['${effectivePrefix}page_pages'])!,
       longestMs: attachedDatabase.typeMapping.read(DriftSqlType.int, data['${effectivePrefix}longest_ms'])!,
       medianPageMs: attachedDatabase.typeMapping.read(DriftSqlType.int, data['${effectivePrefix}median_page_ms'])!,
+      totalWords: attachedDatabase.typeMapping.read(DriftSqlType.int, data['${effectivePrefix}total_words']),
+      wordsLeft: attachedDatabase.typeMapping.read(DriftSqlType.int, data['${effectivePrefix}words_left']),
       firstRead: attachedDatabase.typeMapping.read(DriftSqlType.dateTime, data['${effectivePrefix}first_read']),
       lastRead: attachedDatabase.typeMapping.read(DriftSqlType.dateTime, data['${effectivePrefix}last_read']),
       finishedAt: attachedDatabase.typeMapping.read(DriftSqlType.dateTime, data['${effectivePrefix}finished_at']),
@@ -4937,6 +4965,11 @@ class BookStat extends DataClass implements Insertable<BookStat> {
 
   /// A running median of time per page or screen, for the idle threshold.
   final int medianPageMs;
+
+  /// Words in the book and words after the last place read (Reader mode),
+  /// for "Estimated time left" (schema 4). Page and comic books use units.
+  final int? totalWords;
+  final int? wordsLeft;
   final DateTime? firstRead;
   final DateTime? lastRead;
   final DateTime? finishedAt;
@@ -4953,6 +4986,8 @@ class BookStat extends DataClass implements Insertable<BookStat> {
     required this.pagePages,
     required this.longestMs,
     required this.medianPageMs,
+    this.totalWords,
+    this.wordsLeft,
     this.firstRead,
     this.lastRead,
     this.finishedAt,
@@ -4972,6 +5007,12 @@ class BookStat extends DataClass implements Insertable<BookStat> {
     map['page_pages'] = Variable<int>(pagePages);
     map['longest_ms'] = Variable<int>(longestMs);
     map['median_page_ms'] = Variable<int>(medianPageMs);
+    if (!nullToAbsent || totalWords != null) {
+      map['total_words'] = Variable<int>(totalWords);
+    }
+    if (!nullToAbsent || wordsLeft != null) {
+      map['words_left'] = Variable<int>(wordsLeft);
+    }
     if (!nullToAbsent || firstRead != null) {
       map['first_read'] = Variable<DateTime>(firstRead);
     }
@@ -4998,6 +5039,8 @@ class BookStat extends DataClass implements Insertable<BookStat> {
       pagePages: Value(pagePages),
       longestMs: Value(longestMs),
       medianPageMs: Value(medianPageMs),
+      totalWords: totalWords == null && nullToAbsent ? const Value.absent() : Value(totalWords),
+      wordsLeft: wordsLeft == null && nullToAbsent ? const Value.absent() : Value(wordsLeft),
       firstRead: firstRead == null && nullToAbsent ? const Value.absent() : Value(firstRead),
       lastRead: lastRead == null && nullToAbsent ? const Value.absent() : Value(lastRead),
       finishedAt: finishedAt == null && nullToAbsent ? const Value.absent() : Value(finishedAt),
@@ -5019,6 +5062,8 @@ class BookStat extends DataClass implements Insertable<BookStat> {
       pagePages: serializer.fromJson<int>(json['pagePages']),
       longestMs: serializer.fromJson<int>(json['longestMs']),
       medianPageMs: serializer.fromJson<int>(json['medianPageMs']),
+      totalWords: serializer.fromJson<int?>(json['totalWords']),
+      wordsLeft: serializer.fromJson<int?>(json['wordsLeft']),
       firstRead: serializer.fromJson<DateTime?>(json['firstRead']),
       lastRead: serializer.fromJson<DateTime?>(json['lastRead']),
       finishedAt: serializer.fromJson<DateTime?>(json['finishedAt']),
@@ -5040,6 +5085,8 @@ class BookStat extends DataClass implements Insertable<BookStat> {
       'pagePages': serializer.toJson<int>(pagePages),
       'longestMs': serializer.toJson<int>(longestMs),
       'medianPageMs': serializer.toJson<int>(medianPageMs),
+      'totalWords': serializer.toJson<int?>(totalWords),
+      'wordsLeft': serializer.toJson<int?>(wordsLeft),
       'firstRead': serializer.toJson<DateTime?>(firstRead),
       'lastRead': serializer.toJson<DateTime?>(lastRead),
       'finishedAt': serializer.toJson<DateTime?>(finishedAt),
@@ -5059,6 +5106,8 @@ class BookStat extends DataClass implements Insertable<BookStat> {
     int? pagePages,
     int? longestMs,
     int? medianPageMs,
+    Value<int?> totalWords = const Value.absent(),
+    Value<int?> wordsLeft = const Value.absent(),
     Value<DateTime?> firstRead = const Value.absent(),
     Value<DateTime?> lastRead = const Value.absent(),
     Value<DateTime?> finishedAt = const Value.absent(),
@@ -5075,6 +5124,8 @@ class BookStat extends DataClass implements Insertable<BookStat> {
     pagePages: pagePages ?? this.pagePages,
     longestMs: longestMs ?? this.longestMs,
     medianPageMs: medianPageMs ?? this.medianPageMs,
+    totalWords: totalWords.present ? totalWords.value : this.totalWords,
+    wordsLeft: wordsLeft.present ? wordsLeft.value : this.wordsLeft,
     firstRead: firstRead.present ? firstRead.value : this.firstRead,
     lastRead: lastRead.present ? lastRead.value : this.lastRead,
     finishedAt: finishedAt.present ? finishedAt.value : this.finishedAt,
@@ -5093,6 +5144,8 @@ class BookStat extends DataClass implements Insertable<BookStat> {
       pagePages: data.pagePages.present ? data.pagePages.value : this.pagePages,
       longestMs: data.longestMs.present ? data.longestMs.value : this.longestMs,
       medianPageMs: data.medianPageMs.present ? data.medianPageMs.value : this.medianPageMs,
+      totalWords: data.totalWords.present ? data.totalWords.value : this.totalWords,
+      wordsLeft: data.wordsLeft.present ? data.wordsLeft.value : this.wordsLeft,
       firstRead: data.firstRead.present ? data.firstRead.value : this.firstRead,
       lastRead: data.lastRead.present ? data.lastRead.value : this.lastRead,
       finishedAt: data.finishedAt.present ? data.finishedAt.value : this.finishedAt,
@@ -5114,6 +5167,8 @@ class BookStat extends DataClass implements Insertable<BookStat> {
           ..write('pagePages: $pagePages, ')
           ..write('longestMs: $longestMs, ')
           ..write('medianPageMs: $medianPageMs, ')
+          ..write('totalWords: $totalWords, ')
+          ..write('wordsLeft: $wordsLeft, ')
           ..write('firstRead: $firstRead, ')
           ..write('lastRead: $lastRead, ')
           ..write('finishedAt: $finishedAt')
@@ -5135,6 +5190,8 @@ class BookStat extends DataClass implements Insertable<BookStat> {
     pagePages,
     longestMs,
     medianPageMs,
+    totalWords,
+    wordsLeft,
     firstRead,
     lastRead,
     finishedAt,
@@ -5155,6 +5212,8 @@ class BookStat extends DataClass implements Insertable<BookStat> {
           other.pagePages == this.pagePages &&
           other.longestMs == this.longestMs &&
           other.medianPageMs == this.medianPageMs &&
+          other.totalWords == this.totalWords &&
+          other.wordsLeft == this.wordsLeft &&
           other.firstRead == this.firstRead &&
           other.lastRead == this.lastRead &&
           other.finishedAt == this.finishedAt);
@@ -5173,6 +5232,8 @@ class BookStatsCompanion extends UpdateCompanion<BookStat> {
   final Value<int> pagePages;
   final Value<int> longestMs;
   final Value<int> medianPageMs;
+  final Value<int?> totalWords;
+  final Value<int?> wordsLeft;
   final Value<DateTime?> firstRead;
   final Value<DateTime?> lastRead;
   final Value<DateTime?> finishedAt;
@@ -5190,6 +5251,8 @@ class BookStatsCompanion extends UpdateCompanion<BookStat> {
     this.pagePages = const Value.absent(),
     this.longestMs = const Value.absent(),
     this.medianPageMs = const Value.absent(),
+    this.totalWords = const Value.absent(),
+    this.wordsLeft = const Value.absent(),
     this.firstRead = const Value.absent(),
     this.lastRead = const Value.absent(),
     this.finishedAt = const Value.absent(),
@@ -5208,6 +5271,8 @@ class BookStatsCompanion extends UpdateCompanion<BookStat> {
     this.pagePages = const Value.absent(),
     this.longestMs = const Value.absent(),
     this.medianPageMs = const Value.absent(),
+    this.totalWords = const Value.absent(),
+    this.wordsLeft = const Value.absent(),
     this.firstRead = const Value.absent(),
     this.lastRead = const Value.absent(),
     this.finishedAt = const Value.absent(),
@@ -5226,6 +5291,8 @@ class BookStatsCompanion extends UpdateCompanion<BookStat> {
     Expression<int>? pagePages,
     Expression<int>? longestMs,
     Expression<int>? medianPageMs,
+    Expression<int>? totalWords,
+    Expression<int>? wordsLeft,
     Expression<DateTime>? firstRead,
     Expression<DateTime>? lastRead,
     Expression<DateTime>? finishedAt,
@@ -5244,6 +5311,8 @@ class BookStatsCompanion extends UpdateCompanion<BookStat> {
       if (pagePages != null) 'page_pages': pagePages,
       if (longestMs != null) 'longest_ms': longestMs,
       if (medianPageMs != null) 'median_page_ms': medianPageMs,
+      if (totalWords != null) 'total_words': totalWords,
+      if (wordsLeft != null) 'words_left': wordsLeft,
       if (firstRead != null) 'first_read': firstRead,
       if (lastRead != null) 'last_read': lastRead,
       if (finishedAt != null) 'finished_at': finishedAt,
@@ -5264,6 +5333,8 @@ class BookStatsCompanion extends UpdateCompanion<BookStat> {
     Value<int>? pagePages,
     Value<int>? longestMs,
     Value<int>? medianPageMs,
+    Value<int?>? totalWords,
+    Value<int?>? wordsLeft,
     Value<DateTime?>? firstRead,
     Value<DateTime?>? lastRead,
     Value<DateTime?>? finishedAt,
@@ -5282,6 +5353,8 @@ class BookStatsCompanion extends UpdateCompanion<BookStat> {
       pagePages: pagePages ?? this.pagePages,
       longestMs: longestMs ?? this.longestMs,
       medianPageMs: medianPageMs ?? this.medianPageMs,
+      totalWords: totalWords ?? this.totalWords,
+      wordsLeft: wordsLeft ?? this.wordsLeft,
       firstRead: firstRead ?? this.firstRead,
       lastRead: lastRead ?? this.lastRead,
       finishedAt: finishedAt ?? this.finishedAt,
@@ -5328,6 +5401,12 @@ class BookStatsCompanion extends UpdateCompanion<BookStat> {
     if (medianPageMs.present) {
       map['median_page_ms'] = Variable<int>(medianPageMs.value);
     }
+    if (totalWords.present) {
+      map['total_words'] = Variable<int>(totalWords.value);
+    }
+    if (wordsLeft.present) {
+      map['words_left'] = Variable<int>(wordsLeft.value);
+    }
     if (firstRead.present) {
       map['first_read'] = Variable<DateTime>(firstRead.value);
     }
@@ -5358,6 +5437,8 @@ class BookStatsCompanion extends UpdateCompanion<BookStat> {
           ..write('pagePages: $pagePages, ')
           ..write('longestMs: $longestMs, ')
           ..write('medianPageMs: $medianPageMs, ')
+          ..write('totalWords: $totalWords, ')
+          ..write('wordsLeft: $wordsLeft, ')
           ..write('firstRead: $firstRead, ')
           ..write('lastRead: $lastRead, ')
           ..write('finishedAt: $finishedAt, ')
@@ -7824,6 +7905,8 @@ typedef $$BookStatsTableCreateCompanionBuilder = BookStatsCompanion Function({
   Value<int> pagePages,
   Value<int> longestMs,
   Value<int> medianPageMs,
+  Value<int?> totalWords,
+  Value<int?> wordsLeft,
   Value<DateTime?> firstRead,
   Value<DateTime?> lastRead,
   Value<DateTime?> finishedAt,
@@ -7842,6 +7925,8 @@ typedef $$BookStatsTableUpdateCompanionBuilder = BookStatsCompanion Function({
   Value<int> pagePages,
   Value<int> longestMs,
   Value<int> medianPageMs,
+  Value<int?> totalWords,
+  Value<int?> wordsLeft,
   Value<DateTime?> firstRead,
   Value<DateTime?> lastRead,
   Value<DateTime?> finishedAt,
@@ -7889,6 +7974,12 @@ class $$BookStatsTableFilterComposer extends Composer<_$AppDatabase, $BookStatsT
 
   ColumnFilters<int> get medianPageMs =>
       $composableBuilder(column: $table.medianPageMs, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get totalWords =>
+      $composableBuilder(column: $table.totalWords, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get wordsLeft =>
+      $composableBuilder(column: $table.wordsLeft, builder: (column) => ColumnFilters(column));
 
   ColumnFilters<DateTime> get firstRead =>
       $composableBuilder(column: $table.firstRead, builder: (column) => ColumnFilters(column));
@@ -7944,6 +8035,12 @@ class $$BookStatsTableOrderingComposer extends Composer<_$AppDatabase, $BookStat
   ColumnOrderings<int> get medianPageMs =>
       $composableBuilder(column: $table.medianPageMs, builder: (column) => ColumnOrderings(column));
 
+  ColumnOrderings<int> get totalWords =>
+      $composableBuilder(column: $table.totalWords, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get wordsLeft =>
+      $composableBuilder(column: $table.wordsLeft, builder: (column) => ColumnOrderings(column));
+
   ColumnOrderings<DateTime> get firstRead =>
       $composableBuilder(column: $table.firstRead, builder: (column) => ColumnOrderings(column));
 
@@ -7986,6 +8083,10 @@ class $$BookStatsTableAnnotationComposer extends Composer<_$AppDatabase, $BookSt
   GeneratedColumn<int> get longestMs => $composableBuilder(column: $table.longestMs, builder: (column) => column);
 
   GeneratedColumn<int> get medianPageMs => $composableBuilder(column: $table.medianPageMs, builder: (column) => column);
+
+  GeneratedColumn<int> get totalWords => $composableBuilder(column: $table.totalWords, builder: (column) => column);
+
+  GeneratedColumn<int> get wordsLeft => $composableBuilder(column: $table.wordsLeft, builder: (column) => column);
 
   GeneratedColumn<DateTime> get firstRead => $composableBuilder(column: $table.firstRead, builder: (column) => column);
 
@@ -8032,6 +8133,8 @@ class $$BookStatsTableTableManager
                 Value<int> pagePages = const Value.absent(),
                 Value<int> longestMs = const Value.absent(),
                 Value<int> medianPageMs = const Value.absent(),
+                Value<int?> totalWords = const Value.absent(),
+                Value<int?> wordsLeft = const Value.absent(),
                 Value<DateTime?> firstRead = const Value.absent(),
                 Value<DateTime?> lastRead = const Value.absent(),
                 Value<DateTime?> finishedAt = const Value.absent(),
@@ -8049,6 +8152,8 @@ class $$BookStatsTableTableManager
                 pagePages: pagePages,
                 longestMs: longestMs,
                 medianPageMs: medianPageMs,
+                totalWords: totalWords,
+                wordsLeft: wordsLeft,
                 firstRead: firstRead,
                 lastRead: lastRead,
                 finishedAt: finishedAt,
@@ -8068,6 +8173,8 @@ class $$BookStatsTableTableManager
                 Value<int> pagePages = const Value.absent(),
                 Value<int> longestMs = const Value.absent(),
                 Value<int> medianPageMs = const Value.absent(),
+                Value<int?> totalWords = const Value.absent(),
+                Value<int?> wordsLeft = const Value.absent(),
                 Value<DateTime?> firstRead = const Value.absent(),
                 Value<DateTime?> lastRead = const Value.absent(),
                 Value<DateTime?> finishedAt = const Value.absent(),
@@ -8085,6 +8192,8 @@ class $$BookStatsTableTableManager
                 pagePages: pagePages,
                 longestMs: longestMs,
                 medianPageMs: medianPageMs,
+                totalWords: totalWords,
+                wordsLeft: wordsLeft,
                 firstRead: firstRead,
                 lastRead: lastRead,
                 finishedAt: finishedAt,

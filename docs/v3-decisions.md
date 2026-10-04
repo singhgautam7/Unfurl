@@ -107,3 +107,18 @@ are the ones worth a second opinion.
     v2's per-document pace columns are read as a fallback and no longer written.
 23. **Sessions belong to the visible mode**: switching Page ⇄ Reader closes one session and opens the
     next (each mode's speed stays clean); a view only reports while it owns the session.
+
+## Insights
+
+24. **Schema 4.** "Estimated time left" needs a book's remaining words, which nothing stored. Schema 3 had
+    already reached the test phone, so the word counts are a real 3 → 4 step (`book_stats.total_words`,
+    `words_left`, tested), written when Reader mode closes (counted in an isolate). From v2, users run
+    2 → 4 in one go.
+25. **Charts are `CustomPainter`s** (bars, heatmap) and a flex row (formats); no chart package.
+26. **Insights load from aggregates in one pass**: ≤ 371 `daily_stats` rows, one SUM over them for all
+    time, the top 5 of `book_stats`, the finished dates. The chart toggle and its ‹ › steps have their own
+    providers (a step past the loaded year queries ≤ 366 rows for that range), so a toggle rebuilds only
+    the chart. Book insights is five keyed queries run together.
+27. **Speed is the median of daily speeds** over 30 days (the spec says "median"), shown once a mode has
+    30 minutes; days under a minute in a mode are left out.
+28. **"Mostly 21:00–23:00"** is the busiest hour of the last 90 days and the busier of its neighbours.

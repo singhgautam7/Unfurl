@@ -8,7 +8,8 @@ import 'package:unfurl/core/tracking/stats_store.dart';
 import 'package:unfurl/core/tracking/tracker.dart';
 
 /// A UTC clock shifted by [offset] stands in for the device's timezone.
-DateTime Function(DateTime) zone(Duration offset) => (DateTime d) => d.toUtc().add(offset);
+DateTime Function(DateTime) zone(Duration offset) =>
+    (DateTime d) => d.toUtc().add(offset);
 
 final DateTime t0 = DateTime.utc(2026, 10, 4, 9);
 
@@ -134,7 +135,10 @@ void main() {
         ..end(t0.add(const Duration(minutes: 3)));
       await store.finish(s, t0.add(const Duration(minutes: 3)));
       final DailyStat d = (await db.select(db.dailyStats).get()).single;
-      expect((d.day, d.readingMs, d.sessions, d.words, d.readerMs, d.longestFp), (20261004, 180000, 1, 200, 180000, 'fp'));
+      expect(
+        (d.day, d.readingMs, d.sessions, d.words, d.readerMs, d.longestFp),
+        (20261004, 180000, 1, 200, 180000, 'fp'),
+      );
       expect(jsonDecode(d.formatMs), <String, Object?>{'epub': 180000});
       expect(d.hourMs.split(',')[9], '180000');
       final BookStat b = (await store.book('fp'))!;
@@ -142,7 +146,8 @@ void main() {
       expect((await db.select(db.bookDays).get()).single.ms, 180000);
       expect((await db.select(db.readingSessions).get()).single.open, isFalse);
       // A second session adds to the same rows.
-      final LiveSession s2 = session(at: t0.add(const Duration(hours: 2)))..end(t0.add(const Duration(hours: 2, minutes: 1)));
+      final LiveSession s2 = session(at: t0.add(const Duration(hours: 2)))
+        ..end(t0.add(const Duration(hours: 2, minutes: 1)));
       await store.finish(s2, t0.add(const Duration(hours: 2, minutes: 1)));
       final DailyStat d2 = (await db.select(db.dailyStats).get()).single;
       expect((d2.readingMs, d2.sessions), (240000, 2));
@@ -160,7 +165,11 @@ void main() {
 
     test('checkpoint and recovery: a crash loses at most the last minute', () async {
       DateTime now = t0;
-      final ReadingSessionTracker tracker = ReadingSessionTracker(store, clock: () => now, toLocal: zone(Duration.zero));
+      final ReadingSessionTracker tracker = ReadingSessionTracker(
+        store,
+        clock: () => now,
+        toLocal: zone(Duration.zero),
+      );
       TestWidgetsFlutterBinding.ensureInitialized();
       await tracker.open(owner: tracker, fingerprint: 'fp', format: 'kindle', mode: 'reader');
       now = t0.add(const Duration(seconds: 50));

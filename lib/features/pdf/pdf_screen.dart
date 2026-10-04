@@ -41,6 +41,7 @@ import '../reader/reading_prefs.dart';
 import '../reader/sheets.dart';
 import '../reader/unfurl_transition.dart';
 import '../settings/settings_controller.dart';
+import '../insights/book_insights.dart';
 import '../viewer/document_screen.dart';
 import 'pdf_render.dart';
 import 'pdf_text.dart';
@@ -945,6 +946,7 @@ class _PdfScreenState extends ConsumerState<PdfScreen> with WidgetsBindingObserv
       anchorContext: anchor,
       entries: const <AppMenuEntry<String>>[
         AppMenuEntry<String>(value: 'info', label: 'Book info', icon: AppIcons.info),
+        kInsightsEntry,
         AppMenuEntry<String>(value: 'share', label: 'Share file', icon: AppIcons.share),
         AppMenuEntry<String>.divider(),
         AppMenuEntry<String>(value: 'other', label: 'Open in another app', icon: AppIcons.openInNew),
@@ -953,6 +955,8 @@ class _PdfScreenState extends ConsumerState<PdfScreen> with WidgetsBindingObserv
     switch (choice) {
       case 'info':
         await _bookInfo();
+      case 'insights':
+        if (mounted) await showDocInsights(context, doc);
       case 'share':
         await Platform.shareFile(doc.ref.uri, doc.ref.mime);
       case 'other':

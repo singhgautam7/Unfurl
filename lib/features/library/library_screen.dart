@@ -27,6 +27,7 @@ import '../../design_system/covers.dart';
 import '../../design_system/search_field.dart';
 import '../../design_system/states.dart';
 import '../../formats/format_registry.dart';
+import '../insights/book_insights.dart';
 import '../reader/sheets.dart';
 import '../settings/settings_controller.dart';
 import '../files/files_screen.dart' show addFolder;
@@ -748,6 +749,17 @@ Future<void> showBookSheet(BuildContext context, WidgetRef ref, BookItem book) {
             ],
             highlights: 0,
             onExport: null,
+          );
+        }),
+        row(AppIcons.insights, 'Insights', () async {
+          Navigator.of(ctx).pop();
+          await showInsightsFor(
+            context,
+            uri: book.entry.uri,
+            fingerprint: book.fingerprint,
+            title: book.title,
+            author: book.author,
+            name: book.entry.name,
           );
         }),
         row(

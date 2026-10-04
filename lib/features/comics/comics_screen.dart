@@ -27,6 +27,7 @@ import '../reader/chrome.dart';
 import '../reader/reading_prefs.dart';
 import '../reader/sheets.dart';
 import '../settings/settings_controller.dart';
+import '../insights/book_insights.dart';
 import '../viewer/document_screen.dart';
 import 'comic_pages.dart';
 import 'comic_prefs.dart';
@@ -227,6 +228,7 @@ class _ComicsScreenState extends ConsumerState<ComicsScreen> with WidgetsBinding
       entries: const <AppMenuEntry<String>>[
         AppMenuEntry<String>(value: 'bookmarks', label: 'Bookmarks', icon: AppIcons.bookmark),
         AppMenuEntry<String>(value: 'share', label: 'Share file', icon: AppIcons.share),
+        kInsightsEntry,
         AppMenuEntry<String>.divider(),
         AppMenuEntry<String>(value: 'other', label: 'Open in another app', icon: AppIcons.openInNew),
       ],
@@ -236,6 +238,8 @@ class _ComicsScreenState extends ConsumerState<ComicsScreen> with WidgetsBinding
         await _showBookmarks();
       case 'share':
         await Platform.shareFile(doc.ref.uri, doc.ref.mime);
+      case 'insights':
+        if (mounted) await showDocInsights(context, doc);
       case 'other':
         await Platform.openWith(doc.ref.uri, doc.ref.mime);
     }

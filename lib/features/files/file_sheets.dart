@@ -14,6 +14,7 @@ import '../../design_system/app_icon.dart';
 import '../../design_system/buttons.dart';
 import '../../design_system/sheets.dart';
 import '../../formats/format_registry.dart';
+import '../insights/book_insights.dart';
 import 'files_widgets.dart';
 
 /// Board 5, X4: the read-only sheets for a file in Files. There is no
@@ -222,6 +223,21 @@ Future<void> showFileActions(BuildContext context, PathFile file) => showAppBott
               label: 'Open with',
               onTap: () => then(() => unawaited(Platform.openWith(file.uri, file.ref.mime))),
             ),
+            if (file.format?.tracked ?? false)
+              _ActionRow(
+                icon: AppIcons.insights,
+                label: 'Insights',
+                onTap: () => then(
+                  () => unawaited(
+                    showInsightsFor(
+                      context,
+                      uri: file.uri,
+                      title: file.name.replaceAll(RegExp(r'\.[^.]+$'), ''),
+                      name: file.name,
+                    ),
+                  ),
+                ),
+              ),
             _ActionRow(
               icon: AppIcons.shareAndroid,
               label: 'Share',

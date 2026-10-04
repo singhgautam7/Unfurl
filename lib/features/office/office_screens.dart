@@ -32,6 +32,7 @@ import '../reader/reading_prefs.dart';
 import '../reader/sheets.dart';
 import '../reader/unfurl_transition.dart';
 import '../settings/settings_controller.dart';
+import '../insights/book_insights.dart';
 import '../viewer/document_screen.dart';
 
 /// The overflow every Office viewer shares (board 4, V1): copy, share, file
@@ -49,6 +50,7 @@ Future<void> officeOverflow(
     entries: const <AppMenuEntry<String>>[
       AppMenuEntry<String>(value: 'copy', label: 'Copy all text', icon: AppIcons.copy),
       AppMenuEntry<String>(value: 'share', label: 'Share file', icon: AppIcons.share),
+      kInsightsEntry,
       AppMenuEntry<String>(value: 'info', label: 'File info', icon: AppIcons.info),
       AppMenuEntry<String>.divider(),
       AppMenuEntry<String>(
@@ -66,6 +68,8 @@ Future<void> officeOverflow(
       if (context.mounted) AppSnackbar.info(context, 'Copied all text');
     case 'share':
       await Platform.shareFile(doc.ref.uri, doc.ref.mime);
+    case 'insights':
+      await showDocInsights(context, doc);
     case 'info':
       await showBookInfo(
         context,

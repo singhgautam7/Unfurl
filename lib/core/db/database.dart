@@ -238,6 +238,11 @@ class BookStats extends Table {
 
   /// A running median of time per page or screen, for the idle threshold.
   IntColumn get medianPageMs => integer().withDefault(const Constant(0))();
+
+  /// Words in the book and words after the last place read (Reader mode),
+  /// for "Estimated time left" (schema 4). Page and comic books use units.
+  IntColumn get totalWords => integer().nullable()();
+  IntColumn get wordsLeft => integer().nullable()();
   DateTimeColumn get firstRead => dateTime().nullable()();
   DateTimeColumn get lastRead => dateTime().nullable()();
   DateTimeColumn get finishedAt => dateTime().nullable()();
@@ -275,7 +280,7 @@ class AppDatabase extends _$AppDatabase {
 
   /// Bump with a tested migration on every schema change (data rule 4).
   @override
-  int get schemaVersion => 3;
+  int get schemaVersion => 4;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -304,6 +309,10 @@ class AppDatabase extends _$AppDatabase {
         // New book formats: device discovery runs again to find them, and
         // entries that failed as unknown get another look.
         await customStatement("UPDATE folders SET path = '' WHERE source = 'device'");
+      } else if (from < 4) {
+        // v3 builds before book word counts (schema 3 existed only on test devices).
+        await m.addColumn(bookStats, bookStats.totalWords);
+        await m.addColumn(bookStats, bookStats.wordsLeft);
       }
     },
     beforeOpen: (OpeningDetails details) async {

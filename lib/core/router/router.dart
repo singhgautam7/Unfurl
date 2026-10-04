@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import '../../features/files/files_screen.dart';
 import '../../features/folders/folder_screens.dart';
 import '../../features/home/home_screen.dart';
+import '../../features/insights/insights_screen.dart';
 import '../../features/library/library_screen.dart';
 import '../../features/notes/notes_screen.dart';
 import '../../features/settings/info_screens.dart';
@@ -31,6 +32,7 @@ abstract final class Routes {
   static const String licences = '/licences';
   static const String privacy = '/privacy';
   static const String permissions = '/permissions';
+  static const String insights = '/insights';
 
   static const String files = '/files';
 
@@ -118,6 +120,7 @@ GoRouter buildRouter({required bool onboarded}) => GoRouter(
     _pushed(Routes.licences, (GoRouterState s) => const LicencesScreen()),
     _pushed(Routes.privacy, (GoRouterState s) => const PrivacyScreen()),
     _pushed(Routes.permissions, (GoRouterState s) => const PermissionsScreen()),
+    _pushed(Routes.insights, (GoRouterState s) => const InsightsScreen()),
     GoRoute(
       path: '/pick',
       parentNavigatorKey: rootNavigatorKey,

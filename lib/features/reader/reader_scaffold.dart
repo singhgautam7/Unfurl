@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:isolate';
 import 'dart:math' as math;
 
 import 'package:drift/drift.dart' show Value;
@@ -28,6 +29,7 @@ import '../../design_system/search_field.dart';
 import '../../formats/format_registry.dart';
 import '../../formats/reading_document.dart';
 import '../settings/settings_controller.dart';
+import '../insights/book_insights.dart';
 import '../viewer/document_screen.dart';
 import 'chrome.dart';
 import 'engine/reader_style.dart';
@@ -163,6 +165,7 @@ class ReaderScaffoldState extends ConsumerState<ReaderScaffold> with WidgetsBind
     WidgetsBinding.instance.removeObserver(this);
     unawaited(_save(force: true));
     unawaited(_tracker.close(this));
+    unawaited(_saveWords());
     _saveTimer?.cancel();
     _hideTimer?.cancel();
     unawaited(_annotationSub?.cancel());
@@ -200,6 +203,22 @@ class ReaderScaffoldState extends ConsumerState<ReaderScaffold> with WidgetsBind
       _jumping = false;
     }
     if (mounted) setState(() {});
+  }
+
+  /// For book insights' "Estimated time left". Static work on plain data in
+  /// an isolate: counting a long book's words is not trivial.
+  Future<void> _saveWords() async {
+    final String text = reading.plainText;
+    final int at = controller.globalIndex;
+    final (int total, int left) = await Isolate.run(() => _countWords(text, at));
+    await _tracker.words(doc.fingerprint, total: total, left: left);
+  }
+
+  static (int, int) _countWords(String text, int at) {
+    final RegExp word = RegExp(r'\S+');
+    final int total = word.allMatches(text).length;
+    final int before = word.allMatches(text.substring(0, at.clamp(0, text.length))).length;
+    return (total, total - before);
   }
 
   /// Moves somewhere not reached by reading.
@@ -648,6 +667,7 @@ class ReaderScaffoldState extends ConsumerState<ReaderScaffold> with WidgetsBind
         const AppMenuEntry<String>(value: 'info', label: 'Book info', icon: AppIcons.info),
         if (format.annotations)
           const AppMenuEntry<String>(value: 'export', label: 'Export highlights', icon: AppIcons.share),
+        kInsightsEntry,
         const AppMenuEntry<String>(value: 'share', label: 'Share file', icon: AppIcons.share),
         const AppMenuEntry<String>.divider(),
         AppMenuEntry<String>(
@@ -663,6 +683,8 @@ class ReaderScaffoldState extends ConsumerState<ReaderScaffold> with WidgetsBind
         await bookInfo();
       case 'export':
         await exportHighlights();
+      case 'insights':
+        if (mounted) await showDocInsights(context, doc);
       case 'share':
         await Platform.shareFile(doc.ref.uri, doc.ref.mime);
       case 'other':
