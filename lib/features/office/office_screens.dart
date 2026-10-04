@@ -16,6 +16,7 @@ import '../../core/theme/palette.dart';
 import '../../core/theme/reading_theme.dart';
 import '../../core/theme/tokens.dart';
 import '../../core/theme/typography.dart';
+import '../../core/tracking/tracker.dart';
 import '../../design_system/app_icon.dart';
 import '../../design_system/app_menu.dart';
 import '../../design_system/app_snackbar.dart';
@@ -315,7 +316,12 @@ class _DocxScreenState extends ConsumerState<DocxScreen> {
     return UnfurlSwitcher(
       reader: _reader,
       anchorY: MediaQuery.paddingOf(context).top + 64,
-      page: _pageView(c, d, theme),
+      page: TrackedPages(
+        fingerprint: widget.doc.fingerprint,
+        format: widget.doc.format.id,
+        page: _page,
+        child: _pageView(c, d, theme),
+      ),
       readerChild: _reading == null
           ? null
           : ReaderScaffold(
@@ -699,7 +705,12 @@ class _PptxScreenState extends ConsumerState<PptxScreen> {
     return UnfurlSwitcher(
       reader: _reader,
       anchorY: MediaQuery.paddingOf(context).top + 64,
-      page: _slides(c, d),
+      page: TrackedPages(
+        fingerprint: widget.doc.fingerprint,
+        format: widget.doc.format.id,
+        page: _slide,
+        child: _slides(c, d),
+      ),
       readerChild: _outline == null
           ? null
           : ReaderScaffold(

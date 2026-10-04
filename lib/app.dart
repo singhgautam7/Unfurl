@@ -11,6 +11,7 @@ import 'core/explorer.dart';
 import 'core/open.dart';
 import 'core/platform/platform.dart';
 import 'core/providers.dart';
+import 'core/tracking/tracker.dart';
 import 'core/router/router.dart';
 import 'core/theme/app_theme.dart';
 import 'features/settings/settings_controller.dart';
@@ -35,6 +36,8 @@ class _UnfurlAppState extends ConsumerState<UnfurlApp> with WidgetsBindingObserv
     WidgetsBinding.instance.addPostFrameCallback((_) {
       unawaited(_refreshWallpaperSeed());
       unawaited(_startUp());
+      // Sessions a crash or a kill left open are folded into Insights.
+      unawaited(ref.read(trackerProvider).recover());
     });
   }
 

@@ -23,6 +23,7 @@ import '../../core/theme/palette.dart';
 import '../../core/theme/reading_theme.dart';
 import '../../core/theme/tokens.dart';
 import '../../core/theme/typography.dart';
+import '../../core/tracking/tracker.dart';
 import '../../design_system/app_icon.dart';
 import '../../design_system/app_menu.dart';
 import '../../design_system/app_snackbar.dart';
@@ -1079,69 +1080,74 @@ class _PdfScreenState extends ConsumerState<PdfScreen> with WidgetsBindingObserv
         body: Stack(
           children: <Widget>[
             Positioned.fill(
-              child: _Pages(
-                key: _pagesKey,
-                pdf: _pdf!,
-                renderer: _renderer!,
-                initialPage: _page,
-                paged: prefs.pdfLayout == PdfLayout.paged,
-                topInset: MediaQuery.paddingOf(context).top + (_chrome ? 64 : 0) + Space.md,
-                lookFor: (int p) => _look(page: p),
-                paintFor: _paintFor,
-                pageAspect: (int p) {
-                  final PdfPage pg = _pdf!.pages[p - 1];
-                  final Rect crop = (prefs.pdfCrop ? _crops[p] : null) ?? const Rect.fromLTRB(0, 0, 1, 1);
-                  return (pg.width * crop.width) / (pg.height * crop.height);
-                },
-                cropFor: (int p) => prefs.pdfCrop ? _crops[p] : null,
-                needText: (int p) => unawaited(_text(p)),
-                onPage: _onPageChanged,
-                onTap: (int page, Offset fraction, double x) async {
-                  if (_selection != null) return _clearSelection();
-                  for (final PdfLink l in await _linksOf(page)) {
-                    final PdfPage pg = _pdf!.pages[page - 1];
-                    for (final PdfRect r in l.rects) {
-                      final Rect f = Rect.fromLTRB(
-                        r.left / pg.width,
-                        1 - r.top / pg.height,
-                        r.right / pg.width,
-                        1 - r.bottom / pg.height,
-                      );
-                      if (f.contains(fraction)) {
-                        if (l.dest != null) {
-                          return _jumpWithBack(l.dest!.pageNumber);
-                        }
-                        if (l.url != null) {
-                          return Platform.openUrl(l.url.toString());
+              child: TrackedPages(
+                fingerprint: doc.fingerprint,
+                format: doc.format.id,
+                page: _page - 1,
+                child: _Pages(
+                  key: _pagesKey,
+                  pdf: _pdf!,
+                  renderer: _renderer!,
+                  initialPage: _page,
+                  paged: prefs.pdfLayout == PdfLayout.paged,
+                  topInset: MediaQuery.paddingOf(context).top + (_chrome ? 64 : 0) + Space.md,
+                  lookFor: (int p) => _look(page: p),
+                  paintFor: _paintFor,
+                  pageAspect: (int p) {
+                    final PdfPage pg = _pdf!.pages[p - 1];
+                    final Rect crop = (prefs.pdfCrop ? _crops[p] : null) ?? const Rect.fromLTRB(0, 0, 1, 1);
+                    return (pg.width * crop.width) / (pg.height * crop.height);
+                  },
+                  cropFor: (int p) => prefs.pdfCrop ? _crops[p] : null,
+                  needText: (int p) => unawaited(_text(p)),
+                  onPage: _onPageChanged,
+                  onTap: (int page, Offset fraction, double x) async {
+                    if (_selection != null) return _clearSelection();
+                    for (final PdfLink l in await _linksOf(page)) {
+                      final PdfPage pg = _pdf!.pages[page - 1];
+                      for (final PdfRect r in l.rects) {
+                        final Rect f = Rect.fromLTRB(
+                          r.left / pg.width,
+                          1 - r.top / pg.height,
+                          r.right / pg.width,
+                          1 - r.bottom / pg.height,
+                        );
+                        if (f.contains(fraction)) {
+                          if (l.dest != null) {
+                            return _jumpWithBack(l.dest!.pageNumber);
+                          }
+                          if (l.url != null) {
+                            return Platform.openUrl(l.url.toString());
+                          }
                         }
                       }
                     }
-                  }
-                  final PageText? t = _texts[page];
-                  if (t != null) {
-                    final int? i = t.indexAt(fraction);
-                    if (i != null &&
-                        _annotations.any((Annotation a) {
-                          final Locator l = Locator.fromJson(a.locator);
-                          return a.kind == 'highlight' &&
-                              l.page == page &&
-                              l.pageStart != null &&
-                              i >= l.pageStart! &&
-                              i < l.pageStart! + l.length;
-                        })) {
-                      return _tapHighlight(page, fraction);
+                    final PageText? t = _texts[page];
+                    if (t != null) {
+                      final int? i = t.indexAt(fraction);
+                      if (i != null &&
+                          _annotations.any((Annotation a) {
+                            final Locator l = Locator.fromJson(a.locator);
+                            return a.kind == 'highlight' &&
+                                l.page == page &&
+                                l.pageStart != null &&
+                                i >= l.pageStart! &&
+                                i < l.pageStart! + l.length;
+                          })) {
+                        return _tapHighlight(page, fraction);
+                      }
                     }
-                  }
-                  if (prefs.pdfLayout == PdfLayout.paged && x < 0.25) {
-                    return _goToPage(_page - 1, animate: true);
-                  }
-                  if (prefs.pdfLayout == PdfLayout.paged && x > 0.75) {
-                    return _goToPage(_page + 1, animate: true);
-                  }
-                  _toggleChrome();
-                },
-                onLongPress: _onLongPress,
-                onDragSelect: _extendSelection,
+                    if (prefs.pdfLayout == PdfLayout.paged && x < 0.25) {
+                      return _goToPage(_page - 1, animate: true);
+                    }
+                    if (prefs.pdfLayout == PdfLayout.paged && x > 0.75) {
+                      return _goToPage(_page + 1, animate: true);
+                    }
+                    _toggleChrome();
+                  },
+                  onLongPress: _onLongPress,
+                  onDragSelect: _extendSelection,
+                ),
               ),
             ),
             // The page chip in immersive.

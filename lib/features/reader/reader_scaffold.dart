@@ -18,6 +18,7 @@ import '../../core/theme/palette.dart';
 import '../../core/theme/reading_theme.dart';
 import '../../core/theme/tokens.dart';
 import '../../core/theme/typography.dart';
+import '../../core/tracking/tracker.dart';
 import '../../design_system/app_icon.dart';
 import '../../design_system/app_menu.dart';
 import '../../design_system/app_snackbar.dart';
@@ -94,9 +95,16 @@ class ReaderScaffoldState extends ConsumerState<ReaderScaffold> with WidgetsBind
   late final Library _library;
   Timer? _hideTimer;
   (int, int, int)? _lastSaved;
-  DateTime _pageSince = DateTime.now();
-  int _pageStartIndex = 0;
-  int _readMs = 0, _readWords = 0;
+
+  /// Held so the session can be closed from dispose().
+  late final ReadingSessionTracker _tracker;
+
+  /// The next position change is a jump (contents, link, scrubber, search),
+  /// not reading.
+  bool _jumping = false;
+
+  /// This book's or the reader's own speed, for time left (null: 230 wpm).
+  double? _wpm;
   String? _backChip;
   (int, int, int)? _backTo;
   int? _sizeChip;
@@ -118,8 +126,24 @@ class ReaderScaffoldState extends ConsumerState<ReaderScaffold> with WidgetsBind
     WidgetsBinding.instance.addObserver(this);
     final Locator? at = widget.start ?? doc.resume;
     controller = ReaderController(reading, start: at?.resolveIn(reading));
-    _pageStartIndex = controller.globalIndex;
     controller.addListener(_onPosition);
+    _tracker = ref.read(trackerProvider);
+    unawaited(
+      _tracker.open(
+        owner: this,
+        fingerprint: doc.fingerprint,
+        format: format.id,
+        mode: 'reader',
+        wordsBetween: reading.wordsBetween,
+        startIndex: controller.globalIndex,
+        fromLocator: at?.toJson(),
+      ),
+    );
+    unawaited(
+      _tracker.speeds(doc.fingerprint).then((Speeds s) {
+        if (mounted) setState(() => _wpm = s.wpm);
+      }),
+    );
     _annotationSub = ref.read(libraryProvider).watchAnnotations(doc.fingerprint).listen((List<Annotation> a) {
       _annotations = a;
       _refreshMarks();
@@ -138,6 +162,7 @@ class ReaderScaffoldState extends ConsumerState<ReaderScaffold> with WidgetsBind
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     unawaited(_save(force: true));
+    unawaited(_tracker.close(this));
     _saveTimer?.cancel();
     _hideTimer?.cancel();
     unawaited(_annotationSub?.cancel());
@@ -171,17 +196,16 @@ class ReaderScaffoldState extends ConsumerState<ReaderScaffold> with WidgetsBind
     if (controller.position != _lastSaved) {
       _saveTimer?.cancel();
       _saveTimer = Timer(const Duration(milliseconds: 600), _save);
-      final DateTime now = DateTime.now();
-      final int dwell = now.difference(_pageSince).inMilliseconds;
-      final int nowIndex = controller.globalIndex;
-      if (dwell > 2000 && dwell < 10 * 60 * 1000 && nowIndex > _pageStartIndex) {
-        _readMs += dwell;
-        _readWords += reading.wordsBetween(_pageStartIndex, nowIndex);
-      }
-      _pageSince = now;
-      _pageStartIndex = nowIndex;
+      _tracker.readerAt(controller.globalIndex, jump: _jumping);
+      _jumping = false;
     }
     if (mounted) setState(() {});
+  }
+
+  /// Moves somewhere not reached by reading.
+  void _jump((int, int, int) to) {
+    _jumping = true;
+    controller.goTo(to);
   }
 
   String get _where {
@@ -196,27 +220,23 @@ class ReaderScaffoldState extends ConsumerState<ReaderScaffold> with WidgetsBind
   Future<void> _save({bool force = false}) async {
     if (!mounted && !force) return;
     final (int, int, int) at = controller.position;
-    if (at == _lastSaved && _readMs == 0) return;
+    if (at == _lastSaved) return;
     _lastSaved = at;
     final double progress = controller.progress;
-    final int ms = _readMs, words = _readWords;
-    _readMs = 0;
-    _readWords = 0;
     await _library.savePosition(
       doc.fingerprint,
       locator: here.toJson(),
       progress: progress >= 0.995 ? 1 : progress,
       where: _where,
       mode: 'reader',
-      readMs: ms,
-      readWords: words,
     );
   }
 
-  /// "6 min left in chapter", from the reader's own pace.
+  /// "6 min left in chapter", at this book's measured speed, else the
+  /// reader's own (Insights), else v2's saved pace, else 230 wpm.
   String _timeLeft((int, int, int) at) {
     final Document d = doc.record;
-    final double wpm = (d.readMs > 60000 && d.readWords > 50) ? d.readWords / (d.readMs / 60000) : 230;
+    final double wpm = _wpm ?? ((d.readMs > 60000 && d.readWords > 50) ? d.readWords / (d.readMs / 60000) : 230);
     final Section s = reading.sections[at.$1];
     final int end = s.blocks.isEmpty ? s.start : s.blocks.last.start + s.blocks.last.text.length;
     final int from = reading.sections[at.$1].blocks[at.$2].start + at.$3;
@@ -428,7 +448,7 @@ class ReaderScaffoldState extends ConsumerState<ReaderScaffold> with WidgetsBind
     final (int, int)? target = reading.anchors[href] ?? reading.anchors[href.split('#').first];
     if (target == null) return;
     final (int, int, int) from = controller.position;
-    controller.goTo((target.$1, target.$2, 0));
+    _jump((target.$1, target.$2, 0));
     setState(() {
       _backTo = from;
       _backChip = 'Back';
@@ -437,7 +457,7 @@ class ReaderScaffoldState extends ConsumerState<ReaderScaffold> with WidgetsBind
 
   void _jumpWithBack((int, int, int) to) {
     final (int, int, int) from = controller.position;
-    controller.goTo(to);
+    _jump(to);
     setState(() {
       _backTo = from;
       _backChip = 'Back to ${_labelFor(reading.sections[from.$1].blocks[from.$2].start + from.$3).split(' · ').first}';
@@ -466,6 +486,7 @@ class ReaderScaffoldState extends ConsumerState<ReaderScaffold> with WidgetsBind
     final ReadAloud? t = _tts;
     if (t == null) return;
     controller.setSpoken(t.active ? t.current : null);
+    _tracker.listening(on: t.playing);
     if (t.error != null && mounted) {
       AppSnackbar.error(context, t.error!);
       t.error = null;
@@ -495,13 +516,17 @@ class ReaderScaffoldState extends ConsumerState<ReaderScaffold> with WidgetsBind
       _hit = hits.isEmpty ? 0 : math.max(0, hits.indexWhere((int h) => h >= here0));
     });
     _refreshMarks();
-    if (hits.isNotEmpty) controller.goToIndex(hits[_hit]);
+    if (hits.isNotEmpty) {
+      _jumping = true;
+      controller.goToIndex(hits[_hit]);
+    }
   }
 
   void _step(int d) {
     if (_hits.isEmpty) return;
     setState(() => _hit = (_hit + d) % _hits.length);
     _refreshMarks();
+    _jumping = true;
     controller.goToIndex(_hits[_hit]);
   }
 
@@ -534,7 +559,7 @@ class ReaderScaffoldState extends ConsumerState<ReaderScaffold> with WidgetsBind
     await showReaderSheet<void>(context, heightFactor: 0.9, (BuildContext ctx) {
       void go((int, int, int) to) {
         Navigator.of(ctx).pop();
-        controller.goTo(to);
+        _jump(to);
       }
 
       MarkRow row(Annotation a) => MarkRow(
@@ -697,26 +722,28 @@ class ReaderScaffoldState extends ConsumerState<ReaderScaffold> with WidgetsBind
                   duration: Motion.of(context, Motion.background),
                   color: theme.paper,
                   child: RepaintBoundary(
-                    child: ReaderView(
-                      controller: controller,
-                      style: style,
-                      layoutMode: prefs.layout,
-                      pageTurn: prefs.pageTurn.effective(reduced: Motion.reduced(context)),
-                      columns: wide && prefs.layout == ReaderLayout.paged ? 2 : 1,
-                      onCentreTap: _toggleChrome,
-                      onLink: _onLink,
-                      onMarkTap: (int id) => id >= 0 ? _editNote(id) : null,
-                      onSelection: (List<Rect> r) => setState(() => _selectionRects = r),
-                      onFontStep: _fontStep,
-                      runningHead: ((int, int, int) at) => reading.sections[at.$1].title.isEmpty
-                          ? (reading.title.isEmpty ? doc.ref.name : reading.title)
-                          : reading.sections[at.$1].title,
-                      footer: ((int, int, int) at) {
-                        final SourceRef? src = reading.sections[at.$1].blocks[at.$2].source;
-                        final String? page = src == null ? null : widget.pageLabel?.call(src);
-                        final String pct = '${(reading.progressAt(at.$1, at.$2, at.$3) * 100).round()}%';
-                        return (page == null ? pct : '$page · $pct', _timeLeft(controller.position));
-                      },
+                    child: TrackActivity(
+                      child: ReaderView(
+                        controller: controller,
+                        style: style,
+                        layoutMode: prefs.layout,
+                        pageTurn: prefs.pageTurn.effective(reduced: Motion.reduced(context)),
+                        columns: wide && prefs.layout == ReaderLayout.paged ? 2 : 1,
+                        onCentreTap: _toggleChrome,
+                        onLink: _onLink,
+                        onMarkTap: (int id) => id >= 0 ? _editNote(id) : null,
+                        onSelection: (List<Rect> r) => setState(() => _selectionRects = r),
+                        onFontStep: _fontStep,
+                        runningHead: ((int, int, int) at) => reading.sections[at.$1].title.isEmpty
+                            ? (reading.title.isEmpty ? doc.ref.name : reading.title)
+                            : reading.sections[at.$1].title,
+                        footer: ((int, int, int) at) {
+                          final SourceRef? src = reading.sections[at.$1].blocks[at.$2].source;
+                          final String? page = src == null ? null : widget.pageLabel?.call(src);
+                          final String pct = '${(reading.progressAt(at.$1, at.$2, at.$3) * 100).round()}%';
+                          return (page == null ? pct : '$page · $pct', _timeLeft(controller.position));
+                        },
+                      ),
                     ),
                   ),
                 ),
@@ -904,7 +931,7 @@ class ReaderScaffoldState extends ConsumerState<ReaderScaffold> with WidgetsBind
                           onTap: () {
                             final (int, int, int)? to = _backTo;
                             setState(() => _backChip = null);
-                            if (to != null) controller.goTo(to);
+                            if (to != null) _jump(to);
                           },
                         )
                       : const SizedBox.shrink(),
@@ -1047,6 +1074,7 @@ class ReaderScaffoldState extends ConsumerState<ReaderScaffold> with WidgetsBind
                             onTap: () {
                               setState(() => _hit = i);
                               _refreshMarks();
+                              _jumping = true;
                               controller.goToIndex(h);
                             },
                             child: Padding(

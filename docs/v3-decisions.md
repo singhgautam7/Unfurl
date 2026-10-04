@@ -87,3 +87,23 @@ are the ones worth a second opinion.
     (64 to 256 MB). Prefetches (±2) are cancellable on both sides: the Kotlin queue serves the newest
     request first and skips prefetches made before the last `comicCancel`.
 17. **Thumbnails** are 102 px PNGs in the cache directory, per fingerprint, for the last 40 comics.
+
+## Tracking
+
+18. **Idle cut-off point.** When the idle threshold passes, reading time stops a third of the threshold
+    after the last activity (about one median page), not at the last touch (which would drop the page
+    being read) nor when the idle is noticed (which would add the idle).
+19. **A session ends after 10 minutes paused** (idle or away); the next touch starts a new one. Rotation,
+    resize and the notification shade don't pause; `paused`/`hidden` (background, screen off) do.
+    Read aloud keeps counting as listening in the background.
+20. **Forward-only progress.** Reader mode counts words past the furthest point reached in the session;
+    contents, links, search, the scrubber and the back chip are jumps, and anything faster than 1,500 wpm
+    is treated as one. Page view and comics count unique pages shown for at least 2 s.
+21. **Time per book is reading plus listening** (both are time with the book: book insights, most-read,
+    the 30-day chart). The overview, charts and heatmap are reading time; listening has its own module.
+    Comics count in a book's pages per hour but not in the global "Page view" speed, which they'd skew.
+22. **Time-left estimates** use this book's speed once it has 10 minutes in Reader mode, else the reader's
+    own 30-day speed (30 minutes needed, as the spec's speed tile), else v2's saved pace, else 230 wpm.
+    v2's per-document pace columns are read as a fallback and no longer written.
+23. **Sessions belong to the visible mode**: switching Page ⇄ Reader closes one session and opens the
+    next (each mode's speed stays clean); a view only reports while it owns the session.

@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import '../../formats/format_registry.dart';
 import '../db/database.dart';
 import '../platform/platform.dart';
+import '../tracking/stats_store.dart';
 
 /// A book (PDF or EPUB) in the Library, with what Unfurl knows of it.
 @immutable
@@ -616,19 +617,25 @@ class Library {
     required String mode,
     int? readMs,
     int? readWords,
-  }) => db.customStatement(
-    'UPDATE documents SET position = ?, progress = ?, "where" = ?, mode = ?, read_ms = read_ms + ?, read_words = read_words + ?, '
-    'finished = CASE WHEN ? >= 0.999 THEN 1 ELSE finished END WHERE fingerprint = ?',
-    <Object?>[locator, progress, where, mode, readMs ?? 0, readWords ?? 0, progress, fingerprint],
-  );
+  }) async {
+    await db.customStatement(
+      'UPDATE documents SET position = ?, progress = ?, "where" = ?, mode = ?, read_ms = read_ms + ?, read_words = read_words + ?, '
+      'finished = CASE WHEN ? >= 0.999 THEN 1 ELSE finished END WHERE fingerprint = ?',
+      <Object?>[locator, progress, where, mode, readMs ?? 0, readWords ?? 0, progress, fingerprint],
+    );
+    // Insights' "finished" date, once (V3-INSIGHTS).
+    if (progress >= 0.999) await StatsStore(db).setFinished(fingerprint, finished: true);
+  }
 
-  Future<void> setFinished(String fingerprint, {required bool finished}) =>
-      (db.update(db.documents)..where((d) => d.fingerprint.equals(fingerprint))).write(
-        DocumentsCompanion(
-          finished: Value<bool>(finished),
-          progress: finished ? const Value<double>(1) : const Value<double>.absent(),
-        ),
-      );
+  Future<void> setFinished(String fingerprint, {required bool finished}) async {
+    await (db.update(db.documents)..where((d) => d.fingerprint.equals(fingerprint))).write(
+      DocumentsCompanion(
+        finished: Value<bool>(finished),
+        progress: finished ? const Value<double>(1) : const Value<double>.absent(),
+      ),
+    );
+    await StatsStore(db).setFinished(fingerprint, finished: finished);
+  }
 
   /// Documents opened before, newest first: Continue reading and the recent
   /// books row.

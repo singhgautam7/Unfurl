@@ -16,6 +16,7 @@ import '../../core/theme/app_theme.dart';
 import '../../core/theme/palette.dart';
 import '../../core/theme/reading_theme.dart';
 import '../../core/theme/tokens.dart';
+import '../../core/tracking/tracker.dart';
 import '../../design_system/app_icon.dart';
 import '../../design_system/app_menu.dart';
 import '../../design_system/app_snackbar.dart';
@@ -293,35 +294,47 @@ class _ComicsScreenState extends ConsumerState<ComicsScreen> with WidgetsBinding
                 duration: Motion.of(context, Motion.background),
                 color: surround.paper,
                 child: RepaintBoundary(
-                  child: AnimatedSwitcher(
-                    duration: Motion.of(context, Motion.fast),
-                    switchInCurve: Motion.decelerate,
-                    child: prefs.mode == ComicMode.webtoon
-                        ? WebtoonComic(key: _webtoon, pages: pages, page: _page, onPage: _onPage, onTap: _toggleChrome)
-                        : ValueListenableBuilder<int>(
-                            key: const ValueKey<String>('paged'),
-                            valueListenable: pages.measured,
-                            builder: (BuildContext context, int _, Widget? _) => PagedComic(
-                              key: _paged,
+                  child: TrackedPages(
+                    fingerprint: doc.fingerprint,
+                    format: doc.format.id,
+                    mode: 'comics',
+                    page: _page,
+                    child: AnimatedSwitcher(
+                      duration: Motion.of(context, Motion.fast),
+                      switchInCurve: Motion.decelerate,
+                      child: prefs.mode == ComicMode.webtoon
+                          ? WebtoonComic(
+                              key: _webtoon,
                               pages: pages,
-                              spreads: spreads
-                                  ? comicSpreads(pages.count, coverAlone: prefs.coverAlone, wide: pages.wide)
-                                  : <List<int>>[
-                                      for (int i = 0; i < pages.count; i++) <int>[i],
-                                    ],
                               page: _page,
-                              rtl: _rtl,
-                              fit: prefs.fit,
                               onPage: _onPage,
-                              onTap: (TapZone z) => z == TapZone.centre ? _toggleChrome() : null,
-                              onZoom: (double s) {
-                                final double rounded = (s * 20).round() / 20;
-                                if (rounded != _zoomChip && (s > 1.01 || _zoomChip != null)) {
-                                  setState(() => _zoomChip = s > 1.01 ? rounded : null);
-                                }
-                              },
+                              onTap: _toggleChrome,
+                            )
+                          : ValueListenableBuilder<int>(
+                              key: const ValueKey<String>('paged'),
+                              valueListenable: pages.measured,
+                              builder: (BuildContext context, int _, Widget? _) => PagedComic(
+                                key: _paged,
+                                pages: pages,
+                                spreads: spreads
+                                    ? comicSpreads(pages.count, coverAlone: prefs.coverAlone, wide: pages.wide)
+                                    : <List<int>>[
+                                        for (int i = 0; i < pages.count; i++) <int>[i],
+                                      ],
+                                page: _page,
+                                rtl: _rtl,
+                                fit: prefs.fit,
+                                onPage: _onPage,
+                                onTap: (TapZone z) => z == TapZone.centre ? _toggleChrome() : null,
+                                onZoom: (double s) {
+                                  final double rounded = (s * 20).round() / 20;
+                                  if (rounded != _zoomChip && (s > 1.01 || _zoomChip != null)) {
+                                    setState(() => _zoomChip = s > 1.01 ? rounded : null);
+                                  }
+                                },
+                              ),
                             ),
-                          ),
+                    ),
                   ),
                 ),
               ),
