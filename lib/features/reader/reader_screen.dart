@@ -59,6 +59,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
       }
       if (mounted) setState(() => _reading = doc);
     } on FormatProblem catch (p) {
+      unawaited(_library.unreadable(widget.doc.fingerprint));
       if (mounted) setState(() => _problem = p);
     } catch (_) {
       if (mounted) setState(() => _failed = true);

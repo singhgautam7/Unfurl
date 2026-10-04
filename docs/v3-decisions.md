@@ -178,3 +178,16 @@ are the ones worth a second opinion.
 42. **Wide-window centring:** More, Settings pages, empty states and the welcome pages centre at 720dp on
     expanded windows, header included. The selection toolbar keeps a phone's width (440dp) and sits over the
     selection, so on a spread it stays on its page.
+43. **Unreadable files leave Home and Recents** (found in Phase H): a DRM, damaged or unsupported book that
+    gets past the first-bytes check (an EPUB's DRM is only found inside the archive) had already been recorded
+    as opened, so it sat in Continue reading with Resume. `Library.unreadable` now drops that fresh record and
+    its recent row, unless the file has a saved place or any annotation (data rule 4).
+44. **The reader keeps its anchor across relayouts** (Phase H): a rotation, a window resize or a style change
+    used to re-find the page from the new first word on screen, so turning the phone and back slid the reader
+    back about a page each time (device test: 1441 to 818). The engine now keeps where the reader last went
+    (a turn, a jump, the start) until the next turn.
+45. **Paged and Scroll keep the place across a switch** (Phase H): switching layout reopened at the chapter
+    start while the footer still showed the old progress.
+46. **Scroll layout fixes** (Phase H): book paragraphs had no first-line indent in Scroll (each block was laid
+    out alone, without the paragraph before it), and the place saved in Scroll could trail what was on screen
+    (measured before the last frame of a scroll was laid out; it is measured again after that frame).

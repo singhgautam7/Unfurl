@@ -280,7 +280,7 @@ class ImageSizes {
 
 /// Lays sections out into pages of a given size and style.
 class Layout {
-  Layout({required this.doc, required this.style, required this.pageSize, required this.images});
+  Layout({required this.doc, required this.style, required this.pageSize, required this.images, this.before});
 
   final ReadingDocument doc;
   final ReaderStyle style;
@@ -288,6 +288,10 @@ class Layout {
   /// The text area of one page (or column).
   final Size pageSize;
   final ImageSizes images;
+
+  /// The block before the first one, when one block is laid out alone (the
+  /// scroll layout): book paragraphs indent after a paragraph.
+  final Block? before;
 
   /// Pages per section; null until laid out.
   late final List<List<ReaderPage>?> sections = List<List<ReaderPage>?>.filled(doc.sections.length, null);
@@ -376,7 +380,7 @@ class Layout {
 
     for (int i = 0; i < blocks.length; i++) {
       final Block b = blocks[i];
-      final Block? prev = i > 0 ? blocks[i - 1] : null;
+      final Block? prev = i > 0 ? blocks[i - 1] : before;
       double gap() => cur.isEmpty ? 0 : style.spaceBefore(b, prev);
       switch (b.kind) {
         case BlockKind.image:

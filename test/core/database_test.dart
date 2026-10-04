@@ -3,6 +3,7 @@ import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:unfurl/core/db/database.dart';
 import 'package:unfurl/core/library/library.dart';
+import 'package:unfurl/core/platform/platform.dart';
 
 void main() {
   late AppDatabase db;
@@ -65,5 +66,23 @@ void main() {
     await opened('content://a/2', 'fp2', 3);
     final List<Recent> r = await lib.watchRecents().first;
     expect(r.map((Recent x) => x.uri), <String>['content://a/2', 'content://b/9']);
+  });
+
+  test('an unreadable file leaves Home and Recents, unless it was read before', () async {
+    final Library lib = Library(db);
+    Future<void> open(String fp) async {
+      final DocRef ref = DocRef(uri: 'content://x/$fp', name: '$fp.epub');
+      await lib.touch(fp, ref);
+      await lib.addRecent(ref, fp);
+    }
+
+    await open('drm');
+    await open('read');
+    await lib.savePosition('read', locator: '{}', progress: 0.2, where: 'Ch. 1', mode: 'reader');
+    await lib.unreadable('drm');
+    await lib.unreadable('read');
+    expect(await lib.document('drm'), isNull);
+    expect(await lib.document('read'), isNotNull);
+    expect((await lib.watchRecents().first).map((Recent r) => r.fingerprint), <String>['read']);
   });
 }

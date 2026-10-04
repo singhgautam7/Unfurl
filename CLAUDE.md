@@ -23,6 +23,8 @@ flutter analyze                                          # must be clean
 flutter test                                             # must pass
 flutter build apk --profile --target-platform android-arm64 -t integration_test/explorer_test.dart
                                                          # on-device tests, run as the app (see the file header)
+flutter build apk --profile --target-platform android-arm64 -t integration_test/v3_test.dart
+                                                         # v3 on-device round: formats, tracking, cards, comfort
 dart run build_runner build --delete-conflicting-outputs # after drift table changes
 flutter build apk --release --split-per-abi              # arm64 31.3 MB (see docs/performance.md)
 flutter test tool/make_icon.dart                         # launcher icon, splash, store PNG (concept C)

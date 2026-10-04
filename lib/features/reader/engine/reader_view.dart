@@ -162,6 +162,12 @@ class _ReaderViewState extends State<ReaderView> {
   final GlobalKey<TurnPagerState> _turner = GlobalKey<TurnPagerState>();
   final ScrollController _scroll = ScrollController();
   int _index = 0;
+
+  /// Where the reader last went (a turn, a jump, the start), kept across
+  /// relayouts: a rotation or a style change shows the page holding it, so
+  /// turning the window back and forth doesn't creep backwards a page at a
+  /// time through each new page's first word.
+  (int, int, int)? _anchor;
   bool _imagesReady = false;
   Size? _laidFor;
   ReaderStyle? _styleFor;
@@ -204,6 +210,16 @@ class _ReaderViewState extends State<ReaderView> {
       widget.controller._view = this;
       widget.controller.addListener(_onController);
     }
+    // Paged and Scroll keep the place across a switch: the passage at the
+    // top of the screen is where the other layout opens.
+    if (old.layoutMode != widget.layoutMode) {
+      _anchor = _c.position;
+      if (widget.layoutMode == ReaderLayout.scroll) {
+        _goTo(_c.position, animate: false);
+      } else {
+        _laidFor = null;
+      }
+    }
   }
 
   @override
@@ -234,7 +250,7 @@ class _ReaderViewState extends State<ReaderView> {
     final double colW = widget.columns == 2 ? (w - colGap) / 2 : w;
     final Size page = Size(colW, view.height - _headH - _footH);
     if (_layout != null && _laidFor == page && _styleFor == widget.style && _columnsFor == widget.columns) return;
-    final (int, int, int) keep = _c.position;
+    final (int, int, int) keep = _anchor ??= _c.position;
     _layout?.dispose();
     _layout = Layout(doc: _doc, style: widget.style, pageSize: page, images: _images);
     _laidFor = page;
@@ -258,7 +274,7 @@ class _ReaderViewState extends State<ReaderView> {
     _background = Timer.periodic(const Duration(milliseconds: 16), (Timer t) {
       final Layout? l = _layout;
       if (l == null || !mounted) return t.cancel();
-      final (int, int, int) keep = _c.position;
+      final (int, int, int) keep = _anchor ?? _c.position;
       final bool more = l.layoutNext(keep.$1);
       if (!more) {
         t.cancel();
@@ -303,6 +319,7 @@ class _ReaderViewState extends State<ReaderView> {
     if (l == null) return;
     final int target = _spreadOf(l.pageOf(at.$1, at.$2, at.$3));
     _setIndex(target, animate: animate);
+    _anchor = at;
   }
 
   bool _scrollBy(double pixels) {
@@ -346,6 +363,7 @@ class _ReaderViewState extends State<ReaderView> {
 
   void _setIndex(int target, {required bool animate}) {
     if (target == _index && _pages?.hasClients == true && _pages!.page?.round() == target) return;
+    _anchor = null;
     final bool reduced = Motion.reduced(context);
     final TurnPagerState? turner = _turner.currentState;
     if (turner != null && animate && (target - _index).abs() == 1) {
@@ -574,26 +592,36 @@ class _ReaderViewState extends State<ReaderView> {
   }
 
   bool _onScroll(ScrollNotification n) {
-    if (n is ScrollEndNotification || n is ScrollUpdateNotification) {
-      // The first block whose box crosses the top of the viewport.
-      for (final MapEntry<int, GlobalKey> e
-          in _itemKeys.entries.toList()
-            ..sort((MapEntry<int, GlobalKey> a, MapEntry<int, GlobalKey> b) => a.key.compareTo(b.key))) {
-        final RenderObject? r = e.value.currentContext?.findRenderObject();
-        if (r is! RenderBox || !r.attached) continue;
-        final Offset o = r.localToGlobal(Offset.zero);
-        if (o.dy + r.size.height > MediaQuery.paddingOf(context).top + 8) {
-          final (int s, int b) = _flat[e.key];
-          if (_c.position.$1 != s || _c.position.$2 != b) {
-            _c.position = (s, b, 0);
-            _c.lastVisible = (s, b, 0);
-            _c._report();
-          }
-          break;
-        }
-      }
+    if (n is ScrollUpdateNotification) _reportScroll();
+    // The last update lands before the frame lays it out: measure once more
+    // after that frame, so the saved place is what's on screen at rest.
+    if (n is ScrollEndNotification) {
+      SchedulerBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _reportScroll();
+      });
+      SchedulerBinding.instance.ensureVisualUpdate();
     }
     return false;
+  }
+
+  /// The first block whose box crosses the top of the viewport.
+  void _reportScroll() {
+    for (final MapEntry<int, GlobalKey> e
+        in _itemKeys.entries.toList()
+          ..sort((MapEntry<int, GlobalKey> a, MapEntry<int, GlobalKey> b) => a.key.compareTo(b.key))) {
+      final RenderObject? r = e.value.currentContext?.findRenderObject();
+      if (r is! RenderBox || !r.attached) continue;
+      final Offset o = r.localToGlobal(Offset.zero);
+      if (o.dy + r.size.height > MediaQuery.paddingOf(context).top + 8) {
+        final (int s, int b) = _flat[e.key];
+        if (_c.position.$1 != s || _c.position.$2 != b) {
+          _c.position = (s, b, 0);
+          _c.lastVisible = (s, b, 0);
+          _c._report();
+        }
+        break;
+      }
+    }
   }
 
   @override
@@ -634,6 +662,8 @@ class _ReaderViewState extends State<ReaderView> {
           controller: _pages,
           itemCount: spreads,
           onPageChanged: (int i) {
+            // A jump the engine made itself (relayout) already set _index.
+            if (i != _index) _anchor = null;
             _index = i;
             _c.clearSelection();
             widget.onSelection(const <Rect>[]);
@@ -649,6 +679,7 @@ class _ReaderViewState extends State<ReaderView> {
           builder: spread,
           backFace: Color.alphaBlend(widget.style.theme.ink.withValues(alpha: 0.08), widget.style.theme.paper),
           onTurned: (int i) {
+            _anchor = null;
             setState(() => _index = i);
             _c.clearSelection();
             widget.onSelection(const <Rect>[]);
@@ -1167,7 +1198,13 @@ class _ScrollBlockState extends State<_ScrollBlock> {
       _layout?.dispose();
       final Section one = Section(title: '', blocks: <Block>[widget.doc.sections[widget.section].blocks[widget.block]]);
       final ReadingDocument single = ReadingDocument.view(widget.doc, <Section>[one]);
-      _layout = Layout(doc: single, style: widget.style, pageSize: Size(widget.width, 100000), images: widget.images);
+      _layout = Layout(
+        doc: single,
+        style: widget.style,
+        pageSize: Size(widget.width, 100000),
+        images: widget.images,
+        before: widget.block > 0 ? widget.doc.sections[widget.section].blocks[widget.block - 1] : null,
+      );
       _w = widget.width;
       _s = widget.style;
     }

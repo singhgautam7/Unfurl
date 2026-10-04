@@ -647,6 +647,20 @@ class Library {
 
   // ---------------------------------------------------------------- recents
 
+  /// A file that turned out unreadable (DRM, a damaged archive, an
+  /// unsupported variant) leaves Home and Recents, unless it was read before:
+  /// a saved place or any annotation keeps its record.
+  Future<void> unreadable(String fingerprint) => db.transaction(() async {
+    final Document? d = await document(fingerprint);
+    if (d == null || d.position != null) return;
+    final int marks = await (db.select(
+      db.annotations,
+    )..where((a) => a.fingerprint.equals(fingerprint))).get().then((List<Annotation> a) => a.length);
+    if (marks > 0) return;
+    await (db.delete(db.documents)..where((x) => x.fingerprint.equals(fingerprint))).go();
+    await (db.delete(db.recents)..where((x) => x.fingerprint.equals(fingerprint))).go();
+  });
+
   Future<void> addRecent(DocRef ref, String? fingerprint) => db
       .into(db.recents)
       .insertOnConflictUpdate(

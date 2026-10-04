@@ -13,3 +13,22 @@ Decisions: `docs/v3-decisions.md`. Gaps: `docs/design-gaps.md` › v3.
 | V3-HIGHLIGHT-CARDS | "Share as card" from highlight menu, Notes overflow, selection overflow; editor; auto-fit; PNG export; share and save | `features/cards/{share_card,card_editor}.dart`, `reader_scaffold.dart` (highlight tap menu, selection More), `chrome.dart` (toolbar More), `notes_screen.dart` (row overflow), `app_menu.dart` (point anchor, danger), `buttons.dart` (`tight`), `oklch.dart` (`fromColor`), `MainActivity.kt` (`saveImage`, `shareImage`, chooser grant), `file_paths.xml`, `test/cards/share_card_test.dart` | done | Emulator: selection More menu, editor with live preview and fit caption, Save to Photos wrote a 1080 × 1080 PNG to Pictures/Unfurl, Share opened the system sheet with the image |
 | V3-COMFORT | Sleep timer, auto-scroll, auto page turn, volume buttons (Settings › Controls) | `features/reader/comfort.dart` (`SleepTimer`, `AutoAdvance`, `AutoControl`, `SleepChip`, sheets), `reader_scaffold.dart`, `pdf_screen.dart`, `comics_screen.dart`, `comic_views.dart`, `engine/reader_view.dart` (`scrollBy`, `scrollScreen`), `read_aloud.dart` + `Speech.kt` (per-sentence volume), `MainActivity.kt` (400 ms key repeat), `chrome.dart` (mini player chip), `reading_prefs.dart` (`volumeInvert`, `ComfortPrefs`), `settings_screen.dart` (`ControlsScreen`), `router.dart`, `motion.dart`/`tokens.dart` (comfort tokens), `test/reader/comfort_test.dart` | done | Emulator: Controls page; volume down/up paged 13→16→15%; overflow Sleep timer and Auto page turn; Reading sheet; auto page turn at 10 s turned a page, touch paused with the hint, control hid; sleep timer sheet with end of chapter |
 | V3-TABLET | Size classes, nav rail on expanded, 3/5/7 grids, side panels, two-column Insights, spreads, rotation keeps state | `core/layout.dart`, `NavRail`, `CoverGrid`, `AppScaffold`, `SidePanel`, `_NoteDetail`, reader and PDF spreads, `test/ui/adaptive_test.dart` | done | Pixel Tablet AVD (2560x1600 at 320dpi, 1280x800dp): rail on Home/Library/Notes/More, Home cover rows at 7, More centred at 720, Insights two columns (landscape) and one column with 4 stats (portrait), book insights and card editor as 400dp panels, Reader and Kindle spreads with the 1dp gutter, PDF paged spread, comic spread (pages 2 and 3), rotation to portrait kept the PDF page and the EPUB passage |
+
+## Device test round (Phase H, 5 October 2026)
+
+`integration_test/v3_test.dart`, built in profile mode and run as the app on the Pixel 9 Pro AVD (phone,
+412 × 915dp, all-files access through `appops`, fixtures from `test/fixtures` in Download). The owner's
+phone (CPH2723) was not connected; Phase A and B checks on it stand.
+
+| Check | Result |
+|---|---|
+| Every v3 format through the real open flow: AZW3, MOBI, FB2, FBZ, HTML in Reader; CBZ, CB7, CBR (RAR 4), CBT, a mislabelled CBR (zip) in Comics with a decoded page; DRM EPUB and AZW, encrypted KFX (DRMION), Topaz, RAR 5 and a truncated CBZ show their states | pass, 24 s |
+| Read 20 s, background 15 s, read 15 s: one session, background excluded | pass, 35.6 s counted |
+| Share as card, Save to Photos | pass, "Saved to Pictures/Unfurl" |
+| Auto-scroll from the overflow moves the page; Sleep timer 15 min set from the overflow and shown as selected | pass |
+| Volume keys (Kotlin's `volumeKey` call) turn pages forward and back | pass |
+| Rotation there and back keeps the page | pass after fix: place 1441, landscape 1363–1856, back 1441–2357 |
+
+Found and fixed in this round (decisions 43–46): a DRM book that opened past the first-bytes check stayed
+in Continue reading; each rotation slid the reader back about a page; switching Paged and Scroll lost the
+place; Scroll had no first-line indents; the place saved in Scroll could trail the screen.

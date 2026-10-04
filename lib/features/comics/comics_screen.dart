@@ -147,6 +147,7 @@ class _ComicsScreenState extends ConsumerState<ComicsScreen> with WidgetsBinding
         );
       }
     } on FormatProblem catch (p) {
+      unawaited(_library.unreadable(doc.fingerprint));
       if (mounted) setState(() => _problem = p);
     }
   }
