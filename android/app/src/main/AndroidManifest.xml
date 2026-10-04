@@ -1,11 +1,26 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-    <!-- No permissions at all: no INTERNET (Unfurl never touches the network) and
-         no storage access (files come through the Storage Access Framework). -->
+    <!-- No INTERNET, ever: Unfurl never touches the network, so nothing can leave the phone.
+         All-files access is optional, asked for only from the Files tab, and used to read:
+         Unfurl never writes, renames, moves or deletes a user's file. Without it the app
+         works fully through folders picked with the Storage Access Framework. -->
+    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
+    <!-- The same access on Android 10 and below. -->
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="29" />
     <application
         android:label="Unfurl"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
+        android:requestLegacyExternalStorage="true"
         android:enableOnBackInvokedCallback="true">
+        <!-- "Open with" and "Share" from the Files tab hand other apps a read-only
+             content URI for a path, never a file:// URI. -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.files"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/file_paths" />
+        </provider>
         <activity
             android:name=".MainActivity"
             android:exported="true"
@@ -18,6 +33,9 @@
               android:name="io.flutter.embedding.android.NormalTheme"
               android:resource="@style/NormalTheme"
               />
+            <!-- Flutter would hand a VIEW intent's content:// URI to the router as a
+                 route. Unfurl reads intents itself (MainActivity.describe). -->
+            <meta-data android:name="flutter_deeplinking_enabled" android:value="false" />
             <!-- "Open with" and share: every format Unfurl reads lands straight in its viewer. -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />

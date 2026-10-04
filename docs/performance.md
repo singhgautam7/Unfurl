@@ -52,3 +52,67 @@ and the nav pill (in place: the pill and each tab page). Every long list is a bu
   write each batch in order; the enricher reads one new book at a time after a scan.
 - Not yet measured: library search on 5,000 files, sustained frame times in the readers on a
   real device (DevTools profile run). Both need a physical phone.
+
+## v2
+
+### V2-A, explorer data layer (3 October 2026)
+
+Measured with `integration_test/explorer_test.dart` built in profile mode (arm64) and run as the
+app on the Pixel_9_Pro emulator (API 36, 3 GB RAM, load average about 4), all-files access granted
+through `appops`. Folder: 5,000 empty `scan-n.pdf` files created from `adb shell`.
+
+| Step | Time |
+|---|---|
+| readdir through the storage provider (app) | 1,419 to 2,736 ms across runs |
+| readdir of the same folder from `adb shell` | 208 to 241 ms (emulator), 310 ms (CPH2723) |
+| stat of 5,000 entries, spread over threads | 171 to 737 ms (one stat per entry, `java.nio`, was ~3 stats per entry) |
+| first page on screen, cold | 3,209 ms |
+| first page on screen, cached (back navigation) | 73 ms |
+
+- **Budget not met on the emulator: first page of 5,000 items under 300 ms.** Almost all of it is the
+  storage provider's readdir for apps, about 10x the shell's readdir on the same folder (the provider
+  filters entries per app). Neither MediaStore (1,752 ms, and it misses files it hasn't indexed) nor
+  `java.nio` streams avoid it. To be measured on a real mid-range phone with access granted (V2-F);
+  `adb shell appops` is blocked on ColorOS, so CPH2723 needs the switch turned on by hand.
+- **Back navigation is instant:** the native snapshot (path + directory mtime) answers in 73 ms, and
+  the last six listings stay warm on the Dart side too.
+- Listings stream: head first, a first page of 60, then pages of 300. Cancelling (leaving the folder)
+  stops the walk between entries.
+
+### V2-B to V2-F, on screen (4 October 2026)
+
+Same emulator, profile build, the app driven by hand.
+
+| Step | Time |
+|---|---|
+| UnfurlBench (5,000 files), cold listing, warm provider cache | 172 ms readdir + 23 ms stats |
+| Back out and in again | instant: same scroll offset, all 5,000 already loaded |
+| Download (9 entries) | 2 ms readdir + 1 ms stats |
+
+- With the provider's directory cache warm, the 5,000-file first page fits the 300 ms budget; the
+  cold numbers above stand for the first visit after boot.
+- Scroll position is kept per folder for the session; it is tracked as the list scrolls, because
+  the controller has no clients by the time the screen is disposed.
+- Page turns: Curl and Cover draw real widgets (the page is clipped along the fold, the flap is one
+  filled path), so no page is rasterised; both hold 60 fps on the emulator's software renderer in
+  profile mode as far as a visual check shows. Measure on a phone with `flutter run --profile` and
+  the performance overlay before calling it done.
+- Enrichment of a large, broken library is slow on the emulator (about one second per unreadable
+  PDF), but it runs one file at a time off the UI and only once per file per launch.
+
+### On the OnePlus (CPH2723, Android 16), 4 October 2026
+
+Profile build, all-files access on. Frames from `dumpsys SurfaceFlinger --latency` on the app's
+surface; the panel ran at 90 Hz, dropping to 60 Hz on its own when idle.
+
+| Check | Result |
+|---|---|
+| Cold start to first frame (`am start -W`, release) | 254 ms |
+| 5,000-file folder, integration test, first page | 299 ms cold, 51 ms cached (budget 300) |
+| Same folder opened in the app | 243 ms readdir + 35 ms stats; 89 + 54 on a later run |
+| Root of internal storage (39 entries) | 2 ms + 1 ms |
+| Flinging the 5,000-tile grid (126 frames) | every frame 11.1 ms, none late |
+| Curl page turns, drag and taps | every frame 11.1 ms (90 Hz), none late |
+| Cover page turns | every frame 16.6 ms (panel at 60 Hz), none late |
+
+The emulator's "budget not met" above was the emulator; on the phone the cold first page fits.

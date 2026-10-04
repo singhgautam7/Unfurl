@@ -10,6 +10,7 @@ import '../../../core/theme/tokens.dart';
 import '../../../core/theme/typography.dart';
 import '../../../design_system/app_icon.dart';
 import '../../../formats/reading_document.dart';
+import 'page_turn.dart';
 import '../reading_prefs.dart';
 import 'layout.dart';
 import 'reader_style.dart';
@@ -147,6 +148,7 @@ class _ReaderViewState extends State<ReaderView> {
   Layout? _layout;
   final ImageSizes _images = ImageSizes();
   PageController? _pages;
+  final GlobalKey<TurnPagerState> _turner = GlobalKey<TurnPagerState>();
   final ScrollController _scroll = ScrollController();
   int _index = 0;
   bool _imagesReady = false;
@@ -314,6 +316,13 @@ class _ReaderViewState extends State<ReaderView> {
   void _setIndex(int target, {required bool animate}) {
     if (target == _index && _pages?.hasClients == true && _pages!.page?.round() == target) return;
     final bool reduced = Motion.reduced(context);
+    final TurnPagerState? turner = _turner.currentState;
+    if (turner != null && animate && (target - _index).abs() == 1) {
+      _c.clearSelection();
+      widget.onSelection(const <Rect>[]);
+      turner.turn(target - _index);
+      return;
+    }
     if (widget.pageTurn == PageTurn.slide &&
         animate &&
         !reduced &&
@@ -601,9 +610,23 @@ class _ReaderViewState extends State<ReaderView> {
           },
           itemBuilder: (BuildContext context, int i) => spread(i),
         ),
-        PageTurn.fade when !Motion.reduced(context) => GestureDetector(
+        PageTurn.curl || PageTurn.cover => TurnPager(
+          key: _turner,
+          style: widget.pageTurn,
+          index: _index,
+          count: spreads,
+          builder: spread,
+          backFace: Color.alphaBlend(widget.style.theme.ink.withValues(alpha: 0.08), widget.style.theme.paper),
+          onTurned: (int i) {
+            setState(() => _index = i);
+            _c.clearSelection();
+            widget.onSelection(const <Rect>[]);
+            _reportFor(i, notify: true);
+          },
+        ),
+        PageTurn.fade => GestureDetector(
           onHorizontalDragEnd: (DragEndDetails d) => _turn((d.primaryVelocity ?? 0) < 0 ? 1 : -1),
-          child: AnimatedSwitcher(duration: Motion.fast, child: spread(_index)),
+          child: AnimatedSwitcher(duration: Motion.pageFade, child: spread(_index)),
         ),
         _ => GestureDetector(
           onHorizontalDragEnd: (DragEndDetails d) => _turn((d.primaryVelocity ?? 0) < 0 ? 1 : -1),
@@ -866,6 +889,18 @@ class _PageContent extends StatelessWidget {
           painter: _PagePainter(page: page, style: style, marks: marks, selection: selection, spoken: spoken),
         ),
       ),
+      // A table wider than the page: an invisible sideways scroller over it;
+      // the page painter draws it at the scrolled offset.
+      for (final Fragment f in page.fragments)
+        if (f.scroll != null)
+          Positioned(
+            key: ObjectKey(f),
+            left: 0,
+            right: 0,
+            top: f.rect.top,
+            height: f.rect.height,
+            child: _TableScroller(fragment: f),
+          ),
       for (final Fragment f in page.fragments)
         if (f.block.kind == BlockKind.image && doc.resources[f.block.image] != null)
           Positioned.fromRect(
@@ -894,7 +929,7 @@ class _PagePainter extends CustomPainter {
     required this.marks,
     required this.selection,
     required this.spoken,
-  });
+  }) : super(repaint: Listenable.merge(<Listenable?>[for (final Fragment f in page.fragments) f.scroll]));
 
   final ReaderPage page;
   final ReaderStyle style;
@@ -922,11 +957,16 @@ class _PagePainter extends CustomPainter {
       }
     }
 
+    // Clipped to the page: a scrolled table's marks run past its edges.
+    canvas
+      ..save()
+      ..clipRect(Offset.zero & size);
     for (final Mark m in marks) {
       fill(_boxes(m.from, m.to), m.color);
     }
     if (spoken != null) fill(_boxes(spoken!.$1, spoken!.$2), s.theme.handle.withValues(alpha: 0.16));
     if (selection != null) fill(_boxes(selection!.$1, selection!.$2), s.theme.handle.withValues(alpha: 0.30));
+    canvas.restore();
 
     for (final Fragment f in page.fragments) {
       final Block b = f.block;
@@ -939,6 +979,13 @@ class _PagePainter extends CustomPainter {
               ..color = s.theme.rule
               ..strokeWidth = 1,
           );
+        case BlockKind.table when f.scroll != null:
+          canvas
+            ..save()
+            ..clipRect(Rect.fromLTWH(0, f.rect.top - 1, size.width, f.rect.height + 2))
+            ..translate(f.scroll!.value * -1, 0);
+          _paintTable(canvas, f, s);
+          canvas.restore();
         case BlockKind.table:
           _paintTable(canvas, f, s);
         case BlockKind.image:
@@ -980,6 +1027,7 @@ class _PagePainter extends CustomPainter {
     }
   }
 
+  /// The rules; the cells' text is painted with the rest of the text.
   void _paintTable(Canvas canvas, Fragment f, ReaderStyle s) {
     final List<List<String>> rows = f.block.rows!;
     final Paint ink = Paint()
@@ -989,36 +1037,12 @@ class _PagePainter extends CustomPainter {
       ..color = s.theme.rule
       ..strokeWidth = 1;
     double y = f.rect.top;
-    if (f.rowStart == 0) canvas.drawLine(Offset(0, y), Offset(f.rect.width, y), ink);
+    if (f.rowStart == 0) canvas.drawLine(Offset(f.rect.left, y), Offset(f.rect.right, y), ink);
     for (int r = f.rowStart; r < f.rowEnd; r++) {
-      double x = 0;
-      final double h = f.rowHeights![r - f.rowStart];
-      for (int c = 0; c < rows[r].length; c++) {
-        final double w = f.columnWidths![c];
-        final TextStyle st = s.styleFor(f.block);
-        final TextPainter tp = TextPainter(
-          text: TextSpan(
-            text: rows[r][c],
-            style: r == 0
-                ? st.copyWith(
-                    fontWeight: FontWeight.w600,
-                    fontVariations: const <FontVariation>[FontVariation('wght', 600)],
-                  )
-                : st,
-          ),
-          textDirection: TextDirection.ltr,
-        )..layout(maxWidth: math.max(1, w - 8));
-        tp.paint(canvas, Offset(x + 4, y + 5));
-        tp.dispose();
-        x += w;
-      }
-      y += h;
-      canvas.drawLine(
-        Offset(0, y),
-        Offset(f.rect.width, y),
-        r == 0 || r == rows.length - 1 ? (r == 0 ? rule : ink) : rule,
-      );
+      y += f.rowHeights![r - f.rowStart];
+      canvas.drawLine(Offset(f.rect.left, y), Offset(f.rect.right, y), r == rows.length - 1 ? ink : rule);
     }
+    f.paintText(canvas);
   }
 
   @override
@@ -1028,6 +1052,35 @@ class _PagePainter extends CustomPainter {
       old.marks != marks ||
       old.selection != selection ||
       old.spoken != spoken;
+}
+
+/// Scrolls a wide table sideways by moving its fragment's offset. It draws
+/// nothing; taps and long presses fall through to the page.
+class _TableScroller extends StatefulWidget {
+  const _TableScroller({required this.fragment});
+
+  final Fragment fragment;
+
+  @override
+  State<_TableScroller> createState() => _TableScrollerState();
+}
+
+class _TableScrollerState extends State<_TableScroller> {
+  late final ScrollController _c = ScrollController(initialScrollOffset: widget.fragment.scroll!.value)
+    ..addListener(() => widget.fragment.scroll!.value = _c.offset);
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => SingleChildScrollView(
+    scrollDirection: Axis.horizontal,
+    controller: _c,
+    child: SizedBox(width: widget.fragment.rect.width, height: widget.fragment.rect.height),
+  );
 }
 
 /// One block in scroll layout, laid out at the column width, with a

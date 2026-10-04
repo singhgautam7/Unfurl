@@ -49,3 +49,4 @@ app.*.map.json
 
 # Specs and design handoffs are not versioned
 specs/
+docs/v2-screens/

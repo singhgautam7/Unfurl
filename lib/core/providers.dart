@@ -2,6 +2,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/misc.dart' show StreamProviderFamily;
 
 import 'db/database.dart';
+import '../features/settings/settings_controller.dart';
+import 'explorer.dart';
 import 'library/enrich.dart';
 import 'library/library.dart';
 import 'platform/platform.dart';
@@ -22,9 +24,14 @@ final StreamProvider<List<Folder>> foldersProvider = StreamProvider<List<Folder>
   (Ref ref) => ref.watch(libraryProvider).watchFolders(),
 );
 
-final StreamProvider<List<BookItem>> booksProvider = StreamProvider<List<BookItem>>(
-  (Ref ref) => ref.watch(libraryProvider).watchBooks(),
-);
+/// Library's books: added folders, or every book on the phone while "Find
+/// books across this device" is on and all-files access is granted.
+final StreamProvider<List<BookItem>> booksProvider = StreamProvider<List<BookItem>>((Ref ref) {
+  final bool device =
+      ref.watch(settingsProvider.select((AppSettings s) => s.findOnDevice)) &&
+      ref.watch(filesAccessProvider.select((FilesAccess a) => a.granted));
+  return ref.watch(libraryProvider).watchBooks(device: device);
+});
 
 final StreamProvider<Map<int, int>> readableCountsProvider = StreamProvider<Map<int, int>>(
   (Ref ref) => ref.watch(libraryProvider).watchReadableCounts(),

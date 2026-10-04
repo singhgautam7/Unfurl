@@ -5,7 +5,7 @@
 <resources>
     <color name="launch_light">#FEFBF9</color>
     <color name="launch_dark">#1B1611</color>
-    <color name="launch_amoled">#000000</color>
     <color name="launch_bg">@color/launch_light</color>
-    <color name="launch_system_amoled">@color/launch_light</color>
+    <!-- The launcher icon's background (v2 · V2-ICON); the splash in both modes. -->
+    <color name="icon_bg">#F8E5C7</color>
 </resources>

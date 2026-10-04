@@ -118,6 +118,27 @@ abstract final class AppIcons {
   static const IconData touchApp = IconData(0xe913, fontFamily: _family); // touch_app
   static const IconData fitWidth = IconData(0xf779, fontFamily: _family); // fit_width
   static const IconData photo = IconData(0xe693, fontFamily: _family); // photo
+  // v2 · Files tab (board 5).
+  static const IconData block = IconData(0xf08c, fontFamily: _family); // block
+  static const IconData shieldLock = IconData(0xf686, fontFamily: _family); // shield_lock
+  static const IconData smartphone = IconData(0xe7ba, fontFamily: _family); // smartphone
+  static const IconData sdCard = IconData(0xe623, fontFamily: _family); // sd_card
+  static const IconData usb = IconData(0xe1e0, fontFamily: _family); // usb
+  static const IconData download = IconData(0xf090, fontFamily: _family); // download
+  static const IconData chat = IconData(0xe0c9, fontFamily: _family); // chat
+  static const IconData send = IconData(0xe163, fontFamily: _family); // send
+  static const IconData bluetooth = IconData(0xe1a7, fontFamily: _family); // bluetooth
+  static const IconData screenshotMonitor = IconData(0xec08, fontFamily: _family); // screenshot_monitor
+  static const IconData sdCardAlert = IconData(0xf057, fontFamily: _family); // sd_card_alert
+  static const IconData usbOff = IconData(0xe4fa, fontFamily: _family); // usb_off
+  static const IconData refresh = IconData(0xe5d5, fontFamily: _family); // refresh
+  static const IconData shareAndroid = IconData(0xe80d, fontFamily: _family); // share
+  static const IconData menuBook = IconData(0xea19, fontFamily: _family); // menu_book
+  static const IconData pictureAsPdf = IconData(0xe415, fontFamily: _family); // picture_as_pdf
+  static const IconData android = IconData(0xe859, fontFamily: _family); // android
+  static const IconData tableChart = IconData(0xe265, fontFamily: _family); // table_chart
+  static const IconData audioFile = IconData(0xeb82, fontFamily: _family); // audio_file
+  static const IconData movie = IconData(0xe404, fontFamily: _family); // movie
 }
 
 /// A symbol at the boards' weight (350) and optical size. Every icon in the

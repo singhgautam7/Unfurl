@@ -212,6 +212,16 @@ class SourceRef {
 
   /// The block offset of page character [index] on [onPage], or null if this
   /// block does not hold it.
+  /// This block's first character on page [onPage], in that page's text.
+  int? firstOn(int onPage) {
+    final List<int>? map = charMap;
+    if (map == null) return onPage == page ? start : null;
+    for (final int v in map) {
+      if (v >= 0 && v ~/ kPage == onPage) return v % kPage;
+    }
+    return null;
+  }
+
   int? offsetOf(int onPage, int index) {
     if (onPage < page || onPage > lastPage) return null;
     final List<int>? map = charMap;

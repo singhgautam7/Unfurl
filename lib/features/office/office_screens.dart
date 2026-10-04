@@ -21,6 +21,7 @@ import '../../design_system/app_menu.dart';
 import '../../design_system/app_snackbar.dart';
 import '../../design_system/buttons.dart';
 import '../../design_system/search_field.dart';
+import '../../formats/format_registry.dart';
 import '../../formats/office/docx.dart';
 import '../../formats/office/pptx.dart';
 import '../../formats/reading_document.dart';
@@ -193,13 +194,37 @@ class _DocxScreenState extends ConsumerState<DocxScreen> {
     _laidTheme = theme.id;
   }
 
+  /// Heights as `_DocxPage` draws them: the page is the document's own
+  /// layout, so neither side applies the system font scale.
   double _measure(DocxItem it, double width, ReadingTheme theme) {
-    if (it.rows != null) return it.rows!.length * 18 * _scale + 8;
+    if (it.rows != null) return _tableHeight(it.rows!, width - it.indent * _scale, theme);
     if (it.image != null) return 160 * _scale;
     final TextPainter tp = TextPainter(text: _span(it, theme), textDirection: TextDirection.ltr)
       ..layout(maxWidth: math.max(1, width - it.indent * _scale));
     final double h = tp.height;
     tp.dispose();
+    return h;
+  }
+
+  double _tableHeight(List<List<String>> rows, double width, ReadingTheme theme) {
+    final int cols = rows.fold<int>(1, (int m, List<String> r) => math.max(m, r.length));
+    final double cellW = math.max(1, width / cols - 4 * _scale);
+    double h = 2; // the top and bottom rules
+    for (int r = 0; r < rows.length; r++) {
+      double row = 0;
+      for (final String cell in rows[r]) {
+        final TextPainter tp = TextPainter(
+          text: TextSpan(
+            text: cell,
+            style: _DocxPage.cellStyle(_scale, theme, header: r == 0),
+          ),
+          textDirection: TextDirection.ltr,
+        )..layout(maxWidth: cellW);
+        row = math.max(row, tp.height);
+        tp.dispose();
+      }
+      h += row + 6 * _scale + (r > 0 ? 1 : 0);
+    }
     return h;
   }
 
@@ -473,32 +498,57 @@ class _DocxPage extends StatelessWidget {
   Widget build(BuildContext context) {
     final UnfurlColors c = context.colors;
     final double m = docx.margin * scale;
-    return Container(
+    return DecoratedBox(
       decoration: BoxDecoration(
         color: theme.paper,
         border: Border.all(color: c.outline, width: 0.5),
       ),
-      padding: EdgeInsets.fromLTRB(m, m, m, m * 0.5),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: <Widget>[
-          Expanded(
-            child: ClipRect(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: <Widget>[for (final int i in items) _item(docx.items[i], hits.contains(i))],
-              ),
+      // The page is the document's own layout, at its own sizes.
+      child: Padding(
+        padding: EdgeInsets.fromLTRB(m, m, m, m * 0.5),
+        // Nothing inherited (the theme's tracking, height or features): the
+        // page draws exactly what `_measure` measured.
+        child: DefaultTextStyle(
+          style: const TextStyle(),
+          child: MediaQuery.withNoTextScaling(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                Expanded(
+                  // ponytail: a single paragraph taller than a page is clipped at
+                  // the page foot; split items across pages if real files need it.
+                  child: ClipRect(
+                    child: OverflowBox(
+                      alignment: Alignment.topCenter,
+                      maxHeight: double.infinity,
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: <Widget>[for (final int i in items) _item(docx.items[i], hits.contains(i))],
+                      ),
+                    ),
+                  ),
+                ),
+                Text(
+                  '$number',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontFamily: UnfurlType.sans, fontSize: 7.5 * scale * 1.3, color: theme.inkMuted),
+                ),
+              ],
             ),
           ),
-          Text(
-            '$number',
-            textAlign: TextAlign.center,
-            style: TextStyle(fontFamily: UnfurlType.sans, fontSize: 7.5 * scale * 1.3, color: theme.inkMuted),
-          ),
-        ],
+        ),
       ),
     );
   }
+
+  static TextStyle cellStyle(double scale, ReadingTheme theme, {required bool header}) => TextStyle(
+    fontFamily: UnfurlType.sans,
+    fontSize: 7.5 * scale * 1.2,
+    height: 1.3,
+    color: theme.ink,
+    fontWeight: header ? FontWeight.w600 : null,
+  );
 
   Widget _item(DocxItem it, bool hit) {
     final EdgeInsets pad = EdgeInsets.only(
@@ -516,12 +566,6 @@ class _DocxPage extends StatelessWidget {
       );
     }
     if (it.rows != null) {
-      final TextStyle st = TextStyle(
-        fontFamily: UnfurlType.sans,
-        fontSize: 7.5 * scale * 1.2,
-        height: 1.3,
-        color: theme.ink,
-      );
       return Padding(
         padding: pad,
         child: DecoratedBox(
@@ -540,7 +584,7 @@ class _DocxPage extends StatelessWidget {
                     for (final String cell in it.rows![r])
                       Padding(
                         padding: EdgeInsets.symmetric(vertical: 3 * scale, horizontal: 2 * scale),
-                        child: Text(cell, style: r == 0 ? st.copyWith(fontWeight: FontWeight.w600) : st),
+                        child: Text(cell, style: cellStyle(scale, theme, header: r == 0)),
                       ),
                   ],
                 ),
@@ -613,7 +657,7 @@ class _PptxScreenState extends ConsumerState<PptxScreen> {
       if (mounted) {
         setState(() {
           _deck = p;
-          _outline = p.toReading(widget.doc.ref.name);
+          if (Formats.pptx.hasModeToggle) _outline = p.toReading(widget.doc.ref.name);
           _slide = _slide.clamp(0, math.max(0, p.slides.length - 1));
         });
       }
@@ -684,18 +728,21 @@ class _PptxScreenState extends ConsumerState<PptxScreen> {
       title: widget.doc.ref.name,
       subtitle: landscape ? null : 'slide ${_slide + 1} of ${d.slides.length}',
       onBack: () => Navigator.of(context).maybePop(),
-      toggle: ModeToggle(
-        reader: false,
-        pageIcon: AppIcons.slideshow,
-        onChanged: (bool r) {
-          if (r) {
-            setState(() {
-              _readerStart = Locator(page: _slide + 1);
-              _reader = true;
-            });
-          }
-        },
-      ),
+      // Slides only unless the registry gives PPTX a Reader mode again.
+      toggle: Formats.pptx.hasModeToggle
+          ? ModeToggle(
+              reader: false,
+              pageIcon: AppIcons.slideshow,
+              onChanged: (bool r) {
+                if (r) {
+                  setState(() {
+                    _readerStart = Locator(page: _slide + 1);
+                    _reader = true;
+                  });
+                }
+              },
+            )
+          : null,
       actions: <Widget>[
         if (landscape)
           Center(

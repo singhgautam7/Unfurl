@@ -18,7 +18,25 @@ enum ReaderFont {
   final String note;
 }
 
-enum PageTurn { slide, fade, none }
+/// Page-turn styles (v2 · V2-03), in picker order. Shown only when paged.
+enum PageTurn {
+  slide('Slide'),
+  curl('Curl'),
+  cover('Cover'),
+  fade('Fade'),
+  none('None');
+
+  const PageTurn(this.label);
+  final String label;
+
+  /// Under reduced motion Curl and Cover become Fade, Slide becomes None.
+  PageTurn effective({required bool reduced}) => !reduced
+      ? this
+      : switch (this) {
+          PageTurn.curl || PageTurn.cover || PageTurn.fade => PageTurn.fade,
+          PageTurn.slide || PageTurn.none => PageTurn.none,
+        };
+}
 
 enum ReaderLayout { paged, scroll }
 

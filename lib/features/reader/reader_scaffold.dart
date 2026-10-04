@@ -44,6 +44,7 @@ class ReaderScaffold extends ConsumerStatefulWidget {
     required this.reading,
     this.start,
     this.onPageMode,
+    this.contents,
     this.pageIcon = AppIcons.article,
     this.pageLabel,
     this.overlay,
@@ -60,6 +61,10 @@ class ReaderScaffold extends ConsumerStatefulWidget {
   /// Back to Page view (PDF, DOCX, slides), with the current place. Null
   /// hides the mode toggle (EPUB, Markdown, TXT have no other mode).
   final void Function(Locator at)? onPageMode;
+
+  /// The document's own contents (a PDF's outline, as Page mode shows it),
+  /// as (title, level, locator). Null: the reflow's headings.
+  final List<(String, int, Locator)>? contents;
   final IconData pageIcon;
 
   /// "p. 62" for a block's source, where the original has pages.
@@ -514,12 +519,17 @@ class ReaderScaffoldState extends ConsumerState<ReaderScaffold> with WidgetsBind
   Future<void> _contents({int tab = 0}) async {
     final List<Annotation> marks = _annotations;
     final (int, int, int) at = controller.position;
+    // One contents for the document, whichever mode shows it.
+    final List<(String, int, (int, int, int))> entries = <(String, int, (int, int, int))>[
+      if (widget.contents != null)
+        for (final (String t, int level, Locator l) in widget.contents!) (t, level, l.resolveIn(reading))
+      else
+        for (final TocEntry t in reading.toc) (t.title, t.level, (t.section, t.block, 0)),
+    ];
     int current = -1;
-    for (int i = 0; i < reading.toc.length; i++) {
-      final TocEntry t = reading.toc[i];
-      if (t.section < at.$1 || (t.section == at.$1 && t.block <= at.$2)) {
-        current = i;
-      }
+    for (int i = 0; i < entries.length; i++) {
+      final (int s, int b, int _) = entries[i].$3;
+      if (s < at.$1 || (s == at.$1 && b <= at.$2)) current = i;
     }
     await showReaderSheet<void>(context, heightFactor: 0.9, (BuildContext ctx) {
       void go((int, int, int) to) {
@@ -541,19 +551,26 @@ class ReaderScaffoldState extends ConsumerState<ReaderScaffold> with WidgetsBind
         theme: _theme,
         initialTab: tab,
         toc: <TocRow>[
-          for (int i = 0; i < reading.toc.length; i++)
+          for (int i = 0; i < entries.length; i++)
             TocRow(
-              title: reading.toc[i].title,
-              level: reading.toc[i].level,
-              where: '${(reading.progressAt(reading.toc[i].section, reading.toc[i].block, 0) * 100).round()}%',
+              title: entries[i].$1,
+              level: entries[i].$2,
+              where: _whereOf(entries[i].$3),
               current: i == current,
-              onTap: () => go((reading.toc[i].section, reading.toc[i].block, 0)),
+              onTap: () => go(entries[i].$3),
             ),
         ],
         bookmarks: <MarkRow>[for (final Annotation a in marks.where((Annotation a) => a.kind == 'bookmark')) row(a)],
         highlights: <MarkRow>[for (final Annotation a in marks.where((Annotation a) => a.kind == 'highlight')) row(a)],
       );
     });
+  }
+
+  /// "p. 12" where the document has pages, else "34%".
+  String _whereOf((int, int, int) at) {
+    final SourceRef? src = reading.sections[at.$1].blocks[at.$2].source;
+    final String? page = src == null ? null : widget.pageLabel?.call(src);
+    return page ?? '${(reading.progressAt(at.$1, at.$2, at.$3) * 100).round()}%';
   }
 
   Future<void> exportHighlights() async {
@@ -684,7 +701,7 @@ class ReaderScaffoldState extends ConsumerState<ReaderScaffold> with WidgetsBind
                       controller: controller,
                       style: style,
                       layoutMode: prefs.layout,
-                      pageTurn: Motion.reduced(context) ? PageTurn.none : prefs.pageTurn,
+                      pageTurn: prefs.pageTurn.effective(reduced: Motion.reduced(context)),
                       columns: wide && prefs.layout == ReaderLayout.paged ? 2 : 1,
                       onCentreTap: _toggleChrome,
                       onLink: _onLink,
@@ -905,12 +922,14 @@ class ReaderScaffoldState extends ConsumerState<ReaderScaffold> with WidgetsBind
     final Rect first = _selectionRects.first;
     final Rect last = _selectionRects.last;
     final double h = MediaQuery.sizeOf(context).height;
-    final bool above = first.top > 160;
+    final bool above = first.top > SelectionToolbar.clearance;
     final (int, int) sel = controller.selection!;
+    // Above: pinned by its bottom edge, whatever its height at this text size.
     return Positioned(
       left: 14,
       right: 14,
-      top: above ? first.top - 64 : math.min(h - 140, last.bottom + 28),
+      top: above ? null : math.min(h - SelectionToolbar.clearance, last.bottom + 28),
+      bottom: above ? h - first.top + 8 : null,
       child: Reveal(
         child: SelectionToolbar(
           theme: theme,

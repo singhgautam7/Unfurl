@@ -320,27 +320,42 @@ class _PdfScreenState extends ConsumerState<PdfScreen> with WidgetsBindingObserv
     if (_reflowing || _pdf == null) return;
     setState(() => _reflowing = true);
     final List<PdfPageInput> inputs = <PdfPageInput>[];
+    final Map<String, Uint8List> images = <String, Uint8List>{};
     final List<PdfPage> pages = _pdf!.pages;
     _reflowProgress.value = 0;
     for (final PdfPage p in pages) {
       if (!mounted) return;
       final PdfPageRawText? raw = await p.loadText();
+      final PdfPageInput text = PdfPageInput(
+        text: raw?.fullText ?? '',
+        rects: <double>[
+          for (final PdfRect r in raw?.charRects ?? const <PdfRect>[]) ...<double>[r.left, r.top, r.right, r.bottom],
+        ],
+        width: p.width,
+        height: p.height,
+      );
+      // Tables become text; figures stay pictures, kept as sharp crops.
+      final (List<double> regions, List<PdfTable> tables) = await _regions(p, text);
+      for (int k = 0; k + 3 < regions.length; k += 4) {
+        final Uint8List? png = await _crop(p, regions.sublist(k, k + 4));
+        if (png != null) images[PdfReflow.regionKey(p.pageNumber, k ~/ 4)] = png;
+      }
       if (!mounted) return;
-      _reflowProgress.value = 0.85 * (inputs.length + 1) / pages.length;
+      _reflowProgress.value = 0.9 * (inputs.length + 1) / pages.length;
       inputs.add(
         PdfPageInput(
-          text: raw?.fullText ?? '',
-          rects: <double>[
-            for (final PdfRect r in raw?.charRects ?? const <PdfRect>[]) ...<double>[r.left, r.top, r.right, r.bottom],
-          ],
-          width: p.width,
-          height: p.height,
+          text: text.text,
+          rects: text.rects,
+          width: text.width,
+          height: text.height,
+          regions: regions,
+          tables: tables,
         ),
       );
     }
     final ReadingDocument r;
     try {
-      r = await _analyse(inputs, doc.record.title ?? _stem(doc.ref.name));
+      r = await _analyse(inputs, doc.record.title ?? _stem(doc.ref.name), images);
     } catch (_) {
       if (mounted) setState(() => _reflowing = false);
       rethrow;
@@ -355,13 +370,74 @@ class _PdfScreenState extends ConsumerState<PdfScreen> with WidgetsBindingObserv
   }
 
   /// Static, so the isolate's closure carries only the page text.
-  static Future<ReadingDocument> _analyse(List<PdfPageInput> inputs, String title) =>
-      Isolate.run(() => PdfReflow.analyse(inputs, title: title));
+  static Future<ReadingDocument> _analyse(List<PdfPageInput> inputs, String title, Map<String, Uint8List> images) =>
+      Isolate.run(() => PdfReflow.analyse(inputs, title: title, images: images));
+
+  /// The page drawn 720px wide (rules a point thick still show), searched
+  /// off the UI isolate: figures (l, t, r, b each) and tables.
+  static Future<(List<double>, List<PdfTable>)> _regions(PdfPage page, PdfPageInput text) async {
+    const int w = 720;
+    final PdfImage? img = await page.render(
+      fullWidth: w.toDouble(),
+      fullHeight: w * page.height / page.width,
+      backgroundColor: 0xFFFFFFFF,
+    );
+    if (img == null) return Isolate.run(() => _split(text, null, 0, 0));
+    final TransferableTypedData px = TransferableTypedData.fromList(<Uint8List>[Uint8List.fromList(img.pixels)]);
+    final int iw = img.width, ih = img.height;
+    img.dispose();
+    return Isolate.run(() => _split(text, px.materialize().asUint8List(), iw, ih));
+  }
+
+  static (List<double>, List<PdfTable>) _split(PdfPageInput text, Uint8List? px, int w, int h) {
+    final List<double> found = PdfReflow.findRegions(text, px, w, h);
+    final List<double> pictures = <double>[];
+    final List<PdfTable> tables = <PdfTable>[];
+    for (int k = 0; k + 3 < found.length; k += 4) {
+      final List<double> box = found.sublist(k, k + 4);
+      final PdfTable? t = PdfReflow.tableGrid(text, box, px, w, h);
+      t == null ? pictures.addAll(box) : tables.add(t);
+    }
+    return (pictures, tables);
+  }
+
+  /// One region (l, t, r, b in PDF units) as a PNG, at one scale per page
+  /// (the page about 1100px wide), so regions keep their relative sizes.
+  static Future<Uint8List?> _crop(PdfPage page, List<double> r) async {
+    final double k = (1100 / math.max(1, page.width)).clamp(1.5, 3.0);
+    final PdfImage? img = await page.render(
+      x: (r[0] * k).round(),
+      y: ((page.height - r[1]) * k).round(),
+      width: ((r[2] - r[0]) * k).round(),
+      height: ((r[1] - r[3]) * k).round(),
+      fullWidth: page.width * k,
+      fullHeight: page.height * k,
+      backgroundColor: 0xFFFFFFFF,
+    );
+    if (img == null) return null;
+    try {
+      final ui.Image image = await img.createImage();
+      final ByteData? png = await image.toByteData(format: ui.ImageByteFormat.png);
+      image.dispose();
+      return png?.buffer.asUint8List();
+    } finally {
+      img.dispose();
+    }
+  }
 
   static String _stem(String n) => n.contains('.') ? n.substring(0, n.lastIndexOf('.')) : n;
 
   Future<void> _toReader() async {
-    final Locator here = await _pageLocator();
+    // First time: switch at once; the loading card covers the reflow, and
+    // the position is known long before the reader is.
+    if (_reflow == null) setState(() => _reader = true);
+    // Where the eye is, not the top line: a table mid-screen opens on the
+    // reader page that holds it. No quote, so the page hints decide (a
+    // table's own words aren't in the reflow).
+    final (int page, double y) = _pagesKey.currentState?.focus() ?? (_page, _pageOffset);
+    final PageText t = await _text(page);
+    final Locator here = Locator(page: page, pageStart: t.firstAtOrBelow(y), progress: (page - 1 + y) / _pages);
+    if (!mounted) return;
     setState(() {
       _readerStart = here;
       _reader = true;
@@ -372,11 +448,18 @@ class _PdfScreenState extends ConsumerState<PdfScreen> with WidgetsBindingObserv
   }
 
   void _toPage(Locator at) {
+    // The page view isn't mounted while Reader mode fills the screen: it
+    // comes back on the right page, then settles on the exact line once it
+    // exists (next frame).
     setState(() {
       _reader = false;
       _readerStart = at;
+      _page = (at.page ?? _page).clamp(1, _pages);
+      _pageOffset = 0;
     });
-    unawaited(_restorePagePosition(at));
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) unawaited(_restorePagePosition(at));
+    });
     unawaited(_save(locator: at));
   }
 
@@ -704,7 +787,10 @@ class _PdfScreenState extends ConsumerState<PdfScreen> with WidgetsBindingObserv
     unawaited(SystemChrome.setEnabledSystemUIMode(_chrome ? SystemUiMode.edgeToEdge : SystemUiMode.immersiveSticky));
   }
 
-  Future<void> _contents() async {
+  /// The PDF's contents as (title, page, level): its own outline when it has
+  /// one, else the headings Reader mode found. Page and Reader mode show the
+  /// same list.
+  List<(String, int, int)> get _toc {
     final List<(String, int, int)> toc = <(String, int, int)>[];
     void walk(List<PdfOutlineNode> nodes, int level) {
       for (final PdfOutlineNode n in nodes) {
@@ -714,6 +800,21 @@ class _PdfScreenState extends ConsumerState<PdfScreen> with WidgetsBindingObserv
     }
 
     walk(_outline, 0);
+    final ReadingDocument? r = _reflow;
+    if (toc.isEmpty && r != null) {
+      for (final TocEntry t in r.toc) {
+        final SourceRef? src = r.sections[t.section].blocks[t.block].source;
+        if (src != null) toc.add((t.title, src.locate(0).$1, t.level));
+      }
+    }
+    return toc;
+  }
+
+  Future<void> _contents() async {
+    // Headings come from the reflow; prepare it if the PDF has no outline.
+    if (_outline.isEmpty && _reflow == null) await _ensureReflow();
+    if (!mounted) return;
+    final List<(String, int, int)> toc = _toc;
     int current = -1;
     for (int i = 0; i < toc.length; i++) {
       if (toc[i].$2 <= _page) current = i;
@@ -880,6 +981,7 @@ class _PdfScreenState extends ConsumerState<PdfScreen> with WidgetsBindingObserv
                   ? OpeningCard(
                       ref: doc.ref,
                       label: 'Preparing Reader mode',
+                      immediate: true,
                       progress: _reflowProgress,
                       onClose: () => _toPage(_readerStart ?? Locator(page: _page)),
                     )
@@ -935,6 +1037,11 @@ class _PdfScreenState extends ConsumerState<PdfScreen> with WidgetsBindingObserv
       reading: r,
       start: _readerStart,
       onPageMode: _toPage,
+      contents: _outline.isEmpty
+          ? null
+          : <(String, int, Locator)>[
+              for (final (String t, int page, int level) in _toc) (t, level, Locator(page: page, pageStart: 0)),
+            ],
       pageLabel: (SourceRef src) => 'p. ${src.page}',
       overlay: r.simplified && !_simplifiedSeen
           ? _Note(
@@ -1200,12 +1307,14 @@ class _PdfScreenState extends ConsumerState<PdfScreen> with WidgetsBindingObserv
   Widget _toolbar() {
     final Rect r = _selectionRect!;
     final double h = MediaQuery.sizeOf(context).height;
-    final bool above = r.top > 160;
+    final bool above = r.top > SelectionToolbar.clearance;
     final (int, int, int) s = _selection!;
+    // Above: pinned by its bottom edge, whatever its height at this text size.
     return Positioned(
       left: 14,
       right: 14,
-      top: above ? r.top - 64 : math.min(h - 140, r.bottom + 28),
+      top: above ? null : math.min(h - SelectionToolbar.clearance, r.bottom + 28),
+      bottom: above ? h - r.top + 8 : null,
       child: Reveal(
         child: SelectionToolbar(
           theme: _theme,
@@ -1710,16 +1819,34 @@ class _PagesState extends State<_Pages> {
     if (widget.paged || _tops.isEmpty) return;
     final double s = _scale;
     final double ty = -_tx.value.getTranslation().y / s;
-    final double probe = ty + 80;
+    // The page under a line a third of the way down the view is the one
+    // you're on.
+    final double view = context.size?.height ?? 800;
+    final double probe = ty + (widget.topInset + (view - widget.topInset) / 3) / s;
     int page = 1;
     for (int i = 0; i < _tops.length; i++) {
       if (_tops[i] <= probe) page = i + 1;
     }
-    final double offset = ((probe - _tops[page - 1]) / _heights[page - 1]).clamp(0, 1);
+    // The position saved is the line at the top, as the reader sees it.
+    final double offset = ((ty + widget.topInset / s - _tops[page - 1]) / _heights[page - 1]).clamp(0, 1);
     if (page != _page) setState(() => _page = page);
     widget.onPage(page, offset);
     _sharpen?.cancel();
     _sharpen = Timer(const Duration(milliseconds: 160), _rebuild);
+  }
+
+  /// What the reader is looking at: the page and the fraction down it of a
+  /// line a third of the way down the view (paged: the page's top).
+  (int, double) focus() {
+    if (widget.paged || _tops.isEmpty) return (_page, 0);
+    final double s = _scale;
+    final double view = context.size?.height ?? 800;
+    final double y = -_tx.value.getTranslation().y / s + (widget.topInset + (view - widget.topInset) / 3) / s;
+    int page = 1;
+    for (int i = 0; i < _tops.length; i++) {
+      if (_tops[i] <= y) page = i + 1;
+    }
+    return (page, ((y - _tops[page - 1]) / _heights[page - 1]).clamp(0.0, 1.0));
   }
 
   /// Scrolls (or turns) to page [page], [fraction] down it.
@@ -1979,7 +2106,19 @@ class _PageTileState extends State<_PageTile> {
         child: Stack(
           fit: StackFit.expand,
           children: <Widget>[
-            if (img != null) RawImage(image: img, fit: BoxFit.fill, filterQuality: FilterQuality.medium),
+            // The page fades in once drawn; until then a hairline says so.
+            AnimatedOpacity(
+              opacity: img == null ? 0 : 1,
+              duration: Motion.of(context, Motion.fast),
+              curve: Motion.decelerate,
+              child: img == null
+                  ? const SizedBox.expand()
+                  : RawImage(image: img, fit: BoxFit.fill, filterQuality: FilterQuality.medium),
+            ),
+            Align(
+              alignment: Alignment.topCenter,
+              child: LoadingHairline(visible: img == null),
+            ),
             if (region != null && _tile != null && _tileRegion == region)
               Positioned.fromRect(
                 rect: region,

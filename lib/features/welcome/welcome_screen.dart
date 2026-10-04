@@ -19,14 +19,19 @@ import '../../design_system/buttons.dart';
 import '../settings/info_screens.dart';
 import '../settings/settings_controller.dart';
 
-/// Board 2, A0: four pages on first launch. Start and Formats can be
-/// skipped straight to Folders. The nav pill appears once the flow ends.
+/// Board 2, A0: four pages on first launch. The pages scroll; one action
+/// row stays put beneath them (a text action left, the main action right)
+/// and its labels change with a short slide and fade as the page turns.
+/// The nav pill appears once the flow ends.
 class WelcomeScreen extends ConsumerStatefulWidget {
   const WelcomeScreen({super.key});
 
   @override
   ConsumerState<WelcomeScreen> createState() => _WelcomeScreenState();
 }
+
+/// One page's actions: the quiet one on the left, the main one on the right.
+typedef _Actions = ({String quiet, VoidCallback onQuiet, String main, IconData mainIcon, VoidCallback onMain});
 
 class _WelcomeScreenState extends ConsumerState<WelcomeScreen> {
   final PageController _pages = PageController();
@@ -50,10 +55,43 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen> {
     if (mounted) context.go(Routes.home);
   }
 
+  Future<void> _addFolder({required bool advance}) async {
+    final Folder? f = await addFolderFlow(context, ref, explain: false);
+    if (f == null || !mounted) return;
+    setState(() => _added = f);
+    if (advance) _go(3);
+  }
+
+  Future<void> _openFile() async {
+    await ref.read(settingsProvider.notifier).setOnboarded();
+    if (!mounted) return;
+    context.go(Routes.home);
+    await pickAndOpenFile(rootNavigatorKey.currentContext ?? context);
+  }
+
+  _Actions get _actions => switch (_page) {
+    0 || 1 => (
+      quiet: 'Skip',
+      onQuiet: () => _go(2),
+      main: 'Next',
+      mainIcon: AppIcons.arrowForward,
+      onMain: () => _go(_page + 1),
+    ),
+    2 => (
+      quiet: 'Skip for now',
+      onQuiet: () => _go(3),
+      main: 'Choose a folder',
+      mainIcon: AppIcons.folderOpen,
+      onMain: () => _addFolder(advance: true),
+    ),
+    _ => (quiet: 'Go to Home', onQuiet: _finish, main: 'Open file', mainIcon: AppIcons.fileOpen, onMain: _openFile),
+  };
+
   @override
   Widget build(BuildContext context) {
     final UnfurlColors c = context.colors;
     final Map<int, int> counts = ref.watch(readableCountsProvider).value ?? const <int, int>{};
+    final _Actions a = _actions;
     return Scaffold(
       body: SafeArea(
         child: Column(
@@ -74,15 +112,6 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen> {
                         height: 8,
                         decoration: BoxDecoration(color: i == _page ? c.primary : c.outline, borderRadius: Radii.fullR),
                       ),
-                    const Spacer(),
-                    AnimatedOpacity(
-                      opacity: _page < 2 ? 1 : 0,
-                      duration: Motion.of(context, Motion.fast),
-                      child: IgnorePointer(
-                        ignoring: _page >= 2,
-                        child: AppButton(label: 'Skip', type: AppButtonType.text, height: 48, onPressed: () => _go(2)),
-                      ),
-                    ),
                   ],
                 ),
               ),
@@ -92,11 +121,10 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen> {
                 controller: _pages,
                 onPageChanged: (int i) => setState(() => _page = i),
                 children: <Widget>[
-                  _Page(
-                    art: const UnfurlMark(),
+                  const _Page(
+                    art: UnfurlMark(),
                     title: 'Open a file and start reading',
                     body: 'PDFs and books open where you left off, in the font, size and theme you choose.',
-                    actions: <Widget>[AppButton(label: 'Next', icon: AppIcons.arrowForward, onPressed: () => _go(1))],
                   ),
                   _Page(
                     art: Wrap(
@@ -130,7 +158,6 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen> {
                         _Legend(color: c.primaryContainer, text: 'Viewer, plus Reader mode for text'),
                       ],
                     ),
-                    actions: <Widget>[AppButton(label: 'Next', icon: AppIcons.arrowForward, onPressed: () => _go(2))],
                   ),
                   _Page(
                     art: const _Tile(icon: AppIcons.folderOpen),
@@ -148,7 +175,7 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen> {
                           for (final (IconData i, String t) in <(IconData, String)>[
                             (AppIcons.visibility, 'Read only. Unfurl never edits, moves or deletes your files.'),
                             (AppIcons.folder, 'It sees only the folders you pick, and you can remove access any time.'),
-                            (AppIcons.shield, 'Works offline, needs no permissions, nothing leaves your phone.'),
+                            (AppIcons.shield, 'Unfurl has no internet access, so nothing can leave your phone.'),
                           ]) ...<Widget>[
                             if (i != AppIcons.visibility) Divider(color: c.divider),
                             Padding(
@@ -169,20 +196,6 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen> {
                       ),
                     ),
                     note: 'Android doesn’t allow picking the whole Download folder, but any folder inside it works.',
-                    actions: <Widget>[
-                      AppButton(
-                        label: 'Choose a folder',
-                        icon: AppIcons.folderOpen,
-                        onPressed: () async {
-                          final Folder? f = await addFolderFlow(context, ref, explain: false);
-                          if (f != null) {
-                            setState(() => _added = f);
-                            _go(3);
-                          }
-                        },
-                      ),
-                      AppButton(label: 'Skip for now', type: AppButtonType.secondary, onPressed: () => _go(3)),
-                    ],
                   ),
                   _Page(
                     art: const _Tile(icon: AppIcons.doneAll),
@@ -190,27 +203,41 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen> {
                     body: _added == null
                         ? 'Open something now, or add a folder.'
                         : 'Books added: ${readableFiles(counts[_added!.id] ?? 0)} in ${_added!.name}. Open something now, or add another folder.',
-                    actions: <Widget>[
-                      AppButton(
-                        label: 'Open file',
-                        icon: AppIcons.fileOpen,
-                        onPressed: () async {
-                          await ref.read(settingsProvider.notifier).setOnboarded();
-                          if (!context.mounted) return;
-                          context.go(Routes.home);
-                          await pickAndOpenFile(rootNavigatorKey.currentContext ?? context);
-                        },
-                      ),
-                      AppButton(
+                    extra: Align(
+                      alignment: AlignmentDirectional.centerStart,
+                      child: AppButton(
                         label: _added == null ? 'Add a folder' : 'Add another folder',
+                        icon: AppIcons.createNewFolder,
                         type: AppButtonType.secondary,
-                        onPressed: () async {
-                          final Folder? f = await addFolderFlow(context, ref, explain: false);
-                          if (f != null) setState(() => _added = f);
-                        },
+                        height: 48,
+                        onPressed: () => _addFolder(advance: false),
                       ),
-                      AppButton(label: 'Go to Home', type: AppButtonType.accent, height: 48, onPressed: _finish),
-                    ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(Space.screen, Space.md, Space.screen, Space.xl),
+              child: Row(
+                spacing: Space.md,
+                children: <Widget>[
+                  AnimatedSize(
+                    duration: Motion.of(context, Motion.containerTransform),
+                    curve: Motion.decelerate,
+                    child: _Swap(
+                      id: a.quiet,
+                      child: AppButton(label: a.quiet, type: AppButtonType.text, onPressed: a.onQuiet),
+                    ),
+                  ),
+                  Expanded(
+                    child: _Swap(
+                      id: a.main,
+                      child: SizedBox(
+                        width: double.infinity,
+                        child: AppButton(label: a.main, icon: a.mainIcon, onPressed: a.onMain),
+                      ),
+                    ),
                   ),
                 ],
               ),
@@ -222,64 +249,57 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen> {
   }
 }
 
+/// A button whose label changed: the old one fades, then the new one rises in.
+class _Swap extends StatelessWidget {
+  const _Swap({required this.id, required this.child});
+
+  final String id;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => AnimatedSwitcher(
+    duration: Motion.of(context, Motion.containerTransform),
+    // In sequence, never both at once: the old label is gone by 40%, the
+    // new one rises in after it.
+    switchInCurve: const Interval(0.4, 1, curve: Motion.decelerate),
+    switchOutCurve: const Interval(0.6, 1, curve: Motion.decelerate),
+    transitionBuilder: (Widget child, Animation<double> t) => FadeTransition(
+      opacity: t,
+      child: SlideTransition(
+        position: Tween<Offset>(begin: const Offset(0, 0.3), end: Offset.zero).animate(t),
+        child: child,
+      ),
+    ),
+    child: KeyedSubtree(key: ValueKey<String>(id), child: child),
+  );
+}
+
+/// One welcome page: everything scrolls, the note included.
 class _Page extends StatelessWidget {
-  const _Page({
-    required this.art,
-    required this.title,
-    required this.body,
-    required this.actions,
-    this.extra,
-    this.note,
-  });
+  const _Page({required this.art, required this.title, required this.body, this.extra, this.note});
 
   final Widget art;
   final String title;
   final String body;
   final Widget? extra;
   final String? note;
-  final List<Widget> actions;
 
   @override
   Widget build(BuildContext context) {
     final UnfurlColors c = context.colors;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: <Widget>[
-        Expanded(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.fromLTRB(28, 36, 28, Space.xl),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              spacing: Space.screen,
-              children: <Widget>[
-                art,
-                Text(title, style: UnfurlType.display.copyWith(color: c.onSurface)),
-                Text(body, style: UnfurlType.body.copyWith(color: c.onSurfaceVariant)),
-                ?extra,
-              ],
-            ),
-          ),
-        ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(Space.screen, 0, Space.screen, 30),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            spacing: 10,
-            children: <Widget>[
-              if (note != null)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: Space.xs),
-                  child: Text(
-                    note!,
-                    textAlign: TextAlign.center,
-                    style: UnfurlType.monoLabel.copyWith(height: 1.5, color: c.onSurfaceVariant),
-                  ),
-                ),
-              ...actions,
-            ],
-          ),
-        ),
-      ],
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(28, 36, 28, Space.xl),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        spacing: Space.screen,
+        children: <Widget>[
+          art,
+          Text(title, style: UnfurlType.display.copyWith(color: c.onSurface)),
+          Text(body, style: UnfurlType.body.copyWith(color: c.onSurfaceVariant)),
+          ?extra,
+          if (note != null) Text(note!, style: UnfurlType.monoLabel.copyWith(height: 1.5, color: c.onSurfaceVariant)),
+        ],
+      ),
     );
   }
 }
@@ -310,16 +330,20 @@ class _FormatChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final UnfurlColors c = context.colors;
+    // Sized to its label (the board's 36dp tile); an aligned Container
+    // would stretch to the Wrap's width.
     return Container(
       height: 36,
       padding: const EdgeInsets.symmetric(horizontal: Space.md),
-      alignment: Alignment.center,
       decoration: BoxDecoration(color: tier1 ? c.primary : c.primaryContainer, borderRadius: BorderRadius.circular(10)),
-      child: Text(
-        label,
-        style: UnfurlType.monoTabular.copyWith(
-          fontWeight: FontWeight.w600,
-          color: tier1 ? c.onPrimary : c.onPrimaryContainer,
+      child: Align(
+        widthFactor: 1,
+        child: Text(
+          label,
+          style: UnfurlType.monoTabular.copyWith(
+            fontWeight: FontWeight.w600,
+            color: tier1 ? c.onPrimary : c.onPrimaryContainer,
+          ),
         ),
       ),
     );

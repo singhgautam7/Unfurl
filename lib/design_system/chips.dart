@@ -118,8 +118,10 @@ class SegmentedToggle<T> extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final UnfurlColors c = context.colors;
+    // The track's vertical padding belongs to the segments: 40dp to the eye,
+    // 48dp to the finger.
     return Container(
-      padding: const EdgeInsets.all(Space.xs),
+      padding: const EdgeInsets.symmetric(horizontal: Space.xs),
       decoration: BoxDecoration(color: c.surfaceContainerHigh, borderRadius: Radii.fullR),
       child: IntrinsicHeight(
         child: Row(
@@ -130,37 +132,50 @@ class SegmentedToggle<T> extends StatelessWidget {
                 child: Semantics(
                   button: true,
                   selected: value == selected,
-                  child: InkWell(
+                  label: label,
+                  onTap: () => onChanged(value),
+                  excludeSemantics: true,
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.opaque,
                     onTap: () => onChanged(value),
-                    customBorder: const StadiumBorder(),
-                    child: AnimatedContainer(
-                      duration: Motion.of(context, Motion.fast),
-                      curve: Motion.curveOf(context, Motion.spring),
-                      constraints: const BoxConstraints(minHeight: 40),
-                      decoration: ShapeDecoration(
-                        color: value == selected ? c.surface : c.surface.withValues(alpha: 0),
-                        shape: StadiumBorder(
-                          side: BorderSide(color: value == selected ? c.outline : c.outline.withValues(alpha: 0)),
-                        ),
-                      ),
-                      alignment: Alignment.center,
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        spacing: 6,
-                        children: <Widget>[
-                          if (icon != null)
-                            AppIcon(icon, size: 18, color: value == selected ? c.onSurface : c.onSurfaceVariant),
-                          Flexible(
-                            child: Text(
-                              label,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: UnfurlType.titleMedium
-                                  .copyWith(fontSize: 14, color: value == selected ? c.onSurface : c.onSurfaceVariant)
-                                  .weight(value == selected ? 600 : 500),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: Space.xs),
+                      child: InkWell(
+                        onTap: () => onChanged(value),
+                        customBorder: const StadiumBorder(),
+                        child: AnimatedContainer(
+                          duration: Motion.of(context, Motion.fast),
+                          curve: Motion.curveOf(context, Motion.spring),
+                          constraints: const BoxConstraints(minHeight: 40),
+                          decoration: ShapeDecoration(
+                            color: value == selected ? c.surface : c.surface.withValues(alpha: 0),
+                            shape: StadiumBorder(
+                              side: BorderSide(color: value == selected ? c.outline : c.outline.withValues(alpha: 0)),
                             ),
                           ),
-                        ],
+                          alignment: Alignment.center,
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            spacing: 6,
+                            children: <Widget>[
+                              if (icon != null)
+                                AppIcon(icon, size: 18, color: value == selected ? c.onSurface : c.onSurfaceVariant),
+                              Flexible(
+                                child: Text(
+                                  label,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: UnfurlType.titleMedium
+                                      .copyWith(
+                                        fontSize: 14,
+                                        color: value == selected ? c.onSurface : c.onSurfaceVariant,
+                                      )
+                                      .weight(value == selected ? 600 : 500),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
                       ),
                     ),
                   ),

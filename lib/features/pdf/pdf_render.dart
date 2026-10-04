@@ -162,16 +162,60 @@ class PageRenderer {
         if (n > 0 && (mid > n * 0.45 || colour > n * 0.3)) photo[ty * tw + tx] = 1;
       }
     }
-    // Grow photo regions by a tile so their edges are not recoloured.
-    final Uint8List grown = Uint8List.fromList(photo);
-    for (int ty = 0; ty < th; ty++) {
-      for (int tx = 0; tx < tw; tx++) {
-        if (photo[ty * tw + tx] == 0) continue;
+    // A picture is kept whole: each group of photo tiles keeps its whole
+    // bounding box (and a tile around it) in its own colours, so a chart's
+    // white ground or a photo's flat sky isn't inverted in patches. Groups
+    // under three tiles, or no taller than two (a line of small anti-aliased
+    // text, as a scan drawn at phone size makes), are text that happened to
+    // look busy.
+    final Uint8List grown = Uint8List(tw * th);
+    final Int32List stack = Int32List(tw * th);
+    final List<List<int>> boxes = <List<int>>[];
+    for (int start = 0; start < photo.length; start++) {
+      if (photo[start] != 1) continue;
+      int top = 0, count = 0, x0 = tw, y0 = th, x1 = -1, y1 = -1;
+      stack[top++] = start;
+      photo[start] = 2;
+      while (top > 0) {
+        final int at = stack[--top];
+        final int x = at % tw, y = at ~/ tw;
+        count++;
+        x0 = math.min(x0, x);
+        x1 = math.max(x1, x);
+        y0 = math.min(y0, y);
+        y1 = math.max(y1, y);
         for (int dy = -1; dy <= 1; dy++) {
           for (int dx = -1; dx <= 1; dx++) {
-            final int y = ty + dy, x = tx + dx;
-            if (y >= 0 && y < th && x >= 0 && x < tw) grown[y * tw + x] = 1;
+            final int nx = x + dx, ny = y + dy;
+            if (nx < 0 || ny < 0 || nx >= tw || ny >= th || photo[ny * tw + nx] != 1) continue;
+            photo[ny * tw + nx] = 2;
+            stack[top++] = ny * tw + nx;
           }
+        }
+      }
+      if (count < 3 || y1 - y0 < 2) continue;
+      boxes.add(<int>[x0 - 1, y0 - 1, x1 + 1, y1 + 1]);
+    }
+    // Boxes that touch are one picture (a chart's bars, apart).
+    bool merged = true;
+    while (merged) {
+      merged = false;
+      for (int a = 0; a < boxes.length && !merged; a++) {
+        for (int b = a + 1; b < boxes.length; b++) {
+          final List<int> p = boxes[a], q = boxes[b];
+          if (p[0] <= q[2] + 1 && q[0] <= p[2] + 1 && p[1] <= q[3] + 1 && q[1] <= p[3] + 1) {
+            boxes[a] = <int>[math.min(p[0], q[0]), math.min(p[1], q[1]), math.max(p[2], q[2]), math.max(p[3], q[3])];
+            boxes.removeAt(b);
+            merged = true;
+            break;
+          }
+        }
+      }
+    }
+    for (final List<int> b in boxes) {
+      for (int y = math.max(0, b[1]); y <= math.min(th - 1, b[3]); y++) {
+        for (int x = math.max(0, b[0]); x <= math.min(tw - 1, b[2]); x++) {
+          grown[y * tw + x] = 1;
         }
       }
     }

@@ -47,6 +47,7 @@ class AppIconButton extends StatelessWidget {
     return Semantics(
       button: true,
       label: semanticLabel,
+      onTap: onPressed,
       excludeSemantics: true,
       child: AppTooltip(
         message: semanticLabel,
@@ -149,6 +150,7 @@ class AppButton extends StatelessWidget {
       button: true,
       enabled: onPressed != null,
       label: label,
+      onTap: onPressed,
       excludeSemantics: true,
       child: ConstrainedBox(
         constraints: BoxConstraints(minHeight: height),

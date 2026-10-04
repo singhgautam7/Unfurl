@@ -1,5 +1,7 @@
 import 'dart:io';
 
+import 'dart:ui' show PathMetric;
+
 import 'package:flutter/material.dart';
 
 import '../core/library/enrich.dart';
@@ -224,20 +226,22 @@ class FormatTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final UnfurlColors c = context.colors;
-    return Container(
+    final Widget tile = Container(
       width: width,
       height: height,
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: Space.md),
-      decoration: BoxDecoration(
-        color: muted ? c.surface : c.surfaceContainerHigh,
-        borderRadius: Radii.coverR,
-        border: Border.all(color: c.outline),
-      ),
+      decoration: muted
+          ? null
+          : BoxDecoration(
+              color: c.surfaceContainerHigh,
+              borderRadius: Radii.coverR,
+              border: Border.all(color: c.outline),
+            ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: <Widget>[
-          AppIcon(icon, size: 20, color: muted ? c.onSurfaceVariant : c.icon),
+          AppIcon(icon, size: 20, color: muted ? c.onSurfaceMuted : c.icon),
           FittedBox(
             fit: BoxFit.scaleDown,
             alignment: Alignment.centerLeft,
@@ -247,14 +251,47 @@ class FormatTile extends StatelessWidget {
                 fontSize: 24,
                 height: 1,
                 letterSpacing: -0.48,
-                color: muted ? c.onSurfaceVariant : c.onSurface,
+                color: muted ? c.onSurfaceMuted : c.onSurface,
               ),
             ),
           ),
         ],
       ),
     );
+    // A file Unfurl can't open: a dashed outline (board 5, X4).
+    return muted
+        ? CustomPaint(
+            painter: DashedOutline(color: c.outline, radius: Radii.cover),
+            child: tile,
+          )
+        : tile;
   }
+}
+
+/// A 1dp dashed rounded outline.
+class DashedOutline extends CustomPainter {
+  const DashedOutline({required this.color, required this.radius});
+
+  final Color color;
+  final double radius;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final Paint p = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1;
+    final Path outline = Path()
+      ..addRRect(RRect.fromRectAndRadius((Offset.zero & size).deflate(0.5), Radius.circular(radius)));
+    for (final PathMetric m in outline.computeMetrics()) {
+      for (double d = 0; d < m.length; d += 7) {
+        canvas.drawPath(m.extractPath(d, d + 4), p);
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(DashedOutline old) => old.color != color || old.radius != radius;
 }
 
 /// A tile in a grid of books: the cover, the progress, the state line and
@@ -270,6 +307,7 @@ class CoverTile extends StatefulWidget {
     this.path,
     this.name,
     this.heroTag,
+    this.muted = false,
     super.key,
   });
 
@@ -285,6 +323,9 @@ class CoverTile extends StatefulWidget {
 
   /// A file name under a format tile.
   final String? name;
+
+  /// A file Unfurl can't open, or a hidden one: the name in `onSurfaceMuted`.
+  final bool muted;
 
   /// Shared with the reader for the cover-to-reader transition.
   final Object? heroTag;
@@ -359,9 +400,9 @@ class _CoverTileState extends State<CoverTile> {
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: UnfurlType.tableCell.copyWith(
-                  fontWeight: FontWeight.w600,
-                  fontVariations: const <FontVariation>[FontVariation('wght', 600)],
-                  color: c.onSurface,
+                  fontWeight: widget.muted ? FontWeight.w500 : FontWeight.w600,
+                  fontVariations: <FontVariation>[FontVariation('wght', widget.muted ? 500 : 600)],
+                  color: widget.muted ? c.onSurfaceMuted : c.onSurface,
                 ),
               ),
             if (widget.name == null) ProgressTrack(value: widget.finished ? 1 : widget.progress),

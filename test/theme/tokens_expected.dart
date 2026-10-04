@@ -92,6 +92,30 @@ const Map<String, Map<String, int>> readingHex = <String, Map<String, int>>{
     'handle': 0xFFA15800,
     'accentText': 0xFF863F00,
   },
+  'stone': <String, int>{
+    'paper': 0xFFE4E3DF,
+    'ink': 0xFF24211C,
+    'inkMuted': 0xFF5E5A55,
+    'rule': 0xFFCCCAC6,
+    'handle': 0xFFA15800,
+    'accentText': 0xFF863F00,
+  },
+  'sage': <String, int>{
+    'paper': 0xFFE0EEDD,
+    'ink': 0xFF233226,
+    'inkMuted': 0xFF4C5D4F,
+    'rule': 0xFFC5D7C5,
+    'handle': 0xFFA15800,
+    'accentText': 0xFF863F00,
+  },
+  'dusk': <String, int>{
+    'paper': 0xFF1E2731,
+    'ink': 0xFFD7DFE5,
+    'inkMuted': 0xFF9DA6AD,
+    'rule': 0xFF333C45,
+    'handle': 0xFFDB9B63,
+    'accentText': 0xFFF1C49D,
+  },
   'dark': <String, int>{
     'paper': 0xFF201E1B,
     'ink': 0xFFDCD7CF,
@@ -113,6 +137,9 @@ const Map<String, Map<String, int>> readingHex = <String, Map<String, int>>{
 const Map<String, List<int>> highlightHex = <String, List<int>>{
   'light': <int>[0xFFEEDF95, 0xFFB1F0BD, 0xFFA3E7FF, 0xFFFFC4E5],
   'sepia': <int>[0xFFE0D087, 0xFFA2E1AF, 0xFF95D8FF, 0xFFFFB6D6],
+  'stone': <int>[0xFFE1D288, 0xFFA4E3B0, 0xFF96DAFF, 0xFFFFB8D7],
+  'sage': <int>[0xFFE0D28D, 0xFFA7E2B2, 0xFF9AD9FF, 0xFFFFB9D7],
+  'dusk': <int>[0xFF574C13, 0xFF2A5735, 0xFF1F5170, 0xFF6A3A50],
   'dark': <int>[0xFF53480E, 0xFF265331, 0xFF1A4C6C, 0xFF66364C],
   'amoled': <int>[0xFF423800, 0xFF154222, 0xFF043C5A, 0xFF54263C],
 };

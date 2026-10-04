@@ -11,6 +11,8 @@ import 'motion.dart';
 CustomTransitionPage<T> unfurlPage<T>({required Widget child, required GoRouterState state}) {
   return CustomTransitionPage<T>(
     key: state.pageKey,
+    // Named by location, so a flow (the folder picker) can be closed whole.
+    name: state.uri.toString(),
     child: child,
     transitionDuration: Motion.containerTransform,
     reverseTransitionDuration: Motion.containerTransform,
@@ -88,9 +90,21 @@ class _PredictiveBackState extends State<_PredictiveBack> with WidgetsBindingObs
   @override
   bool handleStartBackGesture(PredictiveBackEvent backEvent) {
     final PageRoute<dynamic>? route = _route;
-    if (backEvent.isButtonEvent || route == null || !route.isCurrent || !route.popGestureEnabled) return false;
+    if (backEvent.isButtonEvent || route == null || !_onTop(route) || !route.popGestureEnabled) return false;
     route.handleStartBackGesture(progress: 1 - backEvent.progress);
     setState(() => _linear = true);
+    return true;
+  }
+
+  /// Current in its own navigator and in every navigator around it: a page
+  /// in a tab is "current" in the tab's navigator even while a sheet on the
+  /// root navigator covers it, and the sheet must get the gesture.
+  static bool _onTop(ModalRoute<dynamic> route) {
+    for (ModalRoute<dynamic>? r = route; r != null;) {
+      if (!r.isCurrent) return false;
+      final BuildContext? outer = r.navigator?.context;
+      r = outer == null ? null : ModalRoute.of(outer);
+    }
     return true;
   }
 

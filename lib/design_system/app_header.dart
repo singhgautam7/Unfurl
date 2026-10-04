@@ -21,6 +21,7 @@ class AppHeader extends StatelessWidget {
     this.onBack,
     this.actions = const <Widget>[],
     this.collapsed = false,
+    this.backIcon = AppIcons.back,
     super.key,
   });
 
@@ -28,6 +29,9 @@ class AppHeader extends StatelessWidget {
 
   /// Null on a tab root, which has nowhere to go back to.
   final VoidCallback? onBack;
+
+  /// close instead of back where the button leaves a flow (the folder picker).
+  final IconData backIcon;
   final List<Widget> actions;
   final bool collapsed;
 
@@ -46,7 +50,12 @@ class AppHeader extends StatelessWidget {
       child: Row(
         spacing: onBack != null ? Space.sm : 0,
         children: <Widget>[
-          if (onBack != null) AppIconButton(icon: AppIcons.back, onPressed: onBack, semanticLabel: 'Back'),
+          if (onBack != null)
+            AppIconButton(
+              icon: backIcon,
+              onPressed: onBack,
+              semanticLabel: backIcon == AppIcons.close ? 'Close' : 'Back',
+            ),
           Expanded(
             child: AnimatedDefaultTextStyle(
               duration: d,
@@ -95,11 +104,13 @@ class AppScaffold extends StatelessWidget {
     required this.children,
     this.onBack,
     this.actions = const <Widget>[],
+    this.backIcon = AppIcons.back,
     super.key,
   });
 
   final String title;
   final VoidCallback? onBack;
+  final IconData backIcon;
   final List<Widget> actions;
   final List<Widget> children;
 
@@ -111,7 +122,7 @@ class AppScaffold extends StatelessWidget {
         builder: (BuildContext context, bool collapsed) => Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: <Widget>[
-            AppHeader(title: title, onBack: onBack, actions: actions, collapsed: collapsed),
+            AppHeader(title: title, onBack: onBack, actions: actions, collapsed: collapsed, backIcon: backIcon),
             Expanded(
               child: ListView(
                 padding: const EdgeInsets.fromLTRB(Space.screen, 6, Space.screen, Space.bottomSafe),

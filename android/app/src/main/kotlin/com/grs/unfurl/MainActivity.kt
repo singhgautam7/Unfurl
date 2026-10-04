@@ -19,6 +19,7 @@ class MainActivity : FlutterActivity() {
     private lateinit var channel: MethodChannel
     private lateinit var storage: Storage
     private lateinit var speech: Speech
+    private lateinit var explorer: Explorer
     private var pending: MethodChannel.Result? = null
     private var pendingIntent: Map<String, Any?>? = null
     private var volumeKeys = false
@@ -37,6 +38,7 @@ class MainActivity : FlutterActivity() {
         channel = MethodChannel(messenger, "unfurl/platform")
         channel.setMethodCallHandler(::handle)
         Scanner(this).register(messenger)
+        explorer = Explorer(this).also { it.register(messenger) }
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -78,11 +80,30 @@ class MainActivity : FlutterActivity() {
                 "stat" -> result.success(storage.stat(Uri.parse(call.argument<String>("uri")!!)))
                 "openFd" -> result.success(storage.openFd(Uri.parse(call.argument<String>("uri")!!)))
                 "closeFd" -> result.success(storage.closeFd(call.argument<Int>("fd")!!))
+                "hasAllFilesAccess" -> result.success(explorer.hasAccess())
+                "requestAllFilesAccess" -> result.success(explorer.requestAccess())
+                "volumes" -> result.success(explorer.volumes())
+                "quickAccess" -> result.success(explorer.quickAccess())
+                "mediaGeneration" -> result.success(Scanner.generation(this))
+                "listStart" -> {
+                    explorer.start(
+                        call.argument<Int>("id")!!,
+                        call.argument<String>("path")!!,
+                        call.argument<String>("sort") ?: "name",
+                        call.argument<Boolean>("hidden") ?: false,
+                    )
+                    result.success(null)
+                }
+                "listCancel" -> result.success(explorer.cancel(call.argument<Int>("id")!!))
+                "folderSummary" -> explorer.summaryAsync(
+                    call.argument<String>("path")!!,
+                    call.argument<List<String>>("readable")!!.toSet(),
+                ) { result.success(it) }
                 "takeIntent" -> { result.success(pendingIntent); pendingIntent = null }
                 "openWith" -> result.success(launch(Intent.createChooser(viewIntent(call), null)))
                 "shareFile" -> {
                     val send = Intent(Intent.ACTION_SEND).setType(call.argument<String>("mime") ?: "*/*")
-                        .putExtra(Intent.EXTRA_STREAM, Uri.parse(call.argument<String>("uri")!!))
+                        .putExtra(Intent.EXTRA_STREAM, shareable(call.argument<String>("uri")!!))
                         .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                     result.success(launch(Intent.createChooser(send, null)))
                 }
@@ -95,18 +116,16 @@ class MainActivity : FlutterActivity() {
                 "appVersion" -> {
                     val info = packageManager.getPackageInfo(packageName, 0)
                     val code = if (Build.VERSION.SDK_INT >= 28) info.longVersionCode else @Suppress("DEPRECATION") info.versionCode.toLong()
-                    result.success("${info.versionName} ($code)")
+                    // Split APKs add the ABI times 1000 (arm64 1.0.0+1 is 2001); show pubspec's build.
+                    result.success("${info.versionName} (${code % 1000})")
                 }
                 "isInstalled" -> result.success(installed(call.argument<String>("package")!!))
                 "openApp" -> result.success(
                     packageManager.getLaunchIntentForPackage(call.argument<String>("package")!!)?.let { launch(it) } ?: false,
                 )
                 "defineInMull" -> {
-                    // Mull's DefineActivity takes PROCESS_TEXT and shows its word sheet over Unfurl.
-                    val define = Intent(Intent.ACTION_PROCESS_TEXT).setType("text/plain").setPackage(MULL)
-                        .putExtra(Intent.EXTRA_PROCESS_TEXT, call.argument<String>("text"))
-                        .putExtra(Intent.EXTRA_PROCESS_TEXT_READONLY, true)
-                    result.success(launch(define))
+                    val text = call.argument<String>("text")
+                    result.success(defineInMull(text) || (packageManager.getLaunchIntentForPackage(MULL)?.let { launch(it) } ?: false))
                 }
                 "openStore" -> {
                     val id = call.argument<String>("package")!!
@@ -167,13 +186,55 @@ class MainActivity : FlutterActivity() {
     }
 
     private fun viewIntent(call: MethodCall): Intent =
-        Intent(Intent.ACTION_VIEW).setDataAndType(Uri.parse(call.argument<String>("uri")!!), call.argument<String>("mime") ?: "*/*")
+        Intent(Intent.ACTION_VIEW).setDataAndType(shareable(call.argument<String>("uri")!!), call.argument<String>("mime") ?: "*/*")
             .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+
+    /** Other apps get a content URI, read-only; a path from the Files tab is converted. */
+    private fun shareable(uri: String): Uri {
+        val parsed = Uri.parse(uri)
+        return if (parsed.scheme == "file") explorer.contentUriFor(parsed.path!!) ?: parsed else parsed
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // All-files access can change in system settings while Unfurl is away.
+        if (::channel.isInitialized && ::explorer.isInitialized) channel.invokeMethod("allFilesAccess", explorer.hasAccess())
+    }
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == Explorer.REQUEST_READ) channel.invokeMethod("allFilesAccess", explorer.hasAccess())
+    }
+
+    /**
+     * "Define in Mull", as Android's own selection menu does it: find Mull's
+     * PROCESS_TEXT activity with a plain query (flags 0, so a filter without the
+     * DEFAULT category still counts, which `resolveActivity` would miss) and start
+     * it by name, in Unfurl's task, so Mull's word sheet opens over the book.
+     * Then DEFINE and SEND, the older ways into Mull.
+     */
+    private fun defineInMull(text: String?): Boolean {
+        for (action in listOf(Intent.ACTION_PROCESS_TEXT, "android.intent.action.DEFINE", Intent.ACTION_SEND)) {
+            val probe = Intent(action).setType("text/plain").setPackage(MULL)
+            @Suppress("DEPRECATION")
+            val found = packageManager.queryIntentActivities(probe, 0).firstOrNull { it.activityInfo.exported } ?: continue
+            val go = Intent(action)
+                .setType("text/plain")
+                .setClassName(MULL, found.activityInfo.name)
+                .putExtra(Intent.EXTRA_PROCESS_TEXT, text)
+                .putExtra(Intent.EXTRA_PROCESS_TEXT_READONLY, true)
+                .putExtra(Intent.EXTRA_TEXT, text)
+            if (launch(go)) return true
+        }
+        return false
+    }
 
     private fun launch(intent: Intent): Boolean = try {
         startActivity(intent)
         true
     } catch (_: ActivityNotFoundException) {
+        false
+    } catch (_: SecurityException) {
         false
     }
 
@@ -202,33 +263,20 @@ class MainActivity : FlutterActivity() {
     }
 
     /**
-     * Until Flutter's first frame the window shows through. Paint it in the chrome
-     * surface the app cached (`AppSettings.kLaunchLight` / `kLaunchDark`, which follow
-     * dynamic colour and true black), and on Android 13+ choose the splash theme the
-     * next cold start uses, so a launch never flashes a colour the app will not draw.
+     * After the splash (the icon's pale ochre in every mode), until Flutter's first
+     * frame, the window shows through. Paint it in the chrome surface the app cached
+     * (`AppSettings.kLaunchLight` / `kLaunchDark`, which follow dynamic colour and
+     * true black), so the hand-off never flashes a colour the app will not draw.
      */
     private fun paintLaunchWindow() {
         val prefs = getSharedPreferences("FlutterSharedPreferences", MODE_PRIVATE)
-        val mode = prefs.getString("flutter.theme.mode", "system")
-        val amoled = prefs.getBoolean("flutter.theme.amoled", false)
-        val night = when (mode) {
+        val night = when (prefs.getString("flutter.theme.mode", "system")) {
             "light" -> false
             "dark" -> true
             else -> resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK == Configuration.UI_MODE_NIGHT_YES
         }
         val key = if (night) "flutter.theme.launchDark" else "flutter.theme.launchLight"
         if (prefs.contains(key)) window.setBackgroundDrawable(ColorDrawable(prefs.getLong(key, 0L).toInt()))
-        if (Build.VERSION.SDK_INT >= 33) {
-            splashScreen.setSplashScreenTheme(
-                when {
-                    mode == "light" -> R.style.LaunchTheme_Light
-                    mode == "dark" && amoled -> R.style.LaunchTheme_Amoled
-                    mode == "dark" -> R.style.LaunchTheme_Dark
-                    amoled -> R.style.LaunchTheme_SystemAmoled
-                    else -> R.style.LaunchTheme
-                },
-            )
-        }
     }
 
     companion object {

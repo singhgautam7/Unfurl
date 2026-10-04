@@ -1,0 +1,17 @@
+CREATE TABLE "folders" ("id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, "uri" TEXT NOT NULL UNIQUE, "name" TEXT NOT NULL, "path" TEXT NOT NULL DEFAULT '', "added_at" INTEGER NOT NULL, "scanned_at" INTEGER NULL, "access_lost" INTEGER NOT NULL DEFAULT 0 CHECK ("access_lost" IN (0, 1)));
+CREATE TABLE "entries" ("id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, "folder_id" INTEGER NOT NULL REFERENCES folders (id) ON DELETE CASCADE, "doc_id" TEXT NOT NULL, "uri" TEXT NOT NULL, "parent" TEXT NOT NULL, "name" TEXT NOT NULL, "ext" TEXT NOT NULL, "mime" TEXT NULL, "is_dir" INTEGER NOT NULL CHECK ("is_dir" IN (0, 1)), "size" INTEGER NOT NULL DEFAULT 0, "modified" INTEGER NOT NULL DEFAULT 0, "fingerprint" TEXT NULL, "title" TEXT NULL, "author" TEXT NULL, "units" INTEGER NULL, "enriched" INTEGER NOT NULL DEFAULT 0, "hidden" INTEGER NOT NULL DEFAULT 0 CHECK ("hidden" IN (0, 1)), UNIQUE ("folder_id", "doc_id"));
+CREATE TABLE "documents" ("fingerprint" TEXT NOT NULL, "uri" TEXT NOT NULL, "name" TEXT NOT NULL, "format" TEXT NOT NULL, "title" TEXT NULL, "author" TEXT NULL, "position" TEXT NULL, "progress" REAL NOT NULL DEFAULT 0.0, "mode" TEXT NULL, "finished" INTEGER NOT NULL DEFAULT 0 CHECK ("finished" IN (0, 1)), "units" INTEGER NULL, "where" TEXT NULL, "opened_at" INTEGER NULL, "added_at" INTEGER NOT NULL, "read_ms" INTEGER NOT NULL DEFAULT 0, "read_words" INTEGER NOT NULL DEFAULT 0, "size" INTEGER NOT NULL DEFAULT 0, PRIMARY KEY ("fingerprint"));
+CREATE TABLE "annotations" ("id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, "fingerprint" TEXT NOT NULL, "kind" TEXT NOT NULL, "color" INTEGER NULL, "locator" TEXT NOT NULL, "quote" TEXT NOT NULL DEFAULT '', "note" TEXT NULL, "label" TEXT NOT NULL DEFAULT '', "progress" REAL NOT NULL DEFAULT 0.0, "mode" TEXT NOT NULL DEFAULT 'reader', "created_at" INTEGER NOT NULL);
+CREATE TABLE "recents" ("uri" TEXT NOT NULL, "fingerprint" TEXT NULL, "name" TEXT NOT NULL, "mime" TEXT NULL, "size" INTEGER NOT NULL DEFAULT 0, "opened_at" INTEGER NOT NULL, PRIMARY KEY ("uri"));
+CREATE INDEX entries_parent ON entries (folder_id, parent);
+CREATE INDEX entries_ext ON entries (ext);
+CREATE INDEX entries_fp ON entries (fingerprint);
+CREATE INDEX annotations_doc ON annotations (fingerprint);
+CREATE VIRTUAL TABLE entries_fts USING fts5(name, title, author, content='entries', content_rowid='id', tokenize='unicode61 remove_diacritics 2');
+CREATE TABLE 'entries_fts_data'(id INTEGER PRIMARY KEY, block BLOB);
+CREATE TABLE 'entries_fts_idx'(segid, term, pgno, PRIMARY KEY(segid, term)) WITHOUT ROWID;
+CREATE TABLE 'entries_fts_docsize'(id INTEGER PRIMARY KEY, sz BLOB);
+CREATE TABLE 'entries_fts_config'(k PRIMARY KEY, v) WITHOUT ROWID;
+CREATE TRIGGER entries_ai AFTER INSERT ON entries BEGIN INSERT INTO entries_fts(rowid, name, title, author) VALUES (new.id, new.name, new.title, new.author); END;
+CREATE TRIGGER entries_ad AFTER DELETE ON entries BEGIN INSERT INTO entries_fts(entries_fts, rowid, name, title, author) VALUES ('delete', old.id, old.name, old.title, old.author); END;
+CREATE TRIGGER entries_au AFTER UPDATE OF name, title, author ON entries BEGIN INSERT INTO entries_fts(entries_fts, rowid, name, title, author) VALUES ('delete', old.id, old.name, old.title, old.author); INSERT INTO entries_fts(rowid, name, title, author) VALUES (new.id, new.name, new.title, new.author); END;

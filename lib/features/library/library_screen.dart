@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/db/database.dart';
+import '../../core/explorer.dart';
 import '../../core/files.dart';
 import '../../core/library/library.dart';
 import '../../core/locator.dart';
@@ -28,6 +29,7 @@ import '../../design_system/states.dart';
 import '../../formats/format_registry.dart';
 import '../reader/sheets.dart';
 import '../settings/settings_controller.dart';
+import '../files/files_screen.dart' show addFolder;
 
 enum _Filter { all, pdf, epub, unread, finished }
 
@@ -78,7 +80,10 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
       _Filter.unread: unread,
       _Filter.finished: all.where((BookItem b) => b.finished).length,
     };
-    final bool showFolders = _filter == _Filter.all && _query.isEmpty && folders.isNotEmpty;
+    // "Find books across this device" lists every folder's books, so the
+    // folder row would list every folder: it steps away (board 5, X7).
+    final bool device = s.findOnDevice && ref.watch(filesAccessProvider.select((FilesAccess a) => a.granted));
+    final bool showFolders = !device && _filter == _Filter.all && _query.isEmpty && folders.isNotEmpty;
     final String sortLabel = switch (s.librarySort) {
       'title' => 'Title',
       'progress' => 'Progress',
@@ -111,16 +116,17 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                 ],
               ),
               Expanded(
-                child: folders.isEmpty && all.isEmpty
+                child: folders.isEmpty && all.isEmpty && !device
                     ? EmptyState(
                         icon: AppIcons.library,
                         title: 'No books yet',
+                        aboveNav: true,
                         message: 'Add a folder and every PDF and EPUB inside it, subfolders included, shows up here. Unfurl only reads it.',
                         actions: <Widget>[
                           AppButton(
                             label: 'Add folder',
                             icon: AppIcons.createNewFolder,
-                            onPressed: () => addFolderFlow(context, ref),
+                            onPressed: () => addFolder(context, ref),
                           ),
                         ],
                       )
@@ -179,7 +185,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                                     child: Text(
                                       _query.isNotEmpty
                                           ? '${filtered.length} ${filtered.length == 1 ? 'result' : 'results'} for “$_query”${_filter == _Filter.all ? '' : ' in ${_filter.name.toUpperCase()}'}'
-                                          : '${filtered.length} ${filtered.length == 1 ? 'book' : 'books'}${_filter == _Filter.all ? ' · $unread unread' : ''}',
+                                          : '${filtered.length} ${filtered.length == 1 ? 'book' : 'books'}${device ? ' on this device' : ''}${_filter == _Filter.all ? ' · $unread unread' : ''}',
                                       style: UnfurlType.monoLabel.copyWith(color: c.onSurfaceVariant),
                                     ),
                                   ),
@@ -318,7 +324,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
       case 'grid' || 'list':
         await ctl.setLibraryGrid(grid: v == 'grid');
       case 'add':
-        await addFolderFlow(context, ref);
+        await addFolder(context, ref);
       default:
         await ctl.setLibrarySort(v);
     }
@@ -343,6 +349,7 @@ class _FolderRow extends StatelessWidget {
     }) => Semantics(
       button: true,
       label: meta == null ? name : '$name, $meta',
+      onTap: onTap,
       excludeSemantics: true,
       child: Material(
         color: c.surfaceContainer,
@@ -393,7 +400,7 @@ class _FolderRow extends StatelessWidget {
                   icon: f.accessLost ? AppIcons.folderOff : AppIcons.folder,
                   name: f.name,
                   meta: f.accessLost ? 'Access lost' : '${counts[f.id] ?? 0} readable',
-                  onTap: () => context.push(Routes.folder(f.id)),
+                  onTap: () => context.push(Routes.folder(f.id, base: Routes.library)),
                 ),
                 const SizedBox(width: 10),
               ],
@@ -401,7 +408,7 @@ class _FolderRow extends StatelessWidget {
                 icon: AppIcons.createNewFolder,
                 name: 'Add folder',
                 tint: c.accent,
-                onTap: () => addFolderFlow(context, ref),
+                onTap: () => addFolder(context, ref),
               ),
               if (folders.length >= 3) ...<Widget>[
                 const SizedBox(width: 10),
@@ -409,7 +416,7 @@ class _FolderRow extends StatelessWidget {
                   icon: AppIcons.arrowForward,
                   name: 'See all',
                   meta: '${folders.length} folders',
-                  onTap: () => context.push(Routes.folders),
+                  onTap: () => context.push(Routes.foldersIn(Routes.library)),
                 ),
               ],
             ],

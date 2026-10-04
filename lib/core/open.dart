@@ -139,8 +139,11 @@ Future<void> showUnsupportedSheet(BuildContext context, DocRef ref) async {
   );
 }
 
-/// Re-grants a folder whose access Android removed.
-Future<void> regrantFolder(BuildContext context, WidgetRef ref) async {
+/// Re-grants a folder whose access was removed: a picked folder through
+/// Android's picker again; a Files folder lives on all-files access, which
+/// only the Files tab's privacy card asks for.
+Future<void> regrantFolder(BuildContext context, WidgetRef ref, Folder folder) async {
+  if (folder.source != 'saf_folder') return context.go(Routes.files);
   await addFolderFlow(context, ref, explain: false);
 }
 

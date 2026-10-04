@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import 'core/motion/motion.dart';
+import 'core/explorer.dart';
 import 'core/open.dart';
 import 'core/platform/platform.dart';
 import 'core/providers.dart';
@@ -54,6 +55,8 @@ class _UnfurlAppState extends ConsumerState<UnfurlApp> with WidgetsBindingObserv
   /// viewer; a warm start's arrives through [Platform.arrivals]. Then the
   /// folders are rescanned in the background (never on the first frame).
   Future<void> _startUp() async {
+    // All-files access is re-read on every resume; start listening now.
+    ref.read(filesAccessProvider);
     _arrivals = Platform.arrivals.listen(_open);
     final DocRef? launch = await Platform.takeLaunchIntent();
     if (launch != null) _open(launch);

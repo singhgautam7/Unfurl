@@ -112,9 +112,8 @@ abstract final class Formats {
     view: ViewKind.slides,
     group: FormatGroup.slides,
     icon: AppIcons.slideshow,
-    readerMode: true,
-    annotations: true,
-    tts: true,
+    // Slides only: no Reader mode (owner, 4 Oct 2026; docs/design-gaps.md),
+    // so no highlights or read aloud either, which live in Reader mode.
   );
   static const FormatModule xlsx = FormatModule(
     id: 'xlsx',

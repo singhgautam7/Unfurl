@@ -158,6 +158,7 @@ class ModeToggle extends StatelessWidget {
         button: true,
         selected: on,
         label: isReader ? 'Reader mode' : 'Page view',
+        onTap: () => onChanged(isReader),
         excludeSemantics: true,
         child: GestureDetector(
           onTap: () => onChanged(isReader),
@@ -510,6 +511,7 @@ class MiniPlayer extends StatelessWidget {
           Semantics(
             button: true,
             label: 'Voice and speed, ${_rate(rate)}',
+            onTap: onSpeed,
             excludeSemantics: true,
             child: InkWell(
               onTap: onSpeed,
@@ -532,6 +534,7 @@ class MiniPlayer extends StatelessWidget {
           Semantics(
             button: true,
             label: playing ? 'Pause' : 'Play',
+            onTap: onToggle,
             excludeSemantics: true,
             child: Material(
               color: playing ? c.primary : c.primaryContainer,
@@ -565,9 +568,10 @@ class MiniPlayer extends StatelessWidget {
   static String _rate(double r) => '${r == r.roundToDouble() ? r.toStringAsFixed(1) : r.toString()}x';
 }
 
-/// The selection toolbar (board 1, R9): Copy, the four highlight colours,
-/// Note, Read aloud from here, Define in Mull. Floats above the selection,
-/// or below it when there is no room.
+/// The selection toolbar (board 1, R9), laid out as Kindle's: the four
+/// highlight colours on top, then each action as its icon over its name
+/// (Copy, Note, Listen, Define), so nothing is an unlabelled icon. Floats
+/// above the selection, or below it when there is no room.
 class SelectionToolbar extends StatelessWidget {
   const SelectionToolbar({
     required this.theme,
@@ -579,6 +583,9 @@ class SelectionToolbar extends StatelessWidget {
     required this.onDefine,
     super.key,
   });
+
+  /// Room the toolbar needs above a selection to sit there.
+  static const double clearance = 200;
 
   final ReadingTheme theme;
 
@@ -596,7 +603,7 @@ class SelectionToolbar extends StatelessWidget {
     return Material(
       color: Colors.transparent,
       child: Container(
-        padding: const EdgeInsets.all(Space.xs),
+        padding: const EdgeInsets.symmetric(horizontal: Space.xs, vertical: Space.xs),
         decoration: BoxDecoration(
           color: c.surfaceContainerHigh,
           borderRadius: Radii.cardR,
@@ -605,29 +612,29 @@ class SelectionToolbar extends StatelessWidget {
             BoxShadow(color: c.shadow, blurRadius: Elevations.navPillBlur, offset: const Offset(0, Elevations.navPill)),
           ],
         ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: <Widget>[
-            _Tool(icon: AppIcons.copy, label: 'Copy', onTap: onCopy),
             Row(
-              spacing: 4,
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
               children: <Widget>[
                 for (final HighlightColor h in HighlightColor.values)
                   Semantics(
                     button: true,
                     selected: selectedColor == h.index,
                     label: '${h.label} highlight',
+                    onTap: () => onHighlight(h.index),
                     excludeSemantics: true,
                     child: InkWell(
                       onTap: () => onHighlight(h.index),
                       customBorder: const CircleBorder(),
-                      child: SizedBox(
-                        width: 30,
-                        height: IconSpec.tapTarget,
+                      child: SizedBox.square(
+                        dimension: IconSpec.tapTarget,
                         child: Center(
                           child: Container(
-                            width: 22,
-                            height: 22,
+                            width: 28,
+                            height: 28,
                             decoration: BoxDecoration(
                               color: theme.highlights[h.index],
                               shape: BoxShape.circle,
@@ -643,30 +650,44 @@ class SelectionToolbar extends StatelessWidget {
                   ),
               ],
             ),
-            _Tool(icon: AppIcons.editNote, label: 'Note', onTap: onNote),
-            if (onReadAloud != null)
-              _Tool(icon: AppIcons.readAloud, label: 'Read aloud from here', onTap: onReadAloud!),
-            Semantics(
-              button: true,
-              label: 'Define in Mull',
-              excludeSemantics: true,
-              child: AppTooltip(
-                message: 'Define in Mull',
-                child: InkWell(
-                  onTap: onDefine,
-                  customBorder: const CircleBorder(),
-                  child: SizedBox(
-                    width: 44,
-                    height: IconSpec.tapTarget,
-                    child: Center(
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(6),
-                        child: Image.asset('assets/images/mull.png', width: 24, height: 24, cacheWidth: 72),
-                      ),
+            Divider(height: 1, color: c.divider),
+            Row(
+              children: <Widget>[
+                Expanded(
+                  child: _Tool(
+                    label: 'Copy',
+                    onTap: onCopy,
+                    glyph: AppIcon(AppIcons.copy, size: 22, color: c.icon),
+                  ),
+                ),
+                Expanded(
+                  child: _Tool(
+                    label: 'Note',
+                    onTap: onNote,
+                    glyph: AppIcon(AppIcons.editNote, size: 22, color: c.icon),
+                  ),
+                ),
+                if (onReadAloud != null)
+                  Expanded(
+                    child: _Tool(
+                      label: 'Listen',
+                      semantic: 'Read aloud from here',
+                      onTap: onReadAloud!,
+                      glyph: AppIcon(AppIcons.readAloud, size: 22, color: c.icon),
+                    ),
+                  ),
+                Expanded(
+                  child: _Tool(
+                    label: 'Define',
+                    semantic: 'Define in Mull',
+                    onTap: onDefine,
+                    glyph: ClipRRect(
+                      borderRadius: BorderRadius.circular(6),
+                      child: Image.asset('assets/images/mull.png', width: 22, height: 22, cacheWidth: 66),
                     ),
                   ),
                 ),
-              ),
+              ],
             ),
           ],
         ),
@@ -675,27 +696,40 @@ class SelectionToolbar extends StatelessWidget {
   }
 }
 
+/// One labelled action: the glyph over its name.
 class _Tool extends StatelessWidget {
-  const _Tool({required this.icon, required this.label, required this.onTap});
+  const _Tool({required this.label, required this.onTap, required this.glyph, this.semantic});
 
-  final IconData icon;
   final String label;
   final VoidCallback onTap;
+  final Widget glyph;
+
+  /// The spoken name, when the short label needs more ("Read aloud from here").
+  final String? semantic;
 
   @override
   Widget build(BuildContext context) => Semantics(
     button: true,
-    label: label,
+    label: semantic ?? label,
+    onTap: onTap,
     excludeSemantics: true,
-    child: AppTooltip(
-      message: label,
-      child: InkWell(
-        onTap: onTap,
-        customBorder: const CircleBorder(),
-        child: SizedBox(
-          width: 44,
-          height: IconSpec.tapTarget,
-          child: Center(child: AppIcon(icon, size: 22, color: context.colors.icon)),
+    child: InkWell(
+      onTap: onTap,
+      borderRadius: Radii.thumbR,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(minHeight: 60),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          spacing: Space.xs,
+          children: <Widget>[
+            glyph,
+            Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: UnfurlType.label.copyWith(fontSize: 12, color: context.colors.onSurface),
+            ),
+          ],
         ),
       ),
     ),

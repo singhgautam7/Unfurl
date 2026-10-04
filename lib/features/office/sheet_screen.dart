@@ -23,8 +23,9 @@ import '../viewer/document_screen.dart';
 import 'office_screens.dart';
 
 /// Spreadsheets (V3): XLSX, XLS, ODS and CSV, parsed off the UI isolate and
-/// drawn as a virtualised grid. The column letters, row numbers, the first
-/// row and the first column stay frozen; pinch zooms 50% to 200%; a tapped
+/// drawn as a virtualised grid. The column letters, row numbers and the
+/// first row stay frozen (no frozen first column: the row numbers already
+/// anchor each row); pinch zooms 50% to 200%; a tapped
 /// cell shows its full value in a strip that can be copied. No Reader mode.
 class SheetScreen extends ConsumerStatefulWidget {
   const SheetScreen({required this.doc, super.key});
@@ -313,7 +314,7 @@ class _CellStrip extends StatelessWidget {
 }
 
 /// A grid that only ever lays out the cells on screen: column letters and
-/// row numbers frozen, the first row and column frozen with them, pan with
+/// row numbers frozen, the first row frozen with them, pan with
 /// momentum, pinch to zoom.
 class _Grid extends StatefulWidget {
   const _Grid({required this.sheet, required this.selected, required this.hits, required this.onSelect, super.key});
@@ -380,7 +381,7 @@ class _GridState extends State<_Grid> with SingleTickerProviderStateMixin {
   double get _contentH => widget.sheet.rows.length * _rowH * _zoom;
 
   Offset _clamp(Offset o) => Offset(
-    o.dx.clamp(0, math.max(0, _contentW - (_view.width - _numW - _widths.firstOrNull! * _zoom) + 24)).toDouble(),
+    o.dx.clamp(0, math.max(0, _contentW - (_view.width - _numW) + 24)).toDouble(),
     o.dy.clamp(0, math.max(0, _contentH - (_view.height - _headH - _rowH * _zoom) + 160)).toDouble(),
   );
 
@@ -398,7 +399,7 @@ class _GridState extends State<_Grid> with SingleTickerProviderStateMixin {
   }
 
   (int, int)? _cellAt(Offset p) {
-    final double frozenW = _numW + (_widths.firstOrNull ?? 0) * _zoom;
+    const double frozenW = _numW;
     final double frozenH = _headH + _rowH * _zoom;
     if (p.dx < _numW || p.dy < _headH) return null;
     final int r = p.dy < frozenH ? 0 : ((p.dy - _headH + _offset.dy) / (_rowH * _zoom)).floor();
@@ -530,7 +531,6 @@ class _GridPainter extends CustomPainter {
     final Paint divider = Paint()..color = c.divider;
     final Paint outline = Paint()..color = c.outline;
     final double rowH = _rowH * zoom;
-    final double firstW = (widths.firstOrNull ?? 0) * zoom;
     final TextStyle cell = TextStyle(
       fontFamily: UnfurlType.sans,
       fontSize: 12.5 * zoom,
@@ -549,19 +549,23 @@ class _GridPainter extends CustomPainter {
     );
     canvas.drawRect(Offset.zero & size, Paint()..color = c.surface);
 
-    // Visible columns (after the frozen first one) and rows (after row 1).
+    // Visible columns and rows (after the frozen row 1).
     final List<(int, double)> cols = <(int, double)>[];
-    double x = _numW + firstW - offset.dx;
-    for (int col = 1; col < widths.length; col++) {
+    double x = _numW - offset.dx;
+    for (int col = 0; col < widths.length; col++) {
       final double w = widths[col] * zoom;
-      if (x + w > _numW + firstW && x < size.width) cols.add((col, x));
+      if (x + w > _numW && x < size.width) cols.add((col, x));
       x += w;
       if (x > size.width) break;
     }
     final int firstRow = math.max(1, (offset.dy / rowH).floor() + 1);
     final int lastRow = math.min(sheet.rows.length - 1, firstRow + (size.height / rowH).ceil() + 1);
 
-    void drawCell(int r, int col, double cx, double cy, double w, {bool frozenRow = false, bool frozenCol = false}) {
+    // A last row reads as totals (bold figures) only when it says so.
+    final bool totals =
+        sheet.rows.isNotEmpty &&
+        sheet.rows.last.any((String v) => RegExp(r'\b(total|sum)\b', caseSensitive: false).hasMatch(v));
+    void drawCell(int r, int col, double cx, double cy, double w, {bool frozenRow = false}) {
       final bool sel = selected == (r, col);
       final bool hit = hits.contains((r, col));
       Color? bg;
@@ -569,7 +573,7 @@ class _GridPainter extends CustomPainter {
         bg = c.primaryContainer;
       } else if (hit) {
         bg = c.primary.withValues(alpha: 0.18);
-      } else if (frozenRow || frozenCol) {
+      } else if (frozenRow) {
         bg = c.surfaceContainer;
       }
       final Rect rect = Rect.fromLTWH(cx, cy, w, rowH);
@@ -580,22 +584,14 @@ class _GridPainter extends CustomPainter {
         final TextPainter tp = _text(
           '$r:$col:$zoom:${sel ? 1 : 0}',
           v,
-          (frozenRow || frozenCol || r == sheet.rows.length - 1 && numeric ? bold : cell).copyWith(
+          (frozenRow || r == sheet.rows.length - 1 && numeric && totals ? bold : cell).copyWith(
             color: sel ? c.onPrimaryContainer : null,
           ),
           w - 16,
         );
         tp.paint(canvas, Offset(numeric ? cx + w - 8 - tp.width : cx + 8, cy + (rowH - tp.height) / 2));
       }
-      canvas.drawLine(
-        Offset(cx + w, cy),
-        Offset(cx + w, cy + rowH),
-        frozenCol
-            ? (Paint()
-                ..color = c.outline
-                ..strokeWidth = 2)
-            : divider,
-      );
+      canvas.drawLine(Offset(cx + w, cy), Offset(cx + w, cy + rowH), divider);
       canvas.drawLine(
         Offset(cx, cy + rowH),
         Offset(cx + w, cy + rowH),
@@ -618,7 +614,7 @@ class _GridPainter extends CustomPainter {
 
     // Body.
     canvas.save();
-    canvas.clipRect(Rect.fromLTRB(_numW + firstW, _headH + rowH, size.width, size.height));
+    canvas.clipRect(Rect.fromLTRB(_numW, _headH + rowH, size.width, size.height));
     for (int r = firstRow; r <= lastRow; r++) {
       final double y = _headH + rowH + (r - 1) * rowH - offset.dy;
       for (final (int col, double cx) in cols) {
@@ -626,21 +622,13 @@ class _GridPainter extends CustomPainter {
       }
     }
     canvas.restore();
-    // Frozen first column.
-    canvas.save();
-    canvas.clipRect(Rect.fromLTRB(_numW, _headH + rowH, _numW + firstW, size.height));
-    for (int r = firstRow; r <= lastRow; r++) {
-      drawCell(r, 0, _numW, _headH + rowH + (r - 1) * rowH - offset.dy, firstW, frozenCol: true);
-    }
-    canvas.restore();
     // Frozen first row.
     canvas.save();
-    canvas.clipRect(Rect.fromLTRB(_numW + firstW, _headH, size.width, _headH + rowH));
+    canvas.clipRect(Rect.fromLTRB(_numW, _headH, size.width, _headH + rowH));
     for (final (int col, double cx) in cols) {
       drawCell(0, col, cx, _headH, widths[col] * zoom, frozenRow: true);
     }
     canvas.restore();
-    if (sheet.rows.isNotEmpty) drawCell(0, 0, _numW, _headH, firstW, frozenRow: true, frozenCol: true);
 
     // Column letters.
     canvas.drawRect(Rect.fromLTWH(0, 0, size.width, _headH), Paint()..color = c.surfaceContainerHigh);
@@ -650,9 +638,8 @@ class _GridPainter extends CustomPainter {
       canvas.drawLine(Offset(cx + w, 0), Offset(cx + w, _headH), divider);
     }
 
-    letter(0, _numW, firstW);
     canvas.save();
-    canvas.clipRect(Rect.fromLTRB(_numW + firstW, 0, size.width, _headH));
+    canvas.clipRect(Rect.fromLTRB(_numW, 0, size.width, _headH));
     for (final (int col, double cx) in cols) {
       letter(col, cx, widths[col] * zoom);
     }

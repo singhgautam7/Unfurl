@@ -49,14 +49,19 @@ abstract final class TextFormats {
     final bool lineByLine =
         mono || (nonEmpty.isNotEmpty && nonEmpty.where((String l) => l.length < 60).length / nonEmpty.length > 0.7);
     final List<Block> blocks = <Block>[];
-    if (lineByLine) {
+    if (mono) {
+      // Code or a table: only the font changes (board 4, V4). Each run of
+      // lines is one paragraph with its line breaks and indents kept, so it
+      // reads as one piece, not a box per line.
+      for (final String run in text.split(RegExp(r'\n[ \t]*\n'))) {
+        final String kept = run.replaceAll(RegExp(r'^\n+|\s+$'), '');
+        if (kept.trim().isNotEmpty) {
+          blocks.add(Block(kind: BlockKind.paragraph, runs: <Inline>[Inline(kept, mono: true)]));
+        }
+      }
+    } else if (lineByLine) {
       for (final String l in lines) {
-        blocks.add(
-          Block(
-            kind: mono ? BlockKind.code : BlockKind.paragraph,
-            runs: <Inline>[Inline(l.isEmpty ? '' : (mono ? l : l.trim()), mono: mono)],
-          ),
-        );
+        blocks.add(Block(kind: BlockKind.paragraph, runs: <Inline>[Inline(l.trim())]));
       }
       while (blocks.isNotEmpty && blocks.last.text.isEmpty) {
         blocks.removeLast();

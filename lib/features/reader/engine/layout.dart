@@ -8,6 +8,21 @@ import 'package:flutter/material.dart';
 import '../../../formats/reading_document.dart';
 import 'reader_style.dart';
 
+/// One table cell on a fragment: its text laid out at the column width, where
+/// it sits (fragment coordinates), and where its text starts in the block.
+class TableCell {
+  TableCell({required this.painter, required this.rect, required this.start, required this.length});
+
+  final TextPainter painter;
+
+  /// The text's own box inside the fragment (padding excluded).
+  final Rect rect;
+  final int start;
+  final int length;
+
+  int get end => start + length;
+}
+
 /// A laid-out piece of one block on one page: a run of its text (between
 /// [start] and [end]), an image, a rule, or some rows of a table. Text
 /// fragments keep their [TextPainter] and a map from block offsets to the
@@ -30,6 +45,8 @@ class Fragment {
     this.bulletPainter,
     this.hyphens = const <Offset>[],
     this.hyphenPainter,
+    this.cells,
+    this.scroll,
   });
 
   final int section;
@@ -62,8 +79,21 @@ class Fragment {
   final List<Offset> hyphens;
   final TextPainter? hyphenPainter;
 
+  /// A table's cells on this fragment: real text, so selection, highlights
+  /// and read aloud reach it like any paragraph.
+  final List<TableCell>? cells;
+
+  /// A table wider than the page scrolls sideways; this is how far. Page
+  /// coordinates ([boxes], [offsetAt]) are as the table is scrolled now.
+  final ValueNotifier<double>? scroll;
+
+  Offset get _scrolled => Offset(scroll?.value ?? 0, 0);
+
   void paintText(Canvas canvas) {
     painter?.paint(canvas, rect.topLeft);
+    for (final TableCell c in cells ?? const <TableCell>[]) {
+      c.painter.paint(canvas, rect.topLeft + c.rect.topLeft);
+    }
     final TextPainter? h = hyphenPainter;
     if (h == null) return;
     final double ascent = h.computeDistanceToActualBaseline(TextBaseline.alphabetic);
@@ -72,7 +102,7 @@ class Fragment {
     }
   }
 
-  bool get isText => painter != null;
+  bool get isText => painter != null || cells != null;
 
   int _toPainter(int offset) {
     final List<int> m = map!;
@@ -101,6 +131,16 @@ class Fragment {
     }
     final int s = math.max(a, start), e = math.min(b, end);
     if (s >= e) return const <Rect>[];
+    if (cells != null) {
+      return <Rect>[
+        for (final TableCell c in cells!)
+          if (c.start < e && c.end > s)
+            for (final TextBox box in c.painter.getBoxesForSelection(
+              TextSelection(baseOffset: math.max(s, c.start) - c.start, extentOffset: math.min(e, c.end) - c.start),
+            ))
+              box.toRect().shift(rect.topLeft + c.rect.topLeft - _scrolled),
+      ];
+    }
     return <Rect>[
       for (final TextBox box in painter!.getBoxesForSelection(
         TextSelection(baseOffset: _toPainter(s), extentOffset: _toPainter(e)),
@@ -113,7 +153,25 @@ class Fragment {
   int? offsetAt(Offset page, {bool clamp = false}) {
     if (!isText) return null;
     if (!clamp && !rect.inflate(4).contains(page)) return null;
-    final Offset local = page - rect.topLeft;
+    final Offset local = page - rect.topLeft + _scrolled;
+    if (cells != null) {
+      if (cells!.isEmpty) return start;
+      // The cell under the point, else the nearest.
+      TableCell best = cells!.first;
+      double bestD = double.infinity;
+      for (final TableCell c in cells!) {
+        final Rect r = c.rect.inflate(4);
+        final double dx = local.dx < r.left ? r.left - local.dx : (local.dx > r.right ? local.dx - r.right : 0);
+        final double dy = local.dy < r.top ? r.top - local.dy : (local.dy > r.bottom ? local.dy - r.bottom : 0);
+        final double d = dx * dx + dy * dy;
+        if (d < bestD) {
+          bestD = d;
+          best = c;
+        }
+      }
+      final TextPosition p = best.painter.getPositionForOffset(local - best.rect.topLeft);
+      return (best.start + p.offset).clamp(best.start, best.end);
+    }
     final TextPosition p = painter!.getPositionForOffset(
       Offset(local.dx.clamp(0, rect.width), local.dy.clamp(0, rect.height)),
     );
@@ -143,6 +201,10 @@ class Fragment {
     painter?.dispose();
     bulletPainter?.dispose();
     hyphenPainter?.dispose();
+    for (final TableCell c in cells ?? const <TableCell>[]) {
+      c.painter.dispose();
+    }
+    scroll?.dispose();
   }
 }
 
@@ -343,7 +405,7 @@ class Layout {
           cur.add(Fragment(section: s, blockIndex: i, block: b, start: 0, end: 0, rect: Rect.fromLTWH(0, y, w, rh)));
           y += rh;
         case BlockKind.table:
-          _table(s, i, b, gap(), () => y, (double v) => y = v, cur, newPage, w, h);
+          _table(s, i, b, gap(), () => y, (double v) => y = v, () => cur, newPage, w, h);
         default:
           int from = 0;
           bool first = true;
@@ -441,8 +503,12 @@ class Layout {
     bulletPainter: f.bulletPainter,
     hyphens: f.hyphens,
     hyphenPainter: f.hyphenPainter,
+    cells: f.cells,
+    scroll: f.scroll,
   );
 
+  /// Rows of a table, split across pages at row boundaries. Every cell is
+  /// laid out once, as text, with the column widths shared by all rows.
   void _table(
     int s,
     int i,
@@ -450,7 +516,8 @@ class Layout {
     double gap,
     double Function() getY,
     void Function(double) setY,
-    List<Fragment> cur,
+    // A getter: newPage() starts a new list, and later rows belong on it.
+    List<Fragment> Function() cur,
     VoidCallback newPage,
     double w,
     double h,
@@ -458,42 +525,85 @@ class Layout {
     final List<List<String>> rows = b.rows!;
     final int cols = rows.fold<int>(0, (int m, List<String> r) => math.max(m, r.length));
     if (cols == 0) return;
-    final List<int> weight = List<int>.filled(cols, 1);
+    // Width by content, but never so narrow a number column crowds its
+    // neighbour.
+    final List<int> weight = List<int>.filled(cols, 4);
     for (final List<String> r in rows) {
       for (int c = 0; c < r.length; c++) {
         weight[c] = math.max(weight[c], math.min(30, r[c].length));
       }
     }
     final int total = weight.fold<int>(0, (int a, int x) => a + x);
-    final List<double> widths = <double>[for (final int x in weight) w * x / total];
     final TextStyle st = style.styleFor(b);
-    final List<double> heights = <double>[
+    final TextStyle head = st.copyWith(
+      fontWeight: FontWeight.w600,
+      fontVariations: const <FontVariation>[FontVariation('wght', 600)],
+    );
+    const double padX = 4, padY = 5;
+    // Where each cell's text starts in the block (cells joined by tabs,
+    // rows by newlines, as Block.text has them).
+    final List<List<int>> starts = <List<int>>[];
+    int at = 0;
+    for (final List<String> r in rows) {
+      final List<int> row = <int>[];
+      for (int c = 0; c < r.length; c++) {
+        row.add(at);
+        at += r[c].length + (c < r.length - 1 ? 1 : 0);
+      }
+      starts.add(row);
+      at += 1;
+    }
+    final List<List<TextPainter>> painters = <List<TextPainter>>[
       for (int r = 0; r < rows.length; r++)
-        rows[r].asMap().entries.fold<double>(style.size * 0.9, (double m, MapEntry<int, String> e) {
-          final TextPainter tp = TextPainter(
-            text: TextSpan(
-              text: e.value,
-              style: r == 0 ? st.copyWith(fontWeight: FontWeight.w600) : st,
-            ),
-            textDirection: TextDirection.ltr,
-          )..layout(maxWidth: math.max(1, widths[e.key] - 8));
-          final double hh = tp.height + 10;
-          tp.dispose();
-          return math.max(m, hh);
-        }),
+        <TextPainter>[
+          for (int c = 0; c < rows[r].length; c++)
+            TextPainter(
+              text: TextSpan(text: rows[r][c], style: r == 0 ? head : st),
+              textDirection: TextDirection.ltr,
+            )..layout(),
+        ],
+    ];
+    // No column breaks inside a word: each is at least its longest word,
+    // and what is left of the page is shared by content. If the words alone
+    // are wider than the page, the table scrolls sideways.
+    final List<double> need = List<double>.filled(cols, 0), natural = List<double>.filled(cols, 0);
+    for (final List<TextPainter> row in painters) {
+      for (int c = 0; c < row.length; c++) {
+        need[c] = math.max(need[c], row[c].minIntrinsicWidth.ceilToDouble() + padX * 2);
+        natural[c] = math.max(natural[c], row[c].maxIntrinsicWidth.ceilToDouble() + padX * 2);
+      }
+    }
+    final double spare = w - need.fold<double>(0, (double a, double x) => a + x);
+    // Once it scrolls anyway, a column takes its one-line width, up to half
+    // the page, so rows don't wrap for nothing.
+    final List<double> widths = <double>[
+      for (int c = 0; c < cols; c++)
+        spare >= 0 ? need[c] + spare * weight[c] / total : math.max(need[c], math.min(natural[c], w / 2)),
+    ];
+    final double tableW = widths.fold<double>(0, (double a, double x) => a + x);
+    for (final List<TextPainter> row in painters) {
+      for (int c = 0; c < row.length; c++) {
+        row[c].layout(maxWidth: math.max(1, widths[c] - padX * 2));
+      }
+    }
+    final List<double> heights = <double>[
+      for (final List<TextPainter> row in painters)
+        row.fold<double>(style.size * 0.9, (double m, TextPainter tp) => math.max(m, tp.height + padY * 2)),
     ];
     int r0 = 0;
     double y = getY();
     while (r0 < rows.length) {
-      final double g = cur.isEmpty ? 0 : gap;
+      final double g = cur().isEmpty ? 0 : gap;
       double used = 0;
       int r1 = r0;
       while (r1 < rows.length && y + g + used + heights[r1] <= h) {
         used += heights[r1];
         r1++;
       }
+      // A header row alone at the foot of a page goes over with its rows.
+      if (r0 == 0 && r1 == 1 && rows.length > 1 && cur().isNotEmpty) r1 = r0;
       if (r1 == r0) {
-        if (cur.isNotEmpty) {
+        if (cur().isNotEmpty) {
           newPage();
           y = 0;
           continue;
@@ -501,18 +611,40 @@ class Layout {
         used = heights[r0];
         r1 = r0 + 1;
       }
-      cur.add(
+      final List<TableCell> cells = <TableCell>[];
+      double cy = 0;
+      for (int r = r0; r < r1; r++) {
+        double cx = 0;
+        for (int c = 0; c < rows[r].length; c++) {
+          final TextPainter tp = painters[r][c];
+          cells.add(
+            TableCell(
+              painter: tp,
+              rect: Rect.fromLTWH(cx + padX, cy + padY, tp.width, tp.height),
+              start: starts[r][c],
+              length: rows[r][c].length,
+            ),
+          );
+          cx += widths[c];
+        }
+        cy += heights[r];
+      }
+      final int from = starts[r0].firstOrNull ?? 0;
+      final int to = r1 < rows.length ? (starts[r1].firstOrNull ?? b.text.length) - 1 : b.text.length;
+      cur().add(
         Fragment(
           section: s,
           blockIndex: i,
           block: b,
-          start: 0,
-          end: b.text.length,
-          rect: Rect.fromLTWH(0, y + g, w, used),
+          start: from,
+          end: math.max(from, to),
+          rect: Rect.fromLTWH(0, y + g, math.max(w, tableW), used),
           rowStart: r0,
           rowEnd: r1,
           columnWidths: widths,
           rowHeights: heights.sublist(r0, r1),
+          cells: cells,
+          scroll: tableW > w + 0.5 ? ValueNotifier<double>(0) : null,
         ),
       );
       y += g + used;

@@ -136,7 +136,14 @@ extension<T> on T {
 /// (Reader mode for a PDF, parsing a book) passes a [label] and a 0..1
 /// [progress].
 class OpeningCard extends StatelessWidget {
-  const OpeningCard({required this.ref, this.label = 'Opening', this.progress, this.onClose, super.key});
+  const OpeningCard({
+    required this.ref,
+    this.label = 'Opening',
+    this.progress,
+    this.onClose,
+    this.immediate = false,
+    super.key,
+  });
 
   final DocRef ref;
   final String label;
@@ -145,12 +152,17 @@ class OpeningCard extends StatelessWidget {
   /// Instead of leaving the document (Reader mode goes back to the page).
   final VoidCallback? onClose;
 
+  /// Shown at once: a mode switch the reader asked for, under an animation
+  /// that would otherwise reveal an empty page.
+  final bool immediate;
+
   @override
   Widget build(BuildContext context) {
     final UnfurlColors c = context.colors;
     final FormatModule? m = Formats.ofRef(ref);
     return Scaffold(
       body: Delayed(
+        after: immediate ? Duration.zero : Delayed.threshold,
         child: SafeArea(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,

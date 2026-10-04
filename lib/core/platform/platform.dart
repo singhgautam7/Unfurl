@@ -3,8 +3,9 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
-/// A document as the system describes it: a content URI with its name, size,
-/// type and modified time. Unfurl never sees a file path.
+/// A document as the system describes it: a content URI (or, with all-files
+/// access, a file:// URI from the Files tab) with its name, size, type and
+/// modified time.
 @immutable
 class DocRef {
   const DocRef({required this.uri, required this.name, this.size = 0, this.modified = 0, this.mime});
@@ -84,6 +85,97 @@ class ScannedEntry {
   final int modified;
 }
 
+/// A storage volume: internal storage, an SD card or a USB drive.
+@immutable
+class StorageVolume {
+  const StorageVolume({
+    required this.path,
+    required this.kind,
+    required this.label,
+    required this.mounted,
+    required this.readable,
+    required this.total,
+    required this.free,
+  });
+
+  factory StorageVolume.fromMap(Map<Object?, Object?> m) => StorageVolume(
+    path: m['path']! as String,
+    kind: m['kind']! as String,
+    label: (m['label'] as String?) ?? '',
+    mounted: m['mounted']! as bool,
+    readable: m['readable']! as bool,
+    total: (m['total'] as int?) ?? 0,
+    free: (m['free'] as int?) ?? 0,
+  );
+
+  final String path;
+
+  /// internal, sd or usb.
+  final String kind;
+
+  /// The system's description ("SanDisk USB drive").
+  final String label;
+  final bool mounted;
+  final bool readable;
+  final int total;
+  final int free;
+
+  double get used => total <= 0 ? 0 : (total - free) / total;
+}
+
+/// A quick-access location that exists on this phone.
+@immutable
+class QuickPlace {
+  const QuickPlace({required this.id, required this.path, required this.count});
+
+  factory QuickPlace.fromMap(Map<Object?, Object?> m) =>
+      QuickPlace(id: m['id']! as String, path: m['path']! as String, count: (m['count'] as int?) ?? 0);
+
+  /// downloads, documents, whatsapp, telegram, bluetooth, screenshots.
+  final String id;
+  final String path;
+
+  /// Visible entries directly inside.
+  final int count;
+}
+
+/// One entry of a folder listing.
+@immutable
+class DirEntry {
+  const DirEntry({required this.name, required this.isDir, required this.size, required this.modified});
+
+  final String name;
+  final bool isDir;
+  final int size;
+  final int modified;
+
+  bool get hidden => name.startsWith('.');
+
+  String get extension {
+    final int dot = name.lastIndexOf('.');
+    return isDir || dot <= 0 ? '' : name.substring(dot + 1).toLowerCase();
+  }
+}
+
+/// Why a folder can't be listed: Android/data or obb, access off, the volume
+/// was removed, the folder is gone, or it can't be read.
+enum DirProblem { restricted, denied, removed, missing, unreadable }
+
+/// A folder listing as it streams in: a head (counts) then pages.
+sealed class DirEvent {}
+
+class DirHead extends DirEvent {
+  DirHead(this.total, this.dirs);
+  final int total;
+  final int dirs;
+}
+
+class DirPage extends DirEvent {
+  DirPage(this.from, this.entries);
+  final int from;
+  final List<DirEntry> entries;
+}
+
 /// The one door to Android: the Storage Access Framework, intents, text to
 /// speech, Mull and window flags (`MainActivity.kt`, `Storage.kt`,
 /// `Scanner.kt`, `Speech.kt`). No network anywhere behind it.
@@ -95,6 +187,8 @@ abstract final class Platform {
   static final StreamController<DocRef> _arrivals = StreamController<DocRef>.broadcast();
   static final StreamController<int> _volumeKeys = StreamController<int>.broadcast();
   static final StreamController<(String, Object?)> _speech = StreamController<(String, Object?)>.broadcast();
+  static final StreamController<bool> _access = StreamController<bool>.broadcast();
+  static const EventChannel _list = EventChannel('unfurl/list');
   static bool _listening = false;
 
   /// Files sent from other apps ("Open with", share) while Unfurl runs.
@@ -115,6 +209,13 @@ abstract final class Platform {
     return _speech.stream;
   }
 
+  /// All-files access as Android reports it on every resume and after a
+  /// permission request.
+  static Stream<bool> get allFilesAccessChanges {
+    _listen();
+    return _access.stream;
+  }
+
   static void _listen() {
     if (_listening) return;
     _listening = true;
@@ -124,6 +225,8 @@ abstract final class Platform {
           _arrivals.add(DocRef.fromMap(call.arguments as Map<Object?, Object?>));
         case 'volumeKey':
           _volumeKeys.add(call.arguments as int);
+        case 'allFilesAccess':
+          _access.add(call.arguments as bool);
         default:
           if (call.method.startsWith('tts')) _speech.add((call.method, call.arguments));
       }
@@ -201,6 +304,81 @@ abstract final class Platform {
       await _call<bool>('defineInMull', <String, Object?>{'text': text}) ?? false;
 
   static Future<void> openApp(String package) => _call<bool>('openApp', <String, Object?>{'package': package});
+
+  // ------------------------------------------------------------ all files
+
+  /// MediaStore's change counter (-1 before Android 11).
+  static Future<int> mediaGeneration() async => await _call<int>('mediaGeneration') ?? -1;
+
+  static Future<bool> hasAllFilesAccess() async => await _call<bool>('hasAllFilesAccess') ?? false;
+
+  /// Opens Android's All files access page (or, on Android 10 and below,
+  /// asks for the read permission). The outcome arrives on resume.
+  static Future<bool> requestAllFilesAccess() async => await _call<bool>('requestAllFilesAccess') ?? false;
+
+  static Future<List<StorageVolume>> volumes() async => <StorageVolume>[
+    for (final Object? m in await _call<List<Object?>>('volumes') ?? const <Object?>[])
+      StorageVolume.fromMap(m! as Map<Object?, Object?>),
+  ];
+
+  static Future<List<QuickPlace>> quickAccess() async => <QuickPlace>[
+    for (final Object? m in await _call<List<Object?>>('quickAccess') ?? const <Object?>[])
+      QuickPlace.fromMap(m! as Map<Object?, Object?>),
+  ];
+
+  /// Direct children of a folder: (files, readable, folders; hidden ones not
+  /// counted), or null if it can't be read.
+  static Future<(int, int, int)?> folderSummary(String path, Iterable<String> readable) async {
+    final Map<Object?, Object?>? m = await _call<Map<Object?, Object?>>('folderSummary', <String, Object?>{
+      'path': path,
+      'readable': readable.toList(),
+    });
+    return m == null ? null : (m['files']! as int, m['readable']! as int, m['folders']! as int);
+  }
+
+  static int _nextList = 0;
+  static final Map<int, StreamController<DirEvent>> _lists = <int, StreamController<DirEvent>>{};
+  static StreamSubscription<Object?>? _listEvents;
+
+  /// A folder's entries, folders first, sorted natively: a head, then the first
+  /// page fast and the rest in larger pages. Cancelling the subscription stops
+  /// the walk. Errors are [PlatformException]s whose code names a [DirProblem].
+  static Stream<DirEvent> listDirectory(String path, {String sort = 'name', bool hidden = false}) {
+    // One event stream serves every listing, each event tagged with its id.
+    _listEvents ??= _list.receiveBroadcastStream().listen((Object? e) {
+      final Map<Object?, Object?> m = e! as Map<Object?, Object?>;
+      final StreamController<DirEvent>? c = _lists[m['id']];
+      if (c == null) return;
+      switch (m['kind']) {
+        case 'head':
+          c.add(DirHead(m['total']! as int, m['dirs']! as int));
+        case 'page':
+          c.add(
+            DirPage(m['from']! as int, <DirEntry>[
+              for (final Object? r in m['rows']! as List<Object?>)
+                if (r case <Object?>[final String n, final bool d, final int sz, final int t])
+                  DirEntry(name: n, isDir: d, size: sz, modified: t),
+            ]),
+          );
+        case 'error':
+          c.addError(PlatformException(code: m['code']! as String));
+          unawaited(c.close());
+        case 'done':
+          unawaited(c.close());
+      }
+    });
+    final int id = _nextList++;
+    final StreamController<DirEvent> c = StreamController<DirEvent>();
+    c
+      ..onListen = (() =>
+          _call<void>('listStart', <String, Object?>{'id': id, 'path': path, 'sort': sort, 'hidden': hidden}))
+      ..onCancel = () {
+        _lists.remove(id);
+        return _call<void>('listCancel', <String, Object?>{'id': id});
+      };
+    _lists[id] = c;
+    return c.stream;
+  }
 
   static Future<void> openStore(String package) => _call<bool>('openStore', <String, Object?>{'package': package});
 

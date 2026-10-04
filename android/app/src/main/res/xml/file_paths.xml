@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Read-only sharing of files the Files tab shows: internal storage, and SD cards or
+     USB drives mounted under /storage. -->
+<paths>
+    <external-path name="internal" path="." />
+    <root-path name="volumes" path="storage/" />
+</paths>

@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../design_system/nav_pill.dart';
 import '../../features/settings/settings_controller.dart';
+import '../explorer.dart';
 import '../motion/motion.dart';
 import '../providers.dart';
 
@@ -20,17 +21,21 @@ class NavHidden extends Notifier<bool> {
   void set({required bool hidden}) => state = hidden;
 }
 
-/// Hosts the four tabs and the floating pill, as Mull's NavShell does.
+/// Hosts the five tabs and the floating pill, as Mull's NavShell does.
 ///
 /// A tab switch slides the incoming page in from the side it lies on
 /// (`containerTransform`, decelerate). The pill translates down 72 and fades
 /// on scroll-down past 24px and returns on any scroll-up (`navHide`).
 class NavShell extends ConsumerStatefulWidget {
-  const NavShell({required this.child, required this.index, required this.onSelect, super.key});
+  const NavShell({required this.child, required this.index, required this.onSelect, this.nested = false, super.key});
 
   final Widget child;
   final int index;
   final ValueChanged<int> onSelect;
+
+  /// A screen inside the tab (a folder) is showing: the pill steps away, as
+  /// pushed screens cover it.
+  final bool nested;
 
   @override
   ConsumerState<NavShell> createState() => _NavShellState();
@@ -51,10 +56,14 @@ class _NavShellState extends ConsumerState<NavShell> with TickerProviderStateMix
   );
 
   /// Hidden on request, and on first launch until there is somewhere to go:
-  /// a file has been opened or a folder added (see docs/design-gaps.md).
+  /// a file has been opened, a folder added or all-files access granted
+  /// (Files then has the whole phone to show; see docs/design-gaps.md).
   bool _shouldHide() =>
+      widget.nested ||
       ref.read(navHiddenProvider) ||
-      !(ref.read(settingsProvider).openedFile || (ref.read(foldersProvider).value?.isNotEmpty ?? false));
+      !(ref.read(settingsProvider).openedFile ||
+          (ref.read(foldersProvider).value?.isNotEmpty ?? false) ||
+          ref.read(filesAccessProvider).granted);
   double _lastOffset = 0;
   bool _forward = true;
 
@@ -64,6 +73,11 @@ class _NavShellState extends ConsumerState<NavShell> with TickerProviderStateMix
     if (widget.index != oldWidget.index) {
       _forward = widget.index > oldWidget.index;
       _page.forward(from: 0);
+      _hide.reverse();
+    }
+    // Back at a tab's root, the pill returns whatever the folder scrolled.
+    if (widget.nested != oldWidget.nested) {
+      _lastOffset = 0;
       _hide.reverse();
     }
   }
@@ -79,6 +93,7 @@ class _NavShellState extends ConsumerState<NavShell> with TickerProviderStateMix
   /// A decisive horizontal fling anywhere on a tab moves to the next one.
   /// Horizontal lists inside a tab win the gesture where they start.
   void _onHorizontalFling(DragEndDetails details) {
+    if (widget.nested) return;
     final double velocity = details.primaryVelocity ?? 0;
     if (velocity.abs() < 240) return;
     final int next = velocity < 0 ? widget.index + 1 : widget.index - 1;
@@ -87,7 +102,7 @@ class _NavShellState extends ConsumerState<NavShell> with TickerProviderStateMix
   }
 
   bool _onScroll(ScrollNotification n) {
-    if (n.metrics.axis != Axis.vertical || n is! ScrollUpdateNotification) return false;
+    if (widget.nested || n.metrics.axis != Axis.vertical || n is! ScrollUpdateNotification) return false;
     final double offset = n.metrics.pixels;
     final double delta = offset - _lastOffset;
     if (delta.abs() < 2) return false;
@@ -105,6 +120,7 @@ class _NavShellState extends ConsumerState<NavShell> with TickerProviderStateMix
     ref.watch(navHiddenProvider);
     ref.watch(settingsProvider.select((AppSettings s) => s.openedFile));
     ref.watch(foldersProvider);
+    ref.watch(filesAccessProvider.select((FilesAccess a) => a.granted));
     final bool shouldHide = _shouldHide();
     if (shouldHide != _hideNow) {
       _hideNow = shouldHide;
@@ -121,8 +137,9 @@ class _NavShellState extends ConsumerState<NavShell> with TickerProviderStateMix
     final double bottom = math.max(22, MediaQuery.viewPaddingOf(context).bottom);
 
     return PopScope(
-      // Back from any other tab lands on Home; on Home it leaves the app.
-      canPop: widget.index == 0,
+      // Back from any other tab's root lands on Home; on Home it leaves the
+      // app. Inside a tab, back pops that tab's own stack first.
+      canPop: widget.index == 0 || widget.nested,
       onPopInvokedWithResult: (bool didPop, Object? _) {
         if (!didPop) widget.onSelect(0);
       },

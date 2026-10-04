@@ -5,7 +5,9 @@ import 'palette.dart';
 
 /// The second token layer (board 1, section 3). It only ever paints the page;
 /// bars, sheets and the scrubber keep the chrome tone.
-enum ReadingThemeId { light, sepia, dark, amoled }
+///
+/// Declared in picker order (v2 · V2-02); stored by name, so order is free.
+enum ReadingThemeId { light, sepia, stone, sage, dusk, dark, amoled }
 
 @immutable
 class ReadingTheme {
@@ -27,8 +29,8 @@ class ReadingTheme {
   final Color rule;
 
   /// Selection handles and progress on the page: the chrome primary of the
-  /// tone that sits on this paper (light for Light and Sepia, dark for Dark
-  /// and AMOLED).
+  /// tone that sits on this paper (light for Light, Sepia, Stone and Sage;
+  /// dark for Dusk, Dark and AMOLED).
   final Color handle;
 
   /// Accent text on the page, from the same tone.
@@ -38,7 +40,7 @@ class ReadingTheme {
   /// highlight stays at 6:1 or better.
   final List<Color> highlights;
 
-  static const List<String> names = <String>['Light', 'Sepia', 'Dark', 'AMOLED'];
+  static const List<String> names = <String>['Light', 'Sepia', 'Stone', 'Sage', 'Dusk', 'Dark', 'AMOLED'];
 
   String get name => names[id.index];
 
@@ -68,6 +70,33 @@ class ReadingTheme {
         Tone.light,
         0.855,
         0.095,
+      ),
+      ReadingThemeId.stone => (
+        const Oklch(0.915, 0.005, 85),
+        const Oklch(0.25, 0.010, 75),
+        const Oklch(0.47, 0.010, 75),
+        const Oklch(0.84, 0.006, 80),
+        Tone.light,
+        0.86,
+        0.095,
+      ),
+      ReadingThemeId.sage => (
+        const Oklch(0.935, 0.028, 140),
+        const Oklch(0.30, 0.030, 150),
+        const Oklch(0.46, 0.030, 150),
+        const Oklch(0.86, 0.030, 145),
+        Tone.light,
+        0.86,
+        0.09,
+      ),
+      ReadingThemeId.dusk => (
+        const Oklch(0.27, 0.022, 250),
+        const Oklch(0.90, 0.012, 240),
+        const Oklch(0.72, 0.015, 240),
+        const Oklch(0.35, 0.020, 250),
+        Tone.dark,
+        0.415,
+        0.075,
       ),
       ReadingThemeId.dark => (
         const Oklch(0.235, 0.006, 75),

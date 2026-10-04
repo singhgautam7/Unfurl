@@ -1,7 +1,8 @@
-import 'package:drift/drift.dart';
+import 'package:drift/drift.dart' hide isNotNull, isNull;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:unfurl/core/db/database.dart';
+import 'package:unfurl/core/library/library.dart';
 
 void main() {
   late AppDatabase db;
@@ -30,5 +31,39 @@ void main() {
     expect(await db.searchEntries('prejud'), <int>[id]);
     expect(await db.searchEntries('austen'), <int>[id], reason: 'authors are searchable');
     expect(await db.searchEntries('darwin'), isEmpty);
+  });
+
+  test('pinning and visiting a folder update the Files lists live, without clobbering each other', () async {
+    final Library lib = Library(db);
+    final Stream<List<Place>> pinned = lib.watchPinned();
+    final Future<void> sawPin = expectLater(
+      pinned.map((List<Place> p) => p.map((Place x) => x.path).toList()),
+      emitsThrough(<String>['/storage/emulated/0/Download']),
+    );
+    await lib.visit('/storage/emulated/0/Download', 'Download');
+    await lib.setPinned('/storage/emulated/0/Download', 'Download', pinned: true);
+    await sawPin;
+    final Place p = (await lib.watchRecentPlaces().first).single;
+    expect(p.pinned, isTrue);
+    expect(p.visitedAt, isNotNull, reason: 'pinning keeps the visit');
+  });
+
+  test('one file reached through two apps is one recent', () async {
+    final Library lib = Library(db);
+    Future<void> opened(String uri, String fp, int minute) => db
+        .into(db.recents)
+        .insert(
+          RecentsCompanion.insert(
+            uri: uri,
+            fingerprint: Value<String?>(fp),
+            name: uri,
+            openedAt: DateTime(2026, 10, 4, 1, minute),
+          ),
+        );
+    await opened('content://a/1', 'fp1', 1);
+    await opened('content://b/9', 'fp1', 2);
+    await opened('content://a/2', 'fp2', 3);
+    final List<Recent> r = await lib.watchRecents().first;
+    expect(r.map((Recent x) => x.uri), <String>['content://a/2', 'content://b/9']);
   });
 }

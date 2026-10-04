@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -27,8 +28,12 @@ class ReaderSheet extends StatelessWidget {
     required this.child,
     this.heightFactor,
     this.padding = const EdgeInsets.fromLTRB(Space.screen, 10, Space.screen, 0),
+    this.controller,
     super.key,
   });
+
+  /// A draggable sheet's controller, so scrolling the content resizes it.
+  final ScrollController? controller;
 
   final Widget child;
 
@@ -40,6 +45,14 @@ class ReaderSheet extends StatelessWidget {
   Widget build(BuildContext context) {
     final UnfurlColors c = context.colors;
     final double h = MediaQuery.sizeOf(context).height;
+    final Widget handle = Center(
+      child: Container(
+        width: 36,
+        height: 4,
+        margin: const EdgeInsets.only(bottom: Space.lg),
+        decoration: BoxDecoration(color: c.outline, borderRadius: Radii.fullR),
+      ),
+    );
     return Container(
       height: heightFactor == null ? null : h * heightFactor!,
       constraints: BoxConstraints(maxHeight: h * 0.94),
@@ -49,21 +62,24 @@ class ReaderSheet extends StatelessWidget {
         border: Border(top: BorderSide(color: c.outline)),
       ),
       padding: padding.copyWith(bottom: padding.bottom + MediaQuery.paddingOf(context).bottom + Space.lg),
-      child: Column(
-        mainAxisSize: heightFactor == null ? MainAxisSize.min : MainAxisSize.max,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: <Widget>[
-          Center(
-            child: Container(
-              width: 36,
-              height: 4,
-              margin: const EdgeInsets.only(bottom: Space.lg),
-              decoration: BoxDecoration(color: c.outline, borderRadius: Radii.fullR),
+      child: controller != null
+          // Draggable: the handle scrolls with the content, so dragging it
+          // (or anything) resizes the sheet.
+          ? SingleChildScrollView(
+              controller: controller,
+              child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: <Widget>[handle, child]),
+            )
+          : Column(
+              mainAxisSize: heightFactor == null ? MainAxisSize.min : MainAxisSize.max,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                handle,
+                if (heightFactor == null)
+                  Flexible(child: SingleChildScrollView(child: child))
+                else
+                  Expanded(child: child),
+              ],
             ),
-          ),
-          if (heightFactor == null) Flexible(child: SingleChildScrollView(child: child)) else Expanded(child: child),
-        ],
-      ),
     );
   }
 }
@@ -103,41 +119,45 @@ Future<void> showReadingSettings(BuildContext context, {bool pdf = false}) => sh
     duration: Motion.of(context, Motion.sheet),
     curve: Motion.curveOf(context, Motion.decelerate),
   ),
+  // Opens at the board's 540 (Theme to Margins; Page settings 500), over a
+  // page that re-renders live; dragged up it shows every group.
   builder: (BuildContext ctx) => DraggableScrollableSheet(
-    initialChildSize: pdf ? 0.54 : 0.62,
+    initialChildSize: math.min(0.94, (pdf ? 500 : 540) / MediaQuery.sizeOf(ctx).height),
     minChildSize: 0.3,
     maxChildSize: 0.94,
     expand: false,
-    builder: (BuildContext ctx, ScrollController scroll) => ReaderSheet(
-      heightFactor: null,
-      child: SingleChildScrollView(controller: scroll, child: pdf ? const _PageSettings() : const _ReadingSettings()),
-    ),
+    builder: (BuildContext ctx, ScrollController scroll) =>
+        ReaderSheet(controller: scroll, child: pdf ? const _PageSettings() : const _ReadingSettings()),
   ),
 );
 
 class _ThemeSwatches extends ConsumerWidget {
-  const _ThemeSwatches({required this.withLetters});
-
-  final bool withLetters;
+  const _ThemeSwatches();
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final UnfurlColors c = context.colors;
     final ReadingPrefs p = ref.watch(readingPrefsProvider);
     final ReadingThemeId current = p.themeFor(darkChrome: c.isDark, amoledChrome: c.tone == Tone.amoled);
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: <Widget>[
-        for (final ReadingThemeId id in ReadingThemeId.values)
-          ThemeSwatch(
-            theme: ReadingTheme.of(ThemeFamily.saffron, id),
-            selected: id == current,
-            label: withLetters ? ReadingTheme.names[id.index] : null,
-            semantic: '${ReadingTheme.names[id.index]} page',
-            size: 56,
-            onTap: () => ref.read(readingPrefsProvider.notifier).update((ReadingPrefs x) => x.copyWith(theme: id)),
-          ),
-      ],
+    // Seven presets (v2 · V2-02) run off the right edge; the cut-off sixth
+    // swatch says there are more. The ring draws in the 4dp margin.
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      clipBehavior: Clip.none,
+      child: Row(
+        spacing: Space.md - 8,
+        children: <Widget>[
+          for (final ReadingThemeId id in ReadingThemeId.values)
+            ThemeSwatch(
+              theme: ReadingTheme.of(ThemeFamily.saffron, id),
+              selected: id == current,
+              label: ReadingTheme.names[id.index],
+              semantic: '${ReadingTheme.names[id.index]} page',
+              size: 52,
+              onTap: () => ref.read(readingPrefsProvider.notifier).update((ReadingPrefs x) => x.copyWith(theme: id)),
+            ),
+        ],
+      ),
     );
   }
 }
@@ -171,6 +191,7 @@ class ThemeSwatch extends StatelessWidget {
       button: true,
       selected: selected,
       label: semantic,
+      onTap: onTap,
       excludeSemantics: true,
       child: GestureDetector(
         onTap: onTap,
@@ -201,7 +222,7 @@ class ThemeSwatch extends StatelessWidget {
                       'Aa',
                       style: TextStyle(
                         fontFamily: kLiterata,
-                        fontSize: size * 0.27,
+                        fontSize: size * 0.29,
                         fontWeight: FontWeight.w500,
                         color: theme.ink,
                       ),
@@ -211,7 +232,9 @@ class ThemeSwatch extends StatelessWidget {
             if (label != null)
               Text(
                 label!,
-                style: UnfurlType.label.copyWith(fontSize: 11, color: c.onSurface).weight(selected ? 600 : 500),
+                style: UnfurlType.label
+                    .copyWith(fontSize: 11, color: selected ? c.onSurface : c.onSurfaceVariant)
+                    .weight(selected ? 600 : 500),
               ),
           ],
         ),
@@ -229,7 +252,6 @@ class _ReadingSettings extends ConsumerWidget {
     final ReadingPrefs p = ref.watch(readingPrefsProvider);
     final ReadingPrefsController ctl = ref.read(readingPrefsProvider.notifier);
     void set(ReadingPrefs Function(ReadingPrefs) f) => ctl.update(f);
-    final int sizeIndex = ReadingPrefs.sizes.indexOf(p.size);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       spacing: Space.lg,
@@ -243,8 +265,8 @@ class _ReadingSettings extends ConsumerWidget {
               button: true,
               child: InkWell(
                 onTap: ctl.reset,
-                child: SizedBox(
-                  height: IconSpec.tapTarget,
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(minHeight: IconSpec.tapTarget, minWidth: IconSpec.tapTarget),
                   child: Center(
                     child: Text('Reset', style: UnfurlType.monoLabel.copyWith(color: c.accent)),
                   ),
@@ -253,136 +275,104 @@ class _ReadingSettings extends ConsumerWidget {
             ),
           ],
         ),
-        const _ThemeSwatches(withLetters: true),
-        SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          child: Row(
-            spacing: Space.sm,
-            children: <Widget>[
-              for (final ReaderFont f in ReaderFont.values)
-                Semantics(
-                  button: true,
-                  selected: f == p.font,
-                  child: Material(
-                    color: f == p.font ? c.primaryContainer : c.surfaceContainerHigh,
-                    shape: const StadiumBorder(),
-                    child: InkWell(
-                      customBorder: const StadiumBorder(),
+        const _Group(label: 'Reader colours', child: _ThemeSwatches()),
+        _Group(
+          label: 'Font',
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            clipBehavior: Clip.none,
+            child: Row(
+              spacing: Space.sm,
+              children: <Widget>[
+                for (final ReaderFont f in ReaderFont.values)
+                  Semantics(
+                    button: true,
+                    selected: f == p.font,
+                    label: f.label,
+                    onTap: () => set((ReadingPrefs x) => x.copyWith(font: f)),
+                    excludeSemantics: true,
+                    // 44 to the eye, 48 to the finger.
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.opaque,
                       onTap: () => set((ReadingPrefs x) => x.copyWith(font: f)),
-                      child: Container(
-                        height: 44,
-                        padding: const EdgeInsets.symmetric(horizontal: Space.lg),
-                        alignment: Alignment.center,
-                        child: Text(
-                          f.label,
-                          style: TextStyle(
-                            fontFamily: f.family,
-                            fontSize: f == ReaderFont.openDyslexic ? 14 : 15.5,
-                            fontWeight: FontWeight.w500,
-                            color: f == p.font ? c.onPrimaryContainer : c.onSurface,
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 2),
+                        child: Material(
+                          color: f == p.font ? c.primaryContainer : c.surfaceContainerHigh,
+                          shape: const StadiumBorder(),
+                          child: InkWell(
+                            customBorder: const StadiumBorder(),
+                            onTap: () => set((ReadingPrefs x) => x.copyWith(font: f)),
+                            child: Container(
+                              height: 44,
+                              padding: const EdgeInsets.symmetric(horizontal: Space.lg),
+                              alignment: Alignment.center,
+                              child: Text(
+                                f.label,
+                                style: TextStyle(
+                                  fontFamily: f.family,
+                                  fontSize: f == ReaderFont.openDyslexic ? 14 : 15.5,
+                                  fontWeight: FontWeight.w500,
+                                  color: f == p.font ? c.onPrimaryContainer : c.onSurface,
+                                ),
+                              ),
+                            ),
                           ),
                         ),
                       ),
                     ),
                   ),
-                ),
-            ],
+              ],
+            ),
           ),
         ),
-        Row(
+        const Row(
           spacing: 10,
+          crossAxisAlignment: CrossAxisAlignment.end,
           children: <Widget>[
             Expanded(
-              child: _Track(
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: <Widget>[
-                    _StepButton(
-                      label: 'A',
-                      size: 13,
-                      semantic: 'Smaller text',
-                      onTap: sizeIndex > 0
-                          ? () => set((ReadingPrefs x) => x.copyWith(size: ReadingPrefs.sizes[sizeIndex - 1]))
-                          : null,
-                    ),
-                    Text('${p.size.round()}', style: UnfurlType.monoTabular.copyWith(color: c.onSurface)),
-                    _StepButton(
-                      label: 'A',
-                      size: 20,
-                      semantic: 'Larger text',
-                      onTap: sizeIndex < ReadingPrefs.sizes.length - 1
-                          ? () => set((ReadingPrefs x) => x.copyWith(size: ReadingPrefs.sizes[sizeIndex + 1]))
-                          : null,
-                    ),
-                  ],
-                ),
-              ),
+              child: _Group(label: 'Text size', child: TextSizeControl()),
             ),
-            _IconSegments<double>(
-              values: ReadingPrefs.lineHeights,
-              icons: const <IconData>[AppIcons.densitySmall, AppIcons.densityMedium, AppIcons.densityLarge],
-              labels: const <String>['Tight lines', 'Medium lines', 'Loose lines'],
-              selected: p.lineHeight,
-              onChanged: (double v) => set((ReadingPrefs x) => x.copyWith(lineHeight: v)),
-            ),
+            _Group(label: 'Line spacing', child: LineSpacingControl()),
           ],
         ),
-        Row(
+        const Row(
           spacing: 10,
+          crossAxisAlignment: CrossAxisAlignment.end,
           children: <Widget>[
             Expanded(
-              child: SegmentedToggle<double>(
-                options: const <(double, String, IconData?)>[
-                  (16, 'Narrow', null),
-                  (24, 'Margins', null),
-                  (36, 'Wide', null),
-                ],
-                selected: p.margin,
-                onChanged: (double v) => set((ReadingPrefs x) => x.copyWith(margin: v)),
-              ),
+              child: _Group(label: 'Margins', child: MarginsControl()),
             ),
-            _IconSegments<bool>(
-              values: const <bool>[true, false],
-              icons: const <IconData>[AppIcons.alignJustify, AppIcons.alignLeft],
-              labels: const <String>['Justified', 'Left aligned'],
-              selected: p.justify,
-              onChanged: (bool v) => set((ReadingPrefs x) => x.copyWith(justify: v)),
-            ),
+            _Group(label: 'Align', child: AlignControl()),
           ],
         ),
-        _Card(
-          children: <Widget>[
-            _SwitchRow(
-              label: 'Hyphenation',
-              value: p.hyphenate,
-              onChanged: (bool v) => set((ReadingPrefs x) => x.copyWith(hyphenate: v)),
-            ),
-            ConstrainedBox(
-              constraints: const BoxConstraints(minHeight: 52),
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(14, 6, 6, 6),
-                child: Row(
-                  children: <Widget>[
-                    Expanded(
-                      child: Text('Layout', style: UnfurlType.titleMedium.copyWith(color: c.onSurface)),
-                    ),
-                    SizedBox(
-                      width: 168,
-                      child: SegmentedToggle<ReaderLayout>(
-                        options: const <(ReaderLayout, String, IconData?)>[
-                          (ReaderLayout.paged, 'Paged', null),
-                          (ReaderLayout.scroll, 'Scroll', null),
-                        ],
-                        selected: p.layout,
-                        onChanged: (ReaderLayout v) => set((ReadingPrefs x) => x.copyWith(layout: v)),
+        if (p.layout == ReaderLayout.paged) const _Group(label: 'Page turn', child: PageTurnControl()),
+        _Group(
+          label: 'Page',
+          child: _Card(
+            children: <Widget>[
+              ConstrainedBox(
+                constraints: const BoxConstraints(minHeight: 52),
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(14, 6, 6, 6),
+                  child: Row(
+                    children: <Widget>[
+                      Expanded(
+                        child: Text('Layout', style: UnfurlType.titleMedium.copyWith(color: c.onSurface)),
                       ),
-                    ),
-                  ],
+                      const LayoutControl(),
+                    ],
+                  ),
                 ),
               ),
-            ),
-            const _BrightnessRow(),
-          ],
+              _SwitchRow(
+                label: 'Hyphenation',
+                value: p.hyphenate,
+                onChanged: (bool v) => set((ReadingPrefs x) => x.copyWith(hyphenate: v)),
+              ),
+              const BrightnessRow(labelled: true),
+            ],
+          ),
         ),
         const SizedBox(height: Space.sm),
       ],
@@ -403,25 +393,8 @@ class _PageSettings extends ConsumerWidget {
       spacing: Space.lg,
       children: <Widget>[
         Text('Page settings', style: UnfurlType.sheetTitle.copyWith(color: c.onSurface)),
-        Consumer(
-          builder: (BuildContext context, WidgetRef ref, _) {
-            final ReadingThemeId current = p.themeFor(darkChrome: c.isDark, amoledChrome: c.tone == Tone.amoled);
-            return Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: <Widget>[
-                for (final ReadingThemeId id in ReadingThemeId.values)
-                  ThemeSwatch(
-                    theme: ReadingTheme.of(ThemeFamily.saffron, id),
-                    selected: id == current,
-                    letters: false,
-                    size: 56,
-                    semantic: '${ReadingTheme.names[id.index]} page',
-                    onTap: () => set((ReadingPrefs x) => x.copyWith(theme: id)),
-                  ),
-              ],
-            );
-          },
-        ),
+        const _Group(label: 'Reader colours', child: _ThemeSwatches()),
+        const SectionHeader(label: 'Scrolling'),
         SegmentedToggle<PdfLayout>(
           options: const <(PdfLayout, String, IconData?)>[
             (PdfLayout.continuous, 'Continuous', AppIcons.swapVert),
@@ -443,7 +416,7 @@ class _PageSettings extends ConsumerWidget {
               value: p.pdfRecolour,
               onChanged: (bool v) => set((ReadingPrefs x) => x.copyWith(pdfRecolour: v)),
             ),
-            const _BrightnessRow(percent: true),
+            const BrightnessRow(percent: true),
           ],
         ),
         const SizedBox(height: Space.sm),
@@ -452,14 +425,141 @@ class _PageSettings extends ConsumerWidget {
   }
 }
 
+// ------------------------------------------------- shared reading controls
+// One implementation each, used by the Reading settings sheet and by
+// Settings › Reader. Each reads and writes the reading defaults itself.
+
+void _set(WidgetRef ref, ReadingPrefs Function(ReadingPrefs) f) => ref.read(readingPrefsProvider.notifier).update(f);
+
+class TextSizeControl extends ConsumerWidget {
+  const TextSizeControl({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final ReadingPrefs p = ref.watch(readingPrefsProvider);
+    final int at = ReadingPrefs.sizes.indexOf(p.size);
+    return _Track(
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: <Widget>[
+          _StepButton(
+            label: 'A',
+            size: 13,
+            semantic: 'Smaller text',
+            onTap: at > 0 ? () => _set(ref, (ReadingPrefs x) => x.copyWith(size: ReadingPrefs.sizes[at - 1])) : null,
+          ),
+          Text('${p.size.round()}', style: UnfurlType.monoTabular.copyWith(color: context.colors.onSurface)),
+          _StepButton(
+            label: 'A',
+            size: 20,
+            semantic: 'Larger text',
+            onTap: at < ReadingPrefs.sizes.length - 1
+                ? () => _set(ref, (ReadingPrefs x) => x.copyWith(size: ReadingPrefs.sizes[at + 1]))
+                : null,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class LineSpacingControl extends ConsumerWidget {
+  const LineSpacingControl({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) => _IconSegments<double>(
+    values: ReadingPrefs.lineHeights,
+    icons: const <IconData>[AppIcons.densitySmall, AppIcons.densityMedium, AppIcons.densityLarge],
+    labels: const <String>['Tight lines', 'Medium lines', 'Loose lines'],
+    selected: ref.watch(readingPrefsProvider.select((ReadingPrefs p) => p.lineHeight)),
+    onChanged: (double v) => _set(ref, (ReadingPrefs x) => x.copyWith(lineHeight: v)),
+  );
+}
+
+class MarginsControl extends ConsumerWidget {
+  const MarginsControl({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) => SegmentedToggle<double>(
+    options: const <(double, String, IconData?)>[(16, 'Narrow', null), (24, 'Medium', null), (36, 'Wide', null)],
+    selected: ref.watch(readingPrefsProvider.select((ReadingPrefs p) => p.margin)),
+    onChanged: (double v) => _set(ref, (ReadingPrefs x) => x.copyWith(margin: v)),
+  );
+}
+
+class AlignControl extends ConsumerWidget {
+  const AlignControl({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) => _IconSegments<bool>(
+    values: const <bool>[true, false],
+    icons: const <IconData>[AppIcons.alignJustify, AppIcons.alignLeft],
+    labels: const <String>['Justified', 'Left aligned'],
+    selected: ref.watch(readingPrefsProvider.select((ReadingPrefs p) => p.justify)),
+    onChanged: (bool v) => _set(ref, (ReadingPrefs x) => x.copyWith(justify: v)),
+  );
+}
+
+class PageTurnControl extends ConsumerWidget {
+  const PageTurnControl({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) => SegmentedToggle<PageTurn>(
+    options: <(PageTurn, String, IconData?)>[for (final PageTurn t in PageTurn.values) (t, t.label, null)],
+    selected: ref.watch(readingPrefsProvider.select((ReadingPrefs p) => p.pageTurn)),
+    onChanged: (PageTurn v) => _set(ref, (ReadingPrefs x) => x.copyWith(pageTurn: v)),
+  );
+}
+
+class LayoutControl extends ConsumerWidget {
+  const LayoutControl({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) => SizedBox(
+    width: 168,
+    child: SegmentedToggle<ReaderLayout>(
+      options: const <(ReaderLayout, String, IconData?)>[
+        (ReaderLayout.paged, 'Paged', null),
+        (ReaderLayout.scroll, 'Scroll', null),
+      ],
+      selected: ref.watch(readingPrefsProvider.select((ReadingPrefs p) => p.layout)),
+      onChanged: (ReaderLayout v) => _set(ref, (ReadingPrefs x) => x.copyWith(layout: v)),
+    ),
+  );
+}
+
+/// A sheet group under its Mull section header (v2 · V2-01), 8dp apart.
+class _Group extends StatelessWidget {
+  const _Group({required this.label, required this.child});
+
+  final String label;
+  final Widget child;
+
+  @override
+  // A group beside an Expanded one has no width of its own: it takes its
+  // control's. Under a tight width (Expanded, the sheet) this is a no-op.
+  Widget build(BuildContext context) => IntrinsicWidth(
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      spacing: Space.sm,
+      children: <Widget>[
+        SectionHeader(label: label),
+        child,
+      ],
+    ),
+  );
+}
+
 class _Track extends StatelessWidget {
   const _Track({required this.child});
 
   final Widget child;
 
   @override
+  // The vertical padding belongs to the controls inside (40 to the eye, 48
+  // to the finger), as in SegmentedToggle.
   Widget build(BuildContext context) => Container(
-    padding: const EdgeInsets.all(Space.xs),
+    padding: const EdgeInsets.symmetric(horizontal: Space.xs),
     decoration: BoxDecoration(color: context.colors.surfaceContainerHigh, borderRadius: Radii.fullR),
     child: child,
   );
@@ -478,19 +578,27 @@ class _StepButton extends StatelessWidget {
     button: true,
     enabled: onTap != null,
     label: semantic,
+    onTap: onTap,
     excludeSemantics: true,
-    child: InkWell(
+    child: GestureDetector(
+      behavior: HitTestBehavior.opaque,
       onTap: onTap,
-      customBorder: const StadiumBorder(),
-      child: SizedBox(
-        width: 48,
-        height: 40,
-        child: Center(
-          child: Text(
-            label,
-            style: UnfurlType.titleMedium.copyWith(
-              fontSize: size,
-              color: onTap == null ? context.colors.onSurfaceMuted : context.colors.icon,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: Space.xs),
+        child: InkWell(
+          onTap: onTap,
+          customBorder: const StadiumBorder(),
+          child: SizedBox(
+            width: 48,
+            height: 40,
+            child: Center(
+              child: Text(
+                label,
+                style: UnfurlType.titleMedium.copyWith(
+                  fontSize: size,
+                  color: onTap == null ? context.colors.onSurfaceMuted : context.colors.icon,
+                ),
+              ),
             ),
           ),
         ),
@@ -526,19 +634,24 @@ class _IconSegments<T> extends StatelessWidget {
               button: true,
               selected: values[i] == selected,
               label: labels[i],
+              onTap: () => onChanged(values[i]),
               excludeSemantics: true,
               child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
                 onTap: () => onChanged(values[i]),
-                child: AnimatedContainer(
-                  duration: Motion.of(context, Motion.fast),
-                  width: 44,
-                  height: 40,
-                  decoration: BoxDecoration(
-                    color: values[i] == selected ? c.surface : c.surface.withValues(alpha: 0),
-                    borderRadius: Radii.fullR,
-                    border: Border.all(color: values[i] == selected ? c.outline : c.outline.withValues(alpha: 0)),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: Space.xs),
+                  child: AnimatedContainer(
+                    duration: Motion.of(context, Motion.fast),
+                    width: IconSpec.tapTarget,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: values[i] == selected ? c.surface : c.surface.withValues(alpha: 0),
+                      borderRadius: Radii.fullR,
+                      border: Border.all(color: values[i] == selected ? c.outline : c.outline.withValues(alpha: 0)),
+                    ),
+                    child: AppIcon(icons[i], size: 20, color: values[i] == selected ? c.onSurface : c.iconMuted),
                   ),
-                  child: AppIcon(icons[i], size: 20, color: values[i] == selected ? c.onSurface : c.iconMuted),
                 ),
               ),
             ),
@@ -611,10 +724,21 @@ class _SwitchRow extends StatelessWidget {
 }
 
 /// Screen brightness for reading, or the system's ("Auto").
-class _BrightnessRow extends ConsumerWidget {
-  const _BrightnessRow({this.percent = false});
+class BrightnessRow extends ConsumerWidget {
+  const BrightnessRow({this.percent = false, this.labelled = false, this.live = true, this.inset = 14, super.key});
 
   final bool percent;
+
+  /// In the reader the screen follows the slider; in Settings it only sets
+  /// the default the reader applies.
+  final bool live;
+
+  /// Left padding: 14 in a sheet card, Space.lg in a settings list.
+  final double inset;
+
+  /// Reading settings name the row "Brightness" (v2 · V2-01); Page settings
+  /// keep the icon.
+  final bool labelled;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -624,10 +748,13 @@ class _BrightnessRow extends ConsumerWidget {
     return SizedBox(
       height: 52,
       child: Padding(
-        padding: const EdgeInsets.only(left: 14),
+        padding: EdgeInsets.only(left: inset),
         child: Row(
           children: <Widget>[
-            AppIcon(AppIcons.brightness, size: 20, color: c.icon),
+            if (labelled)
+              Text('Brightness', style: UnfurlType.titleMedium.copyWith(color: c.onSurface))
+            else
+              AppIcon(AppIcons.brightness, size: 20, color: c.icon),
             Expanded(
               child: SliderTheme(
                 data: SliderThemeData(
@@ -643,7 +770,7 @@ class _BrightnessRow extends ConsumerWidget {
                   label: 'Brightness',
                   onChanged: (double x) {
                     ref.read(readingPrefsProvider.notifier).update((ReadingPrefs s) => s.copyWith(brightness: x));
-                    unawaited(Platform.setBrightness(x));
+                    if (live) unawaited(Platform.setBrightness(x));
                   },
                 ),
               ),
@@ -654,7 +781,7 @@ class _BrightnessRow extends ConsumerWidget {
               child: InkWell(
                 onTap: () {
                   ref.read(readingPrefsProvider.notifier).update((ReadingPrefs s) => s.copyWith(clearBrightness: true));
-                  unawaited(Platform.setBrightness(null));
+                  if (live) unawaited(Platform.setBrightness(null));
                 },
                 child: SizedBox(
                   width: 56,
@@ -953,6 +1080,7 @@ class _ContentsSheetState extends State<ContentsSheet> {
                 button: true,
                 selected: _color == h.index,
                 label: '${h.label} highlights',
+                onTap: () => setState(() => _color = h.index),
                 excludeSemantics: true,
                 child: Material(
                   color: _color == h.index ? c.primaryContainer : c.surfaceContainerHigh,

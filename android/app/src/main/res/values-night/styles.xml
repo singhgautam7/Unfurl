@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- While the process starts: the chrome surface, never white or black. -->
+    <!-- While the process starts: the splash (pale ochre, glyph centred). -->
     <style name="LaunchTheme" parent="@android:style/Theme.Black.NoTitleBar">
         <item name="android:windowBackground">@drawable/launch_background</item>
         <item name="android:forceDarkAllowed">false</item>

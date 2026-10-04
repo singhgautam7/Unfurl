@@ -24,8 +24,11 @@ class BookItem {
   String? get fingerprint => entry.fingerprint ?? doc?.fingerprint;
   FormatModule get format => Formats.of(entry.name, entry.mime) ?? Formats.pdf;
 
-  /// "Books › Austen": the folder, then the subfolders down to the file.
-  String get path => <String>[folder.name, if (entry.parent.isNotEmpty) ...entry.parent.split('/')].join(' › ');
+  /// "Books › Austen": the folder, then the subfolders down to the file. A
+  /// book found across the device shows where it is on the phone.
+  String get path => folder.source == 'device'
+      ? (entry.parent.isEmpty ? 'Internal storage' : entry.parent.split('/').join(' › '))
+      : <String>[folder.name, if (entry.parent.isNotEmpty) ...entry.parent.split('/')].join(' › ');
 
   DocRef get ref =>
       DocRef(uri: entry.uri, name: entry.name, size: entry.size, modified: entry.modified, mime: entry.mime);
@@ -90,8 +93,12 @@ class Library {
 
   // ---------------------------------------------------------------- folders
 
+  /// The user's folders (not the hidden "this device" row).
   Stream<List<Folder>> watchFolders() =>
-      (db.select(db.folders)..orderBy(<OrderClauseGenerator<$FoldersTable>>[(f) => OrderingTerm.asc(f.name)])).watch();
+      (db.select(db.folders)
+            ..where((f) => f.source.equals('device').not())
+            ..orderBy(<OrderClauseGenerator<$FoldersTable>>[(f) => OrderingTerm.asc(f.name)]))
+          .watch();
 
   Future<Folder?> folder(int id) => (db.select(db.folders)..where((f) => f.id.equals(id))).getSingleOrNull();
 
@@ -120,13 +127,105 @@ class Library {
     return (await folder(id))!;
   }
 
+  /// Adds a folder picked in Files (all-files access), stored as its path.
+  Future<Folder> addPathFolder(String path, {required String name, required String readable}) async {
+    final String uri = Uri.file(path).toString();
+    final Folder? existing = await (db.select(db.folders)..where((f) => f.uri.equals(uri))).getSingleOrNull();
+    final int id =
+        existing?.id ??
+        await db
+            .into(db.folders)
+            .insert(
+              FoldersCompanion.insert(
+                uri: uri,
+                name: name,
+                path: Value<String>(readable),
+                addedAt: DateTime.now(),
+                source: const Value<String>('path_folder'),
+              ),
+            );
+    if (existing != null) {
+      await (db.update(
+        db.folders,
+      )..where((f) => f.id.equals(id))).write(const FoldersCompanion(accessLost: Value<bool>(false)));
+    }
+    await scan(id);
+    return (await folder(id))!;
+  }
+
+  /// What Unfurl knows about files by where they were last opened from.
+  Future<Map<String, Document>> documentsByUris(Iterable<String> uris) async {
+    final List<String> all = uris.toList();
+    final Map<String, Document> out = <String, Document>{};
+    for (int i = 0; i < all.length; i += 500) {
+      final List<String> chunk = all.sublist(i, (i + 500).clamp(0, all.length));
+      for (final Document d in await (db.select(db.documents)..where((x) => x.uri.isIn(chunk))).get()) {
+        out[d.uri] = d;
+      }
+    }
+    return out;
+  }
+
+  /// Books (PDF and EPUB) indexed under a folder.
+  Future<int> bookCount(int folderId) async => (await (db.select(
+    db.entries,
+  )..where((e) => e.folderId.equals(folderId) & e.isDir.equals(false) & e.ext.isIn(bookExts))).get()).length;
+
+  /// Folders whose path is [path] or holds it.
+  Future<Folder?> folderForPath(String path) async {
+    for (final Folder f in await db.select(db.folders).get()) {
+      if (f.source == 'device') continue;
+      final String? own = Uri.tryParse(f.uri)?.scheme == 'file' ? Uri.parse(f.uri).toFilePath() : null;
+      if (own == path) return f;
+    }
+    return null;
+  }
+
+  // ---------------------------------------------------------------- places
+
+  /// Files tab: pinned folders, by name.
+  Stream<List<Place>> watchPinned() =>
+      (db.select(db.places)
+            ..where((p) => p.pinned.equals(true))
+            ..orderBy(<OrderClauseGenerator<$PlacesTable>>[(p) => OrderingTerm.asc(p.name)]))
+          .watch();
+
+  /// Files tab: the last eight folders opened.
+  Stream<List<Place>> watchRecentPlaces() =>
+      (db.select(db.places)
+            ..where((p) => p.visitedAt.isNotNull())
+            ..orderBy(<OrderClauseGenerator<$PlacesTable>>[(p) => OrderingTerm.desc(p.visitedAt)])
+            ..limit(8))
+          .watch();
+
+  Stream<bool> watchPinnedPath(String path) => (db.select(
+    db.places,
+  )..where((p) => p.path.equals(path))).watchSingleOrNull().map((Place? p) => p?.pinned ?? false);
+
+  // Upserts through drift (not customStatement) so the Files lists update live.
+  Future<void> visit(String path, String name) => db
+      .into(db.places)
+      .insert(
+        PlacesCompanion.insert(path: path, name: name, visitedAt: Value<DateTime?>(DateTime.now())),
+        onConflict: DoUpdate(
+          (_) => PlacesCompanion(name: Value<String>(name), visitedAt: Value<DateTime?>(DateTime.now())),
+        ),
+      );
+
+  Future<void> setPinned(String path, String name, {required bool pinned}) => db
+      .into(db.places)
+      .insert(
+        PlacesCompanion.insert(path: path, name: name, pinned: Value<bool>(pinned)),
+        onConflict: DoUpdate((_) => PlacesCompanion(pinned: Value<bool>(pinned))),
+      );
+
   /// Remove access: the grant is released and the folder leaves the index;
   /// documents keep their positions and notes (keyed by fingerprint).
   Future<void> removeFolder(Folder f) async {
     await _running.remove(f.id)?.cancel();
     final Completer<void>? finishing = _finishing.remove(f.id);
     if (finishing != null && !finishing.isCompleted) finishing.complete();
-    await Platform.releaseFolder(f.uri);
+    if (f.source == 'saf_folder') await Platform.releaseFolder(f.uri);
     await (db.delete(db.folders)..where((x) => x.id.equals(f.id))).go();
   }
 
@@ -154,14 +253,22 @@ class Library {
   /// Marks folders whose grant Android removed, and rescans the rest.
   Future<void> refreshAll() async {
     final List<String> granted = await Platform.persistedFolders();
+    final bool allFiles = await Platform.hasAllFilesAccess();
     for (final Folder f in await db.select(db.folders).get()) {
-      final bool lost = granted.isNotEmpty || !kIsWeb ? !granted.contains(f.uri) : false;
+      // Path folders and the device row live on all-files access; the rest on
+      // their own SAF grant.
+      final bool lost = f.source == 'saf_folder' ? !granted.contains(f.uri) : !allFiles;
       if (lost != f.accessLost) {
         await (db.update(
           db.folders,
         )..where((x) => x.id.equals(f.id))).write(FoldersCompanion(accessLost: Value<bool>(lost)));
       }
-      if (!lost) unawaited(scan(f.id));
+      if (lost) continue;
+      if (f.source == 'device') {
+        unawaited(_rescanDevice(f));
+      } else {
+        unawaited(scan(f.id));
+      }
     }
   }
 
@@ -217,6 +324,7 @@ class Library {
                     isDir: s.isDir,
                     size: Value<int>(s.size),
                     modified: Value<int>(s.modified),
+                    source: Value<String>(f.source),
                   ),
                   mode: InsertMode.insertOrIgnore,
                 );
@@ -304,11 +412,56 @@ class Library {
   }
 
   /// Every book in every folder, with its document.
-  Stream<List<BookItem>> watchBooks() {
-    final JoinedSelectStatement<HasResultSet, dynamic> q = db.select(db.entries).join(<Join<HasResultSet, dynamic>>[
-      innerJoin(db.folders, db.folders.id.equalsExp(db.entries.folderId)),
-      leftOuterJoin(db.documents, db.documents.fingerprint.equalsExp(db.entries.fingerprint)),
-    ])..where(db.entries.isDir.equals(false) & db.entries.hidden.equals(false) & db.entries.ext.isIn(bookExts));
+  /// The hidden folder row that holds "Find books across this device".
+  static const String deviceUri = 'device://all';
+
+  /// Turns device-wide discovery on (MediaStore, all-files access) or off.
+  /// Off removes its rows; positions and notes stay (keyed by fingerprint).
+  Future<void> setFindOnDevice({required bool on}) async {
+    final Folder? existing = await (db.select(db.folders)..where((f) => f.uri.equals(deviceUri))).getSingleOrNull();
+    if (!on) {
+      if (existing != null) await (db.delete(db.folders)..where((f) => f.id.equals(existing.id))).go();
+      return;
+    }
+    final int id =
+        existing?.id ??
+        await db
+            .into(db.folders)
+            .insert(
+              FoldersCompanion.insert(
+                uri: deviceUri,
+                name: 'This device',
+                addedAt: DateTime.now(),
+                source: const Value<String>('device'),
+              ),
+            );
+    await _rescanDevice((await folder(id))!, force: existing == null);
+  }
+
+  /// MediaStore's generation is kept in the device row's `path`: a rescan
+  /// runs only when it has moved (or on first use).
+  Future<void> _rescanDevice(Folder f, {bool force = false}) async {
+    final int gen = await Platform.mediaGeneration();
+    if (!force && gen >= 0 && f.path == 'gen:$gen') return;
+    await scan(f.id);
+    await (db.update(
+      db.folders,
+    )..where((x) => x.id.equals(f.id))).write(FoldersCompanion(path: Value<String>('gen:$gen')));
+  }
+
+  /// Library's books: those in added folders, or with "Find books across
+  /// this device" every PDF and EPUB on the phone.
+  Stream<List<BookItem>> watchBooks({bool device = false}) {
+    final JoinedSelectStatement<HasResultSet, dynamic> q =
+        db.select(db.entries).join(<Join<HasResultSet, dynamic>>[
+          innerJoin(db.folders, db.folders.id.equalsExp(db.entries.folderId)),
+          leftOuterJoin(db.documents, db.documents.fingerprint.equalsExp(db.entries.fingerprint)),
+        ])..where(
+          db.entries.isDir.equals(false) &
+              db.entries.hidden.equals(false) &
+              db.entries.ext.isIn(bookExts) &
+              (device ? db.folders.source.equals('device') : db.folders.source.equals('device').not()),
+        );
     return q.watch().map(
       (List<TypedResult> rows) => <BookItem>[
         for (final TypedResult r in rows)
@@ -471,11 +624,20 @@ class Library {
         ),
       );
 
+  /// Newest first, one row per document: the same file reached through two
+  /// apps has two URIs but one fingerprint.
   Stream<List<Recent>> watchRecents() =>
       (db.select(db.recents)
             ..orderBy(<OrderClauseGenerator<$RecentsTable>>[(r) => OrderingTerm.desc(r.openedAt)])
-            ..limit(30))
-          .watch();
+            ..limit(60))
+          .watch()
+          .map((List<Recent> all) {
+            final Set<String> seen = <String>{};
+            return <Recent>[
+              for (final Recent r in all)
+                if (r.fingerprint == null || seen.add(r.fingerprint!)) r,
+            ].take(30).toList();
+          });
 
   Future<void> removeRecent(String uri) => (db.delete(db.recents)..where((r) => r.uri.equals(uri))).go();
 

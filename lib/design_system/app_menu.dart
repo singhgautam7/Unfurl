@@ -15,6 +15,8 @@ class AppMenuEntry<T> {
     required this.icon,
     this.subtitle,
     this.selected = false,
+    this.switchValue,
+    this.accentIcon = false,
   }) : divider = false;
 
   const AppMenuEntry.divider()
@@ -23,6 +25,8 @@ class AppMenuEntry<T> {
       icon = null,
       subtitle = null,
       selected = false,
+      switchValue = null,
+      accentIcon = false,
       divider = true;
 
   final T? value;
@@ -35,6 +39,12 @@ class AppMenuEntry<T> {
   /// The current sort or view: a `primaryContainer` pill.
   final bool selected;
   final bool divider;
+
+  /// A trailing switch showing this setting's state (tapping the row flips it).
+  final bool? switchValue;
+
+  /// The icon filled and in `accent` (a pinned folder's star).
+  final bool accentIcon;
 }
 
 /// The overflow menu (board 2, A3 and A6): a `surface` card with a 1px
@@ -107,8 +117,13 @@ class _MenuRow<T> extends StatelessWidget {
       child: Row(
         spacing: Space.lg,
         children: <Widget>[
-          if (entry.icon != null) AppIcon(entry.icon!, color: entry.selected ? fg : c.icon),
-          Flexible(
+          if (entry.icon != null)
+            AppIcon(
+              entry.icon!,
+              fill: entry.accentIcon,
+              color: entry.accentIcon ? c.accent : (entry.selected ? fg : c.icon),
+            ),
+          Expanded(
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -122,6 +137,10 @@ class _MenuRow<T> extends StatelessWidget {
               ],
             ),
           ),
+          if (entry.switchValue != null)
+            IgnorePointer(
+              child: Switch(value: entry.switchValue!, onChanged: (_) {}),
+            ),
         ],
       ),
     );

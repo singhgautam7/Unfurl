@@ -171,6 +171,7 @@ class ListRow extends StatelessWidget {
     return Semantics(
       button: true,
       label: value == null ? label : '$label, $value',
+      onTap: onTap,
       excludeSemantics: true,
       child: InkWell(onTap: onTap, child: content),
     );

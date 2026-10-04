@@ -26,6 +26,7 @@ import '../../design_system/containers.dart';
 import '../../design_system/covers.dart';
 import '../../formats/format_registry.dart';
 import '../library/library_screen.dart' show openBook;
+import '../files/files_screen.dart' show addFolder;
 
 /// Board 2, A1: Continue reading, recent books, recent files, and the
 /// folder cards (no folder yet, access lost), which sit above everything
@@ -104,7 +105,7 @@ class HomeScreen extends ConsumerWidget {
                         if (!context.mounted) return;
                         switch (choice) {
                           case 'add':
-                            await addFolderFlow(context, ref);
+                            await addFolder(context, ref);
                           case 'folders':
                             await context.push(Routes.folders);
                           case 'settings':
@@ -127,17 +128,19 @@ class HomeScreen extends ConsumerWidget {
                         body: 'Unfurl lists the books and documents in folders you choose. It only reads them.',
                         action: 'Add folder',
                         actionIcon: AppIcons.createNewFolder,
-                        onAction: () => addFolderFlow(context, ref),
+                        onAction: () => addFolder(context, ref),
                       ),
                     for (final Folder f in lost)
                       _FolderCard(
                         icon: AppIcons.folderOff,
                         danger: true,
                         title: 'Unfurl can’t see ${f.name} anymore',
-                        body: 'Access was removed by Android. Your progress, highlights and notes are kept.',
-                        action: 'Grant access again',
+                        body: f.source == 'saf_folder'
+                            ? 'Access was removed by Android. Your progress, highlights and notes are kept.'
+                            : 'All files access was turned off. Your progress, highlights and notes are kept.',
+                        action: f.source == 'saf_folder' ? 'Grant access again' : 'Go to Files',
                         actionIcon: AppIcons.folderOpen,
-                        onAction: () => regrantFolder(context, ref),
+                        onAction: () => regrantFolder(context, ref, f),
                       ),
                     if (hero != null) ...<Widget>[
                       Reveal(
@@ -421,6 +424,7 @@ class _ResumeButton extends StatelessWidget {
     return Semantics(
       button: true,
       label: 'Resume',
+      onTap: onTap,
       excludeSemantics: true,
       child: Material(
         color: c.primary,

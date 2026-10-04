@@ -31,6 +31,7 @@ class EmptyState extends StatelessWidget {
     this.tone = EmptyTone.accent,
     this.small = false,
     this.actions = const <Widget>[],
+    this.aboveNav = false,
     super.key,
   });
 
@@ -42,6 +43,9 @@ class EmptyState extends StatelessWidget {
   /// The 30dp title a folder's states use; 40 otherwise.
   final bool small;
   final List<Widget> actions;
+
+  /// On a tab's root, where the actions must clear the floating nav pill.
+  final bool aboveNav;
 
   @override
   Widget build(BuildContext context) {
@@ -75,7 +79,7 @@ class EmptyState extends StatelessWidget {
         ),
         if (actions.isNotEmpty)
           Padding(
-            padding: const EdgeInsets.fromLTRB(Space.screen, 0, Space.screen, 36),
+            padding: EdgeInsets.fromLTRB(Space.screen, 0, Space.screen, aboveNav ? Space.bottomSafe : 36),
             child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, spacing: 10, children: actions),
           ),
       ],

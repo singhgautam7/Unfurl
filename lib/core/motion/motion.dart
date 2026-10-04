@@ -22,6 +22,12 @@ abstract final class Motion {
   static const Duration chromeToggle = Duration(milliseconds: 160);
   static const Duration pageTurn = Duration(milliseconds: 260);
 
+  /// Page-turn styles (v2 · V2-03): Curl settles in 420, Cover slides over
+  /// in 300, Fade cross-fades in 150. Slide uses [pageTurn].
+  static const Duration pageCurl = Duration(milliseconds: 420);
+  static const Duration pageCover = Duration(milliseconds: 300);
+  static const Duration pageFade = Duration(milliseconds: 150);
+
   /// Page to Reader, three phases. Reader to Page plays it back at
   /// [unfurlReverse].
   static const Duration unfurl = Duration(milliseconds: 520);

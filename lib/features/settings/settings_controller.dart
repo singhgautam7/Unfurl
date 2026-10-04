@@ -13,11 +13,14 @@ class AppSettings {
     this.themeMode = ThemeMode.system,
     this.amoled = false,
     this.dynamicColor = true,
+    this.familyId = 'saffron',
     this.wallpaperSeed,
     this.onboarded = false,
     this.openedFile = false,
     this.libraryGrid = true,
     this.librarySort = 'recent',
+    this.findOnDevice = false,
+    this.showHidden = false,
   });
 
   final ThemeMode themeMode;
@@ -25,6 +28,9 @@ class AppSettings {
   /// True black chrome. Only takes effect while dark is in effect.
   final bool amoled;
   final bool dynamicColor;
+
+  /// The chosen colour family when dynamic colour is off (Settings › Theme).
+  final String familyId;
 
   /// The last wallpaper seed Android handed over, cached so a cold start with
   /// dynamic colour draws its first frame in the wallpaper's hue.
@@ -41,8 +47,15 @@ class AppSettings {
   /// 'recent', 'title' or 'progress'.
   final String librarySort;
 
+  /// "Find books across this device": Library lists every PDF and EPUB on the
+  /// phone (all-files access only), instead of added folders.
+  final bool findOnDevice;
+
+  /// Files: show hidden (dot) files by default; each folder can override.
+  final bool showHidden;
+
   ThemeFamily get family =>
-      dynamicColor && wallpaperSeed != null ? ThemeFamily.fromSeed(wallpaperSeed!) : ThemeFamily.saffron;
+      dynamicColor && wallpaperSeed != null ? ThemeFamily.fromSeed(wallpaperSeed!) : ThemeFamily.byId(familyId);
 
   Tone toneFor(Brightness platform) {
     final bool dark = switch (themeMode) {
@@ -58,30 +71,39 @@ class AppSettings {
     ThemeMode? themeMode,
     bool? amoled,
     bool? dynamicColor,
+    String? familyId,
     Color? wallpaperSeed,
     bool? onboarded,
     bool? openedFile,
     bool? libraryGrid,
     String? librarySort,
+    bool? findOnDevice,
+    bool? showHidden,
   }) => AppSettings(
     themeMode: themeMode ?? this.themeMode,
     amoled: amoled ?? this.amoled,
     dynamicColor: dynamicColor ?? this.dynamicColor,
+    familyId: familyId ?? this.familyId,
     wallpaperSeed: wallpaperSeed ?? this.wallpaperSeed,
     onboarded: onboarded ?? this.onboarded,
     openedFile: openedFile ?? this.openedFile,
     libraryGrid: libraryGrid ?? this.libraryGrid,
     librarySort: librarySort ?? this.librarySort,
+    findOnDevice: findOnDevice ?? this.findOnDevice,
+    showHidden: showHidden ?? this.showHidden,
   );
 
   static const String kMode = 'theme.mode';
   static const String kAmoled = 'theme.amoled';
   static const String kDynamic = 'theme.dynamic';
   static const String kSeed = 'theme.seed';
+  static const String kFamily = 'theme.family';
   static const String kOnboarded = 'app.onboarded';
   static const String kOpenedFile = 'app.openedFile';
   static const String kLibraryGrid = 'library.grid';
   static const String kLibrarySort = 'library.sort';
+  static const String kFindOnDevice = 'library.findOnDevice';
+  static const String kShowHidden = 'files.showHidden';
 
   /// Read by `MainActivity` (as `flutter.theme.launch*`) to paint the window
   /// before Flutter's first frame, so a launch never flashes white or black.
@@ -97,11 +119,14 @@ class AppSettings {
       ),
       amoled: prefs.getBool(kAmoled) ?? false,
       dynamicColor: prefs.getBool(kDynamic) ?? true,
+      familyId: prefs.getString(kFamily) ?? 'saffron',
       wallpaperSeed: seed == null ? null : Color(seed),
       onboarded: prefs.getBool(kOnboarded) ?? false,
       openedFile: prefs.getBool(kOpenedFile) ?? false,
       libraryGrid: prefs.getBool(kLibraryGrid) ?? true,
       librarySort: prefs.getString(kLibrarySort) ?? 'recent',
+      findOnDevice: prefs.getBool(kFindOnDevice) ?? false,
+      showHidden: prefs.getBool(kShowHidden) ?? false,
     );
   }
 }
@@ -127,6 +152,12 @@ class SettingsController extends Notifier<AppSettings> {
   Future<void> setAmoled({required bool value}) async {
     state = state.copyWith(amoled: value);
     await _prefs.setBool(AppSettings.kAmoled, value);
+    await _cacheLaunchColours();
+  }
+
+  Future<void> setFamily(String id) async {
+    state = state.copyWith(familyId: id);
+    await _prefs.setString(AppSettings.kFamily, id);
     await _cacheLaunchColours();
   }
 
@@ -164,6 +195,16 @@ class SettingsController extends Notifier<AppSettings> {
   Future<void> setLibrarySort(String sort) async {
     state = state.copyWith(librarySort: sort);
     await _prefs.setString(AppSettings.kLibrarySort, sort);
+  }
+
+  Future<void> setFindOnDevice({required bool value}) async {
+    state = state.copyWith(findOnDevice: value);
+    await _prefs.setBool(AppSettings.kFindOnDevice, value);
+  }
+
+  Future<void> setShowHidden({required bool value}) async {
+    state = state.copyWith(showHidden: value);
+    await _prefs.setBool(AppSettings.kShowHidden, value);
   }
 
   /// Grid or list, remembered per folder level.

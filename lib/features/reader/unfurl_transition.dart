@@ -45,6 +45,14 @@ class _UnfurlSwitcherState extends State<UnfurlSwitcher> with SingleTickerProvid
     value: widget.reader ? 1 : 0,
   );
 
+  // The two sides move between the resting tree and the animating Stack;
+  // global keys carry their state (scroll position, zoom, layout) along.
+  final GlobalKey _pageKey = GlobalKey(debugLabel: 'unfurl page');
+  final GlobalKey _readerKey = GlobalKey(debugLabel: 'unfurl reader');
+
+  Widget get _page => KeyedSubtree(key: _pageKey, child: widget.page);
+  Widget? get _reader => widget.readerChild == null ? null : KeyedSubtree(key: _readerKey, child: widget.readerChild!);
+
   @override
   void didUpdateWidget(UnfurlSwitcher old) {
     super.didUpdateWidget(old);
@@ -71,17 +79,19 @@ class _UnfurlSwitcherState extends State<UnfurlSwitcher> with SingleTickerProvid
       animation: _t,
       builder: (BuildContext context, Widget? _) {
         final double t = _t.value;
-        if (t <= 0) return widget.page;
-        if (t >= 1 && widget.readerChild != null) return widget.readerChild!;
+        final Widget page = _page;
+        final Widget? reader = _reader;
+        if (t <= 0) return page;
+        if (t >= 1 && reader != null) return reader;
         if (reduced) {
           return Stack(
             children: <Widget>[
               Positioned.fill(
-                child: Opacity(opacity: 1 - t, child: widget.page),
+                child: Opacity(opacity: 1 - t, child: page),
               ),
-              if (widget.readerChild != null)
+              if (reader != null)
                 Positioned.fill(
-                  child: Opacity(opacity: t, child: widget.readerChild),
+                  child: Opacity(opacity: t, child: reader),
                 ),
             ],
           );
@@ -103,11 +113,11 @@ class _UnfurlSwitcherState extends State<UnfurlSwitcher> with SingleTickerProvid
                     child: Transform(
                       alignment: Alignment(0, (a / h) * 2 - 1),
                       transform: Matrix4.diagonal3Values(1 + 0.07 * lift, 1 + 0.07 * lift, 1),
-                      child: widget.page,
+                      child: page,
                     ),
                   ),
                 ),
-                if (widget.readerChild != null)
+                if (reader != null)
                   Positioned.fill(
                     child: ClipRect(
                       clipper: _Reveal(top: a - above, bottom: a + below),
@@ -115,10 +125,7 @@ class _UnfurlSwitcherState extends State<UnfurlSwitcher> with SingleTickerProvid
                       // through each other; a brief fade as the roll starts.
                       child: Opacity(
                         opacity: _phase(t, 140 / 520, 200 / 520),
-                        child: Transform.translate(
-                          offset: Offset(0, 6 * (1 - unroll.clamp(0, 1))),
-                          child: widget.readerChild,
-                        ),
+                        child: Transform.translate(offset: Offset(0, 6 * (1 - unroll.clamp(0, 1))), child: reader),
                       ),
                     ),
                   ),

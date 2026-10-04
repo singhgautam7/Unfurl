@@ -15,22 +15,55 @@ import java.io.File
 class Storage(private val context: Context) {
     private val resolver = context.contentResolver
 
-    /** Name, size, type and modified time of one document, or null when it is gone or no longer readable. */
-    fun stat(uri: Uri): Map<String, Any?>? = try {
-        val cols = arrayOf(OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE, DocumentsContract.Document.COLUMN_LAST_MODIFIED)
-        resolver.query(uri, cols, null, null, null)?.use { c ->
-            if (!c.moveToFirst()) return null
-            val modifiedCol = c.getColumnIndex(DocumentsContract.Document.COLUMN_LAST_MODIFIED)
-            mapOf(
+    /**
+     * Name, size, type and modified time of one document, or null when it is gone or no
+     * longer readable. File managers, MediaStore and SAF all name these columns differently
+     * (or not at all), so every column is asked for and whichever exist are read; a provider
+     * that refuses the query still answers through the file itself.
+     */
+    fun stat(uri: Uri): Map<String, Any?>? {
+        if (uri.scheme == "file") {
+            // A path from the Files tab (all-files access): read straight from the file.
+            val f = File(uri.path ?: return null)
+            if (!f.isFile || !f.canRead()) return null
+            val ext = f.name.substringAfterLast('.', "").lowercase()
+            return mapOf(
                 "uri" to uri.toString(),
-                "name" to c.getString(0),
-                "size" to if (c.isNull(1)) 0L else c.getLong(1),
-                "modified" to if (modifiedCol < 0 || c.isNull(modifiedCol)) 0L else c.getLong(modifiedCol),
-                "mime" to resolver.getType(uri),
+                "name" to f.name,
+                "size" to f.length(),
+                "modified" to f.lastModified(),
+                "mime" to android.webkit.MimeTypeMap.getSingleton().getMimeTypeFromExtension(ext),
             )
         }
-    } catch (_: Exception) {
-        null
+        val queried = try {
+            resolver.query(uri, null, null, null, null)?.use { c ->
+                if (!c.moveToFirst()) return@use null
+                fun col(vararg names: String) = names.map(c::getColumnIndex).firstOrNull { it >= 0 && !c.isNull(it) }
+                val modified = col(DocumentsContract.Document.COLUMN_LAST_MODIFIED)?.let(c::getLong)
+                    ?: col("date_modified")?.let { c.getLong(it) * 1000 } // MediaStore keeps seconds
+                    ?: 0L
+                mapOf(
+                    "name" to col(OpenableColumns.DISPLAY_NAME, "_display_name", "title")?.let(c::getString),
+                    "size" to (col(OpenableColumns.SIZE, "_size")?.let(c::getLong) ?: -1L),
+                    "modified" to modified,
+                )
+            }
+        } catch (_: Exception) {
+            null
+        }
+        // Readable at all? (Also the size when the provider didn't say.)
+        val size = try {
+            resolver.openFileDescriptor(uri, "r")?.use { it.statSize } ?: return null
+        } catch (_: Exception) {
+            return null
+        }
+        return mapOf(
+            "uri" to uri.toString(),
+            "name" to (queried?.get("name") ?: uri.lastPathSegment?.substringAfterLast('/') ?: "Document"),
+            "size" to ((queried?.get("size") as Long?)?.takeIf { it >= 0 } ?: size.coerceAtLeast(0)),
+            "modified" to (queried?.get("modified") ?: 0L),
+            "mime" to resolver.getType(uri),
+        )
     }
 
     /**
@@ -38,6 +71,9 @@ class Storage(private val context: Context) {
      * (PDFium, zip and fingerprint reads all seek). Closed with [closeFd].
      */
     fun openFd(uri: Uri): Int? = try {
+        if (uri.scheme == "file") {
+            ParcelFileDescriptor.open(File(uri.path!!), ParcelFileDescriptor.MODE_READ_ONLY).detachFd()
+        } else
         resolver.openFileDescriptor(uri, "r")?.let { pfd ->
             if (pfd.statSize >= 0) {
                 pfd.detachFd()

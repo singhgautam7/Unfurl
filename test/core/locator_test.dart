@@ -52,4 +52,33 @@ void main() {
     expect(fp(b), fp(a), reason: 'the middle is not hashed, by design');
     expect(fp(c), isNot(fp(a)));
   });
+
+  test('a page position maps to the nearest block before it, pictures included', () {
+    // Page 2's text: a paragraph at 0..40, a table picture anchored at 50,
+    // a paragraph at 120.
+    final ReadingDocument d = ReadingDocument(
+      title: 't',
+      sections: <Section>[
+        Section(
+          title: '',
+          blocks: <Block>[
+            Block(
+              kind: BlockKind.paragraph,
+              runs: const <Inline>[Inline('first')],
+              source: SourceRef(page: 2, charMap: <int>[for (int i = 0; i < 5; i++) 2 * SourceRef.kPage + i]),
+            ),
+            Block(kind: BlockKind.image, image: 'p2r0', source: const SourceRef(page: 2, start: 50, end: 50)),
+            Block(
+              kind: BlockKind.paragraph,
+              runs: const <Inline>[Inline('after')],
+              source: SourceRef(page: 2, charMap: <int>[for (int i = 120; i < 125; i++) 2 * SourceRef.kPage + i]),
+            ),
+          ],
+        ),
+      ],
+    );
+    expect(const Locator(page: 2, pageStart: 70).resolveIn(d), (0, 1, 0), reason: 'a cell of the table');
+    expect(const Locator(page: 2, pageStart: 122).resolveIn(d), (0, 2, 2));
+    expect(const Locator(page: 2, pageStart: 3).resolveIn(d), (0, 0, 3));
+  });
 }

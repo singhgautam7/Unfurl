@@ -198,21 +198,29 @@ class Locator {
 
   /// The reader position for a PDF page character, through the source map.
   static (int, int, int)? fromPage(ReadingDocument doc, int page, int pageIndex) {
-    (int, int, int)? before;
+    // The block that starts nearest before the character, on that page (a
+    // picture of a table counts: its text isn't in the flow).
+    (int, int)? best;
+    int bestStart = -1;
+    (int, int)? firstAfter;
     for (int s = 0; s < doc.sections.length; s++) {
       for (int b = 0; b < doc.sections[s].blocks.length; b++) {
         final SourceRef? src = doc.sections[s].blocks[b].source;
-        if (src == null) continue;
-        if (src.page <= page && src.lastPage >= page) {
-          final int? o = src.offsetOf(page, pageIndex);
-          if (o != null) return (s, b, o);
-          before ??= (s, b, 0);
-        } else if (src.page > page) {
-          return before ?? (s, b, 0);
+        if (src == null || src.page > page || src.lastPage < page) continue;
+        final int? first = src.firstOn(page);
+        if (first == null) continue;
+        if (first <= pageIndex && first >= bestStart) {
+          best = (s, b);
+          bestStart = first;
+        } else if (first > pageIndex) {
+          firstAfter ??= (s, b);
         }
       }
     }
-    return before;
+    if (best == null) return firstAfter == null ? null : (firstAfter.$1, firstAfter.$2, 0);
+    final (int s, int b) = best;
+    final int o = doc.sections[s].blocks[b].source!.offsetOf(page, pageIndex) ?? 0;
+    return (s, b, o.clamp(0, doc.sections[s].blocks[b].text.length));
   }
 
   Locator withProgress(double p) => Locator(

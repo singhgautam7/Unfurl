@@ -77,8 +77,18 @@ class $FoldersTable extends Folders with TableInfo<$FoldersTable, Folder> {
     defaultConstraints: GeneratedColumn.constraintIsAlways('CHECK ("access_lost" IN (0, 1))'),
     defaultValue: const Constant(false),
   );
+  static const VerificationMeta _sourceMeta = const VerificationMeta('source');
   @override
-  List<GeneratedColumn> get $columns => [id, uri, name, path, addedAt, scannedAt, accessLost];
+  late final GeneratedColumn<String> source = GeneratedColumn<String>(
+    'source',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant('saf_folder'),
+  );
+  @override
+  List<GeneratedColumn> get $columns => [id, uri, name, path, addedAt, scannedAt, accessLost, source];
   @override
   String get aliasedName => _alias ?? actualTableName;
   @override
@@ -115,6 +125,9 @@ class $FoldersTable extends Folders with TableInfo<$FoldersTable, Folder> {
     if (data.containsKey('access_lost')) {
       context.handle(_accessLostMeta, accessLost.isAcceptableOrUnknown(data['access_lost']!, _accessLostMeta));
     }
+    if (data.containsKey('source')) {
+      context.handle(_sourceMeta, source.isAcceptableOrUnknown(data['source']!, _sourceMeta));
+    }
     return context;
   }
 
@@ -131,6 +144,7 @@ class $FoldersTable extends Folders with TableInfo<$FoldersTable, Folder> {
       addedAt: attachedDatabase.typeMapping.read(DriftSqlType.dateTime, data['${effectivePrefix}added_at'])!,
       scannedAt: attachedDatabase.typeMapping.read(DriftSqlType.dateTime, data['${effectivePrefix}scanned_at']),
       accessLost: attachedDatabase.typeMapping.read(DriftSqlType.bool, data['${effectivePrefix}access_lost'])!,
+      source: attachedDatabase.typeMapping.read(DriftSqlType.string, data['${effectivePrefix}source'])!,
     );
   }
 
@@ -150,6 +164,11 @@ class Folder extends DataClass implements Insertable<Folder> {
   final DateTime addedAt;
   final DateTime? scannedAt;
   final bool accessLost;
+
+  /// How it was added (schema 2): `saf_folder` (a tree URI from Android's
+  /// picker), `path_folder` (a path, picked in Files with all-files access) or
+  /// `device` (the one hidden row that holds "Find books across this device").
+  final String source;
   const Folder({
     required this.id,
     required this.uri,
@@ -158,6 +177,7 @@ class Folder extends DataClass implements Insertable<Folder> {
     required this.addedAt,
     this.scannedAt,
     required this.accessLost,
+    required this.source,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -171,6 +191,7 @@ class Folder extends DataClass implements Insertable<Folder> {
       map['scanned_at'] = Variable<DateTime>(scannedAt);
     }
     map['access_lost'] = Variable<bool>(accessLost);
+    map['source'] = Variable<String>(source);
     return map;
   }
 
@@ -183,6 +204,7 @@ class Folder extends DataClass implements Insertable<Folder> {
       addedAt: Value(addedAt),
       scannedAt: scannedAt == null && nullToAbsent ? const Value.absent() : Value(scannedAt),
       accessLost: Value(accessLost),
+      source: Value(source),
     );
   }
 
@@ -196,6 +218,7 @@ class Folder extends DataClass implements Insertable<Folder> {
       addedAt: serializer.fromJson<DateTime>(json['addedAt']),
       scannedAt: serializer.fromJson<DateTime?>(json['scannedAt']),
       accessLost: serializer.fromJson<bool>(json['accessLost']),
+      source: serializer.fromJson<String>(json['source']),
     );
   }
   @override
@@ -209,6 +232,7 @@ class Folder extends DataClass implements Insertable<Folder> {
       'addedAt': serializer.toJson<DateTime>(addedAt),
       'scannedAt': serializer.toJson<DateTime?>(scannedAt),
       'accessLost': serializer.toJson<bool>(accessLost),
+      'source': serializer.toJson<String>(source),
     };
   }
 
@@ -220,6 +244,7 @@ class Folder extends DataClass implements Insertable<Folder> {
     DateTime? addedAt,
     Value<DateTime?> scannedAt = const Value.absent(),
     bool? accessLost,
+    String? source,
   }) => Folder(
     id: id ?? this.id,
     uri: uri ?? this.uri,
@@ -228,6 +253,7 @@ class Folder extends DataClass implements Insertable<Folder> {
     addedAt: addedAt ?? this.addedAt,
     scannedAt: scannedAt.present ? scannedAt.value : this.scannedAt,
     accessLost: accessLost ?? this.accessLost,
+    source: source ?? this.source,
   );
   Folder copyWithCompanion(FoldersCompanion data) {
     return Folder(
@@ -238,6 +264,7 @@ class Folder extends DataClass implements Insertable<Folder> {
       addedAt: data.addedAt.present ? data.addedAt.value : this.addedAt,
       scannedAt: data.scannedAt.present ? data.scannedAt.value : this.scannedAt,
       accessLost: data.accessLost.present ? data.accessLost.value : this.accessLost,
+      source: data.source.present ? data.source.value : this.source,
     );
   }
 
@@ -250,13 +277,14 @@ class Folder extends DataClass implements Insertable<Folder> {
           ..write('path: $path, ')
           ..write('addedAt: $addedAt, ')
           ..write('scannedAt: $scannedAt, ')
-          ..write('accessLost: $accessLost')
+          ..write('accessLost: $accessLost, ')
+          ..write('source: $source')
           ..write(')'))
         .toString();
   }
 
   @override
-  int get hashCode => Object.hash(id, uri, name, path, addedAt, scannedAt, accessLost);
+  int get hashCode => Object.hash(id, uri, name, path, addedAt, scannedAt, accessLost, source);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -267,7 +295,8 @@ class Folder extends DataClass implements Insertable<Folder> {
           other.path == this.path &&
           other.addedAt == this.addedAt &&
           other.scannedAt == this.scannedAt &&
-          other.accessLost == this.accessLost);
+          other.accessLost == this.accessLost &&
+          other.source == this.source);
 }
 
 class FoldersCompanion extends UpdateCompanion<Folder> {
@@ -278,6 +307,7 @@ class FoldersCompanion extends UpdateCompanion<Folder> {
   final Value<DateTime> addedAt;
   final Value<DateTime?> scannedAt;
   final Value<bool> accessLost;
+  final Value<String> source;
   const FoldersCompanion({
     this.id = const Value.absent(),
     this.uri = const Value.absent(),
@@ -286,6 +316,7 @@ class FoldersCompanion extends UpdateCompanion<Folder> {
     this.addedAt = const Value.absent(),
     this.scannedAt = const Value.absent(),
     this.accessLost = const Value.absent(),
+    this.source = const Value.absent(),
   });
   FoldersCompanion.insert({
     this.id = const Value.absent(),
@@ -295,6 +326,7 @@ class FoldersCompanion extends UpdateCompanion<Folder> {
     required DateTime addedAt,
     this.scannedAt = const Value.absent(),
     this.accessLost = const Value.absent(),
+    this.source = const Value.absent(),
   }) : uri = Value(uri),
        name = Value(name),
        addedAt = Value(addedAt);
@@ -306,6 +338,7 @@ class FoldersCompanion extends UpdateCompanion<Folder> {
     Expression<DateTime>? addedAt,
     Expression<DateTime>? scannedAt,
     Expression<bool>? accessLost,
+    Expression<String>? source,
   }) {
     return RawValuesInsertable({
       if (id != null) 'id': id,
@@ -315,6 +348,7 @@ class FoldersCompanion extends UpdateCompanion<Folder> {
       if (addedAt != null) 'added_at': addedAt,
       if (scannedAt != null) 'scanned_at': scannedAt,
       if (accessLost != null) 'access_lost': accessLost,
+      if (source != null) 'source': source,
     });
   }
 
@@ -326,6 +360,7 @@ class FoldersCompanion extends UpdateCompanion<Folder> {
     Value<DateTime>? addedAt,
     Value<DateTime?>? scannedAt,
     Value<bool>? accessLost,
+    Value<String>? source,
   }) {
     return FoldersCompanion(
       id: id ?? this.id,
@@ -335,6 +370,7 @@ class FoldersCompanion extends UpdateCompanion<Folder> {
       addedAt: addedAt ?? this.addedAt,
       scannedAt: scannedAt ?? this.scannedAt,
       accessLost: accessLost ?? this.accessLost,
+      source: source ?? this.source,
     );
   }
 
@@ -362,6 +398,9 @@ class FoldersCompanion extends UpdateCompanion<Folder> {
     if (accessLost.present) {
       map['access_lost'] = Variable<bool>(accessLost.value);
     }
+    if (source.present) {
+      map['source'] = Variable<String>(source.value);
+    }
     return map;
   }
 
@@ -374,7 +413,8 @@ class FoldersCompanion extends UpdateCompanion<Folder> {
           ..write('path: $path, ')
           ..write('addedAt: $addedAt, ')
           ..write('scannedAt: $scannedAt, ')
-          ..write('accessLost: $accessLost')
+          ..write('accessLost: $accessLost, ')
+          ..write('source: $source')
           ..write(')'))
         .toString();
   }
@@ -547,6 +587,16 @@ class $EntriesTable extends Entries with TableInfo<$EntriesTable, Entry> {
     defaultConstraints: GeneratedColumn.constraintIsAlways('CHECK ("hidden" IN (0, 1))'),
     defaultValue: const Constant(false),
   );
+  static const VerificationMeta _sourceMeta = const VerificationMeta('source');
+  @override
+  late final GeneratedColumn<String> source = GeneratedColumn<String>(
+    'source',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant('saf_folder'),
+  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -566,6 +616,7 @@ class $EntriesTable extends Entries with TableInfo<$EntriesTable, Entry> {
     units,
     enriched,
     hidden,
+    source,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -641,6 +692,9 @@ class $EntriesTable extends Entries with TableInfo<$EntriesTable, Entry> {
     if (data.containsKey('hidden')) {
       context.handle(_hiddenMeta, hidden.isAcceptableOrUnknown(data['hidden']!, _hiddenMeta));
     }
+    if (data.containsKey('source')) {
+      context.handle(_sourceMeta, source.isAcceptableOrUnknown(data['source']!, _sourceMeta));
+    }
     return context;
   }
 
@@ -671,6 +725,7 @@ class $EntriesTable extends Entries with TableInfo<$EntriesTable, Entry> {
       units: attachedDatabase.typeMapping.read(DriftSqlType.int, data['${effectivePrefix}units']),
       enriched: attachedDatabase.typeMapping.read(DriftSqlType.int, data['${effectivePrefix}enriched'])!,
       hidden: attachedDatabase.typeMapping.read(DriftSqlType.bool, data['${effectivePrefix}hidden'])!,
+      source: attachedDatabase.typeMapping.read(DriftSqlType.string, data['${effectivePrefix}source'])!,
     );
   }
 
@@ -708,6 +763,9 @@ class Entry extends DataClass implements Insertable<Entry> {
 
   /// "Remove from library": hidden here; the file stays on the phone.
   final bool hidden;
+
+  /// How it was found (schema 2): `saf_folder`, `path_folder` or `device`.
+  final String source;
   const Entry({
     required this.id,
     required this.folderId,
@@ -726,6 +784,7 @@ class Entry extends DataClass implements Insertable<Entry> {
     this.units,
     required this.enriched,
     required this.hidden,
+    required this.source,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -757,6 +816,7 @@ class Entry extends DataClass implements Insertable<Entry> {
     }
     map['enriched'] = Variable<int>(enriched);
     map['hidden'] = Variable<bool>(hidden);
+    map['source'] = Variable<String>(source);
     return map;
   }
 
@@ -779,6 +839,7 @@ class Entry extends DataClass implements Insertable<Entry> {
       units: units == null && nullToAbsent ? const Value.absent() : Value(units),
       enriched: Value(enriched),
       hidden: Value(hidden),
+      source: Value(source),
     );
   }
 
@@ -802,6 +863,7 @@ class Entry extends DataClass implements Insertable<Entry> {
       units: serializer.fromJson<int?>(json['units']),
       enriched: serializer.fromJson<int>(json['enriched']),
       hidden: serializer.fromJson<bool>(json['hidden']),
+      source: serializer.fromJson<String>(json['source']),
     );
   }
   @override
@@ -825,6 +887,7 @@ class Entry extends DataClass implements Insertable<Entry> {
       'units': serializer.toJson<int?>(units),
       'enriched': serializer.toJson<int>(enriched),
       'hidden': serializer.toJson<bool>(hidden),
+      'source': serializer.toJson<String>(source),
     };
   }
 
@@ -846,6 +909,7 @@ class Entry extends DataClass implements Insertable<Entry> {
     Value<int?> units = const Value.absent(),
     int? enriched,
     bool? hidden,
+    String? source,
   }) => Entry(
     id: id ?? this.id,
     folderId: folderId ?? this.folderId,
@@ -864,6 +928,7 @@ class Entry extends DataClass implements Insertable<Entry> {
     units: units.present ? units.value : this.units,
     enriched: enriched ?? this.enriched,
     hidden: hidden ?? this.hidden,
+    source: source ?? this.source,
   );
   Entry copyWithCompanion(EntriesCompanion data) {
     return Entry(
@@ -884,6 +949,7 @@ class Entry extends DataClass implements Insertable<Entry> {
       units: data.units.present ? data.units.value : this.units,
       enriched: data.enriched.present ? data.enriched.value : this.enriched,
       hidden: data.hidden.present ? data.hidden.value : this.hidden,
+      source: data.source.present ? data.source.value : this.source,
     );
   }
 
@@ -906,7 +972,8 @@ class Entry extends DataClass implements Insertable<Entry> {
           ..write('author: $author, ')
           ..write('units: $units, ')
           ..write('enriched: $enriched, ')
-          ..write('hidden: $hidden')
+          ..write('hidden: $hidden, ')
+          ..write('source: $source')
           ..write(')'))
         .toString();
   }
@@ -930,6 +997,7 @@ class Entry extends DataClass implements Insertable<Entry> {
     units,
     enriched,
     hidden,
+    source,
   );
   @override
   bool operator ==(Object other) =>
@@ -951,7 +1019,8 @@ class Entry extends DataClass implements Insertable<Entry> {
           other.author == this.author &&
           other.units == this.units &&
           other.enriched == this.enriched &&
-          other.hidden == this.hidden);
+          other.hidden == this.hidden &&
+          other.source == this.source);
 }
 
 class EntriesCompanion extends UpdateCompanion<Entry> {
@@ -972,6 +1041,7 @@ class EntriesCompanion extends UpdateCompanion<Entry> {
   final Value<int?> units;
   final Value<int> enriched;
   final Value<bool> hidden;
+  final Value<String> source;
   const EntriesCompanion({
     this.id = const Value.absent(),
     this.folderId = const Value.absent(),
@@ -990,6 +1060,7 @@ class EntriesCompanion extends UpdateCompanion<Entry> {
     this.units = const Value.absent(),
     this.enriched = const Value.absent(),
     this.hidden = const Value.absent(),
+    this.source = const Value.absent(),
   });
   EntriesCompanion.insert({
     this.id = const Value.absent(),
@@ -1009,6 +1080,7 @@ class EntriesCompanion extends UpdateCompanion<Entry> {
     this.units = const Value.absent(),
     this.enriched = const Value.absent(),
     this.hidden = const Value.absent(),
+    this.source = const Value.absent(),
   }) : folderId = Value(folderId),
        docId = Value(docId),
        uri = Value(uri),
@@ -1034,6 +1106,7 @@ class EntriesCompanion extends UpdateCompanion<Entry> {
     Expression<int>? units,
     Expression<int>? enriched,
     Expression<bool>? hidden,
+    Expression<String>? source,
   }) {
     return RawValuesInsertable({
       if (id != null) 'id': id,
@@ -1053,6 +1126,7 @@ class EntriesCompanion extends UpdateCompanion<Entry> {
       if (units != null) 'units': units,
       if (enriched != null) 'enriched': enriched,
       if (hidden != null) 'hidden': hidden,
+      if (source != null) 'source': source,
     });
   }
 
@@ -1074,6 +1148,7 @@ class EntriesCompanion extends UpdateCompanion<Entry> {
     Value<int?>? units,
     Value<int>? enriched,
     Value<bool>? hidden,
+    Value<String>? source,
   }) {
     return EntriesCompanion(
       id: id ?? this.id,
@@ -1093,6 +1168,7 @@ class EntriesCompanion extends UpdateCompanion<Entry> {
       units: units ?? this.units,
       enriched: enriched ?? this.enriched,
       hidden: hidden ?? this.hidden,
+      source: source ?? this.source,
     );
   }
 
@@ -1150,6 +1226,9 @@ class EntriesCompanion extends UpdateCompanion<Entry> {
     if (hidden.present) {
       map['hidden'] = Variable<bool>(hidden.value);
     }
+    if (source.present) {
+      map['source'] = Variable<String>(source.value);
+    }
     return map;
   }
 
@@ -1172,7 +1251,8 @@ class EntriesCompanion extends UpdateCompanion<Entry> {
           ..write('author: $author, ')
           ..write('units: $units, ')
           ..write('enriched: $enriched, ')
-          ..write('hidden: $hidden')
+          ..write('hidden: $hidden, ')
+          ..write('source: $source')
           ..write(')'))
         .toString();
   }
@@ -2866,6 +2946,271 @@ class RecentsCompanion extends UpdateCompanion<Recent> {
   }
 }
 
+class $PlacesTable extends Places with TableInfo<$PlacesTable, Place> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $PlacesTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _pathMeta = const VerificationMeta('path');
+  @override
+  late final GeneratedColumn<String> path = GeneratedColumn<String>(
+    'path',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _nameMeta = const VerificationMeta('name');
+  @override
+  late final GeneratedColumn<String> name = GeneratedColumn<String>(
+    'name',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _pinnedMeta = const VerificationMeta('pinned');
+  @override
+  late final GeneratedColumn<bool> pinned = GeneratedColumn<bool>(
+    'pinned',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways('CHECK ("pinned" IN (0, 1))'),
+    defaultValue: const Constant(false),
+  );
+  static const VerificationMeta _visitedAtMeta = const VerificationMeta('visitedAt');
+  @override
+  late final GeneratedColumn<DateTime> visitedAt = GeneratedColumn<DateTime>(
+    'visited_at',
+    aliasedName,
+    true,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: false,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [path, name, pinned, visitedAt];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'places';
+  @override
+  VerificationContext validateIntegrity(Insertable<Place> instance, {bool isInserting = false}) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('path')) {
+      context.handle(_pathMeta, path.isAcceptableOrUnknown(data['path']!, _pathMeta));
+    } else if (isInserting) {
+      context.missing(_pathMeta);
+    }
+    if (data.containsKey('name')) {
+      context.handle(_nameMeta, name.isAcceptableOrUnknown(data['name']!, _nameMeta));
+    } else if (isInserting) {
+      context.missing(_nameMeta);
+    }
+    if (data.containsKey('pinned')) {
+      context.handle(_pinnedMeta, pinned.isAcceptableOrUnknown(data['pinned']!, _pinnedMeta));
+    }
+    if (data.containsKey('visited_at')) {
+      context.handle(_visitedAtMeta, visitedAt.isAcceptableOrUnknown(data['visited_at']!, _visitedAtMeta));
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {path};
+  @override
+  Place map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return Place(
+      path: attachedDatabase.typeMapping.read(DriftSqlType.string, data['${effectivePrefix}path'])!,
+      name: attachedDatabase.typeMapping.read(DriftSqlType.string, data['${effectivePrefix}name'])!,
+      pinned: attachedDatabase.typeMapping.read(DriftSqlType.bool, data['${effectivePrefix}pinned'])!,
+      visitedAt: attachedDatabase.typeMapping.read(DriftSqlType.dateTime, data['${effectivePrefix}visited_at']),
+    );
+  }
+
+  @override
+  $PlacesTable createAlias(String alias) {
+    return $PlacesTable(attachedDatabase, alias);
+  }
+}
+
+class Place extends DataClass implements Insertable<Place> {
+  final String path;
+  final String name;
+  final bool pinned;
+  final DateTime? visitedAt;
+  const Place({required this.path, required this.name, required this.pinned, this.visitedAt});
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['path'] = Variable<String>(path);
+    map['name'] = Variable<String>(name);
+    map['pinned'] = Variable<bool>(pinned);
+    if (!nullToAbsent || visitedAt != null) {
+      map['visited_at'] = Variable<DateTime>(visitedAt);
+    }
+    return map;
+  }
+
+  PlacesCompanion toCompanion(bool nullToAbsent) {
+    return PlacesCompanion(
+      path: Value(path),
+      name: Value(name),
+      pinned: Value(pinned),
+      visitedAt: visitedAt == null && nullToAbsent ? const Value.absent() : Value(visitedAt),
+    );
+  }
+
+  factory Place.fromJson(Map<String, dynamic> json, {ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return Place(
+      path: serializer.fromJson<String>(json['path']),
+      name: serializer.fromJson<String>(json['name']),
+      pinned: serializer.fromJson<bool>(json['pinned']),
+      visitedAt: serializer.fromJson<DateTime?>(json['visitedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'path': serializer.toJson<String>(path),
+      'name': serializer.toJson<String>(name),
+      'pinned': serializer.toJson<bool>(pinned),
+      'visitedAt': serializer.toJson<DateTime?>(visitedAt),
+    };
+  }
+
+  Place copyWith({String? path, String? name, bool? pinned, Value<DateTime?> visitedAt = const Value.absent()}) =>
+      Place(
+        path: path ?? this.path,
+        name: name ?? this.name,
+        pinned: pinned ?? this.pinned,
+        visitedAt: visitedAt.present ? visitedAt.value : this.visitedAt,
+      );
+  Place copyWithCompanion(PlacesCompanion data) {
+    return Place(
+      path: data.path.present ? data.path.value : this.path,
+      name: data.name.present ? data.name.value : this.name,
+      pinned: data.pinned.present ? data.pinned.value : this.pinned,
+      visitedAt: data.visitedAt.present ? data.visitedAt.value : this.visitedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('Place(')
+          ..write('path: $path, ')
+          ..write('name: $name, ')
+          ..write('pinned: $pinned, ')
+          ..write('visitedAt: $visitedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(path, name, pinned, visitedAt);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is Place &&
+          other.path == this.path &&
+          other.name == this.name &&
+          other.pinned == this.pinned &&
+          other.visitedAt == this.visitedAt);
+}
+
+class PlacesCompanion extends UpdateCompanion<Place> {
+  final Value<String> path;
+  final Value<String> name;
+  final Value<bool> pinned;
+  final Value<DateTime?> visitedAt;
+  final Value<int> rowid;
+  const PlacesCompanion({
+    this.path = const Value.absent(),
+    this.name = const Value.absent(),
+    this.pinned = const Value.absent(),
+    this.visitedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  PlacesCompanion.insert({
+    required String path,
+    required String name,
+    this.pinned = const Value.absent(),
+    this.visitedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  }) : path = Value(path),
+       name = Value(name);
+  static Insertable<Place> custom({
+    Expression<String>? path,
+    Expression<String>? name,
+    Expression<bool>? pinned,
+    Expression<DateTime>? visitedAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (path != null) 'path': path,
+      if (name != null) 'name': name,
+      if (pinned != null) 'pinned': pinned,
+      if (visitedAt != null) 'visited_at': visitedAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  PlacesCompanion copyWith({
+    Value<String>? path,
+    Value<String>? name,
+    Value<bool>? pinned,
+    Value<DateTime?>? visitedAt,
+    Value<int>? rowid,
+  }) {
+    return PlacesCompanion(
+      path: path ?? this.path,
+      name: name ?? this.name,
+      pinned: pinned ?? this.pinned,
+      visitedAt: visitedAt ?? this.visitedAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (path.present) {
+      map['path'] = Variable<String>(path.value);
+    }
+    if (name.present) {
+      map['name'] = Variable<String>(name.value);
+    }
+    if (pinned.present) {
+      map['pinned'] = Variable<bool>(pinned.value);
+    }
+    if (visitedAt.present) {
+      map['visited_at'] = Variable<DateTime>(visitedAt.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('PlacesCompanion(')
+          ..write('path: $path, ')
+          ..write('name: $name, ')
+          ..write('pinned: $pinned, ')
+          ..write('visitedAt: $visitedAt, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$AppDatabase extends GeneratedDatabase {
   _$AppDatabase(QueryExecutor e) : super(e);
   $AppDatabaseManager get managers => $AppDatabaseManager(this);
@@ -2874,6 +3219,7 @@ abstract class _$AppDatabase extends GeneratedDatabase {
   late final $DocumentsTable documents = $DocumentsTable(this);
   late final $AnnotationsTable annotations = $AnnotationsTable(this);
   late final $RecentsTable recents = $RecentsTable(this);
+  late final $PlacesTable places = $PlacesTable(this);
   late final Index entriesParent = Index(
     'entries_parent',
     'CREATE INDEX entries_parent ON entries (folder_id, parent)',
@@ -2893,6 +3239,7 @@ abstract class _$AppDatabase extends GeneratedDatabase {
     documents,
     annotations,
     recents,
+    places,
     entriesParent,
     entriesExt,
     entriesFp,
@@ -2915,6 +3262,7 @@ typedef $$FoldersTableCreateCompanionBuilder = FoldersCompanion Function({
   required DateTime addedAt,
   Value<DateTime?> scannedAt,
   Value<bool> accessLost,
+  Value<String> source,
 });
 typedef $$FoldersTableUpdateCompanionBuilder = FoldersCompanion Function({
   Value<int> id,
@@ -2924,6 +3272,7 @@ typedef $$FoldersTableUpdateCompanionBuilder = FoldersCompanion Function({
   Value<DateTime> addedAt,
   Value<DateTime?> scannedAt,
   Value<bool> accessLost,
+  Value<String> source,
 });
 
 final class $$FoldersTableReferences extends BaseReferences<_$AppDatabase, $FoldersTable, Folder> {
@@ -2967,6 +3316,9 @@ class $$FoldersTableFilterComposer extends Composer<_$AppDatabase, $FoldersTable
 
   ColumnFilters<bool> get accessLost =>
       $composableBuilder(column: $table.accessLost, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get source =>
+      $composableBuilder(column: $table.source, builder: (column) => ColumnFilters(column));
 
   Expression<bool> entriesRefs(Expression<bool> Function($$EntriesTableFilterComposer f) f) {
     final $$EntriesTableFilterComposer composer = $composerBuilder(
@@ -3014,6 +3366,9 @@ class $$FoldersTableOrderingComposer extends Composer<_$AppDatabase, $FoldersTab
 
   ColumnOrderings<bool> get accessLost =>
       $composableBuilder(column: $table.accessLost, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get source =>
+      $composableBuilder(column: $table.source, builder: (column) => ColumnOrderings(column));
 }
 
 class $$FoldersTableAnnotationComposer extends Composer<_$AppDatabase, $FoldersTable> {
@@ -3037,6 +3392,8 @@ class $$FoldersTableAnnotationComposer extends Composer<_$AppDatabase, $FoldersT
   GeneratedColumn<DateTime> get scannedAt => $composableBuilder(column: $table.scannedAt, builder: (column) => column);
 
   GeneratedColumn<bool> get accessLost => $composableBuilder(column: $table.accessLost, builder: (column) => column);
+
+  GeneratedColumn<String> get source => $composableBuilder(column: $table.source, builder: (column) => column);
 
   Expression<T> entriesRefs<T extends Object>(Expression<T> Function($$EntriesTableAnnotationComposer a) f) {
     final $$EntriesTableAnnotationComposer composer = $composerBuilder(
@@ -3089,6 +3446,7 @@ class $$FoldersTableTableManager
                 Value<DateTime> addedAt = const Value.absent(),
                 Value<DateTime?> scannedAt = const Value.absent(),
                 Value<bool> accessLost = const Value.absent(),
+                Value<String> source = const Value.absent(),
               }) => FoldersCompanion(
                 id: id,
                 uri: uri,
@@ -3097,6 +3455,7 @@ class $$FoldersTableTableManager
                 addedAt: addedAt,
                 scannedAt: scannedAt,
                 accessLost: accessLost,
+                source: source,
               ),
           createCompanionCallback:
               ({
@@ -3107,6 +3466,7 @@ class $$FoldersTableTableManager
                 required DateTime addedAt,
                 Value<DateTime?> scannedAt = const Value.absent(),
                 Value<bool> accessLost = const Value.absent(),
+                Value<String> source = const Value.absent(),
               }) => FoldersCompanion.insert(
                 id: id,
                 uri: uri,
@@ -3115,6 +3475,7 @@ class $$FoldersTableTableManager
                 addedAt: addedAt,
                 scannedAt: scannedAt,
                 accessLost: accessLost,
+                source: source,
               ),
           withReferenceMapper: (p0) => p0
               .map((e) => (e.readTable<$FoldersTable, Folder>(table), $$FoldersTableReferences(db, table, e)))
@@ -3175,6 +3536,7 @@ typedef $$EntriesTableCreateCompanionBuilder = EntriesCompanion Function({
   Value<int?> units,
   Value<int> enriched,
   Value<bool> hidden,
+  Value<String> source,
 });
 typedef $$EntriesTableUpdateCompanionBuilder = EntriesCompanion Function({
   Value<int> id,
@@ -3194,6 +3556,7 @@ typedef $$EntriesTableUpdateCompanionBuilder = EntriesCompanion Function({
   Value<int?> units,
   Value<int> enriched,
   Value<bool> hidden,
+  Value<String> source,
 });
 
 final class $$EntriesTableReferences extends BaseReferences<_$AppDatabase, $EntriesTable, Entry> {
@@ -3258,6 +3621,9 @@ class $$EntriesTableFilterComposer extends Composer<_$AppDatabase, $EntriesTable
 
   ColumnFilters<bool> get hidden =>
       $composableBuilder(column: $table.hidden, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get source =>
+      $composableBuilder(column: $table.source, builder: (column) => ColumnFilters(column));
 
   $$FoldersTableFilterComposer get folderId {
     final $$FoldersTableFilterComposer composer = $composerBuilder(
@@ -3333,6 +3699,9 @@ class $$EntriesTableOrderingComposer extends Composer<_$AppDatabase, $EntriesTab
   ColumnOrderings<bool> get hidden =>
       $composableBuilder(column: $table.hidden, builder: (column) => ColumnOrderings(column));
 
+  ColumnOrderings<String> get source =>
+      $composableBuilder(column: $table.source, builder: (column) => ColumnOrderings(column));
+
   $$FoldersTableOrderingComposer get folderId {
     final $$FoldersTableOrderingComposer composer = $composerBuilder(
       composer: this,
@@ -3392,6 +3761,8 @@ class $$EntriesTableAnnotationComposer extends Composer<_$AppDatabase, $EntriesT
   GeneratedColumn<int> get enriched => $composableBuilder(column: $table.enriched, builder: (column) => column);
 
   GeneratedColumn<bool> get hidden => $composableBuilder(column: $table.hidden, builder: (column) => column);
+
+  GeneratedColumn<String> get source => $composableBuilder(column: $table.source, builder: (column) => column);
 
   $$FoldersTableAnnotationComposer get folderId {
     final $$FoldersTableAnnotationComposer composer = $composerBuilder(
@@ -3454,6 +3825,7 @@ class $$EntriesTableTableManager
                 Value<int?> units = const Value.absent(),
                 Value<int> enriched = const Value.absent(),
                 Value<bool> hidden = const Value.absent(),
+                Value<String> source = const Value.absent(),
               }) => EntriesCompanion(
                 id: id,
                 folderId: folderId,
@@ -3472,6 +3844,7 @@ class $$EntriesTableTableManager
                 units: units,
                 enriched: enriched,
                 hidden: hidden,
+                source: source,
               ),
           createCompanionCallback:
               ({
@@ -3492,6 +3865,7 @@ class $$EntriesTableTableManager
                 Value<int?> units = const Value.absent(),
                 Value<int> enriched = const Value.absent(),
                 Value<bool> hidden = const Value.absent(),
+                Value<String> source = const Value.absent(),
               }) => EntriesCompanion.insert(
                 id: id,
                 folderId: folderId,
@@ -3510,6 +3884,7 @@ class $$EntriesTableTableManager
                 units: units,
                 enriched: enriched,
                 hidden: hidden,
+                source: source,
               ),
           withReferenceMapper: (p0) => p0
               .map((e) => (e.readTable<$EntriesTable, Entry>(table), $$EntriesTableReferences(db, table, e)))
@@ -4314,6 +4689,142 @@ typedef $$RecentsTableProcessedTableManager =
       Recent,
       PrefetchHooks Function()
     >;
+typedef $$PlacesTableCreateCompanionBuilder = PlacesCompanion Function({
+  required String path,
+  required String name,
+  Value<bool> pinned,
+  Value<DateTime?> visitedAt,
+  Value<int> rowid,
+});
+typedef $$PlacesTableUpdateCompanionBuilder = PlacesCompanion Function({
+  Value<String> path,
+  Value<String> name,
+  Value<bool> pinned,
+  Value<DateTime?> visitedAt,
+  Value<int> rowid,
+});
+
+class $$PlacesTableFilterComposer extends Composer<_$AppDatabase, $PlacesTable> {
+  $$PlacesTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get path => $composableBuilder(column: $table.path, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get name => $composableBuilder(column: $table.name, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<bool> get pinned =>
+      $composableBuilder(column: $table.pinned, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<DateTime> get visitedAt =>
+      $composableBuilder(column: $table.visitedAt, builder: (column) => ColumnFilters(column));
+}
+
+class $$PlacesTableOrderingComposer extends Composer<_$AppDatabase, $PlacesTable> {
+  $$PlacesTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get path =>
+      $composableBuilder(column: $table.path, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get name =>
+      $composableBuilder(column: $table.name, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<bool> get pinned =>
+      $composableBuilder(column: $table.pinned, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<DateTime> get visitedAt =>
+      $composableBuilder(column: $table.visitedAt, builder: (column) => ColumnOrderings(column));
+}
+
+class $$PlacesTableAnnotationComposer extends Composer<_$AppDatabase, $PlacesTable> {
+  $$PlacesTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get path => $composableBuilder(column: $table.path, builder: (column) => column);
+
+  GeneratedColumn<String> get name => $composableBuilder(column: $table.name, builder: (column) => column);
+
+  GeneratedColumn<bool> get pinned => $composableBuilder(column: $table.pinned, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get visitedAt => $composableBuilder(column: $table.visitedAt, builder: (column) => column);
+}
+
+class $$PlacesTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $PlacesTable,
+          Place,
+          $$PlacesTableFilterComposer,
+          $$PlacesTableOrderingComposer,
+          $$PlacesTableAnnotationComposer,
+          $$PlacesTableCreateCompanionBuilder,
+          $$PlacesTableUpdateCompanionBuilder,
+          (Place, BaseReferences<_$AppDatabase, $PlacesTable, Place>),
+          Place,
+          PrefetchHooks Function()
+        > {
+  $$PlacesTableTableManager(_$AppDatabase db, $PlacesTable table)
+    : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () => $$PlacesTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () => $$PlacesTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () => $$PlacesTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback: ({
+            Value<String> path = const Value.absent(),
+            Value<String> name = const Value.absent(),
+            Value<bool> pinned = const Value.absent(),
+            Value<DateTime?> visitedAt = const Value.absent(),
+            Value<int> rowid = const Value.absent(),
+          }) => PlacesCompanion(path: path, name: name, pinned: pinned, visitedAt: visitedAt, rowid: rowid),
+          createCompanionCallback: ({
+            required String path,
+            required String name,
+            Value<bool> pinned = const Value.absent(),
+            Value<DateTime?> visitedAt = const Value.absent(),
+            Value<int> rowid = const Value.absent(),
+          }) => PlacesCompanion.insert(path: path, name: name, pinned: pinned, visitedAt: visitedAt, rowid: rowid),
+          withReferenceMapper: (p0) => p0
+              .map(
+                (e) => (
+                  e.readTable<$PlacesTable, Place>(table),
+                  BaseReferences<_$AppDatabase, $PlacesTable, Place>(db, table, e),
+                ),
+              )
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$PlacesTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $PlacesTable,
+      Place,
+      $$PlacesTableFilterComposer,
+      $$PlacesTableOrderingComposer,
+      $$PlacesTableAnnotationComposer,
+      $$PlacesTableCreateCompanionBuilder,
+      $$PlacesTableUpdateCompanionBuilder,
+      (Place, BaseReferences<_$AppDatabase, $PlacesTable, Place>),
+      Place,
+      PrefetchHooks Function()
+    >;
 
 class $AppDatabaseManager {
   final _$AppDatabase _db;
@@ -4323,4 +4834,5 @@ class $AppDatabaseManager {
   $$DocumentsTableTableManager get documents => $$DocumentsTableTableManager(_db, _db.documents);
   $$AnnotationsTableTableManager get annotations => $$AnnotationsTableTableManager(_db, _db.annotations);
   $$RecentsTableTableManager get recents => $$RecentsTableTableManager(_db, _db.recents);
+  $$PlacesTableTableManager get places => $$PlacesTableTableManager(_db, _db.places);
 }

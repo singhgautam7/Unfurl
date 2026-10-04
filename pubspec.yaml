@@ -31,6 +31,9 @@ dependencies:
 dev_dependencies:
   flutter_test:
     sdk: flutter
+  # On-device tests (part of the Flutter SDK, not a pub package).
+  integration_test:
+    sdk: flutter
   flutter_lints: 6.0.0
   drift_dev: 2.35.1
   build_runner: 2.16.1

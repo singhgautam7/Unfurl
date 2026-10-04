@@ -14,6 +14,11 @@ class Folders extends Table {
   DateTimeColumn get addedAt => dateTime()();
   DateTimeColumn get scannedAt => dateTime().nullable()();
   BoolColumn get accessLost => boolean().withDefault(const Constant(false))();
+
+  /// How it was added (schema 2): `saf_folder` (a tree URI from Android's
+  /// picker), `path_folder` (a path, picked in Files with all-files access) or
+  /// `device` (the one hidden row that holds "Find books across this device").
+  TextColumn get source => text().withDefault(const Constant('saf_folder'))();
 }
 
 /// The library index: every file and directory under every granted folder.
@@ -48,6 +53,9 @@ class Entries extends Table {
 
   /// "Remove from library": hidden here; the file stays on the phone.
   BoolColumn get hidden => boolean().withDefault(const Constant(false))();
+
+  /// How it was found (schema 2): `saf_folder`, `path_folder` or `device`.
+  TextColumn get source => text().withDefault(const Constant('saf_folder'))();
 
   @override
   List<Set<Column<Object>>> get uniqueKeys => <Set<Column<Object>>>[
@@ -127,19 +135,38 @@ class Recents extends Table {
   Set<Column<Object>> get primaryKey => <Column<Object>>{uri};
 }
 
-@DriftDatabase(tables: <Type>[Folders, Entries, Documents, Annotations, Recents])
+/// Folders in the Files tab (schema 2): pinned ones and the recently opened.
+class Places extends Table {
+  TextColumn get path => text()();
+  TextColumn get name => text()();
+  BoolColumn get pinned => boolean().withDefault(const Constant(false))();
+  DateTimeColumn get visitedAt => dateTime().nullable()();
+
+  @override
+  Set<Column<Object>> get primaryKey => <Column<Object>>{path};
+}
+
+@DriftDatabase(tables: <Type>[Folders, Entries, Documents, Annotations, Recents, Places])
 class AppDatabase extends _$AppDatabase {
   AppDatabase([QueryExecutor? executor]) : super(executor ?? driftDatabase(name: 'unfurl'));
 
   /// Bump with a tested migration on every schema change (data rule 4).
   @override
-  int get schemaVersion => 1;
+  int get schemaVersion => 2;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
     onCreate: (Migrator m) async {
       await m.createAll();
       await _createSearch();
+    },
+    onUpgrade: (Migrator m, int from, int to) async {
+      if (from < 2) {
+        // v2: where folders and entries came from, and the Files tab's places.
+        await m.addColumn(folders, folders.source);
+        await m.addColumn(entries, entries.source);
+        await m.createTable(places);
+      }
     },
     beforeOpen: (OpeningDetails details) async {
       await customStatement('PRAGMA foreign_keys = ON');

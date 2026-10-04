@@ -91,13 +91,20 @@ void main() {
     final ReadingDocument list = TextFormats.plain(fixture('packing-list.txt'), 'packing-list.txt');
     expect(list.sections.single.blocks.first.text, 'Packing, Lisbon');
     expect(list.mono, isFalse);
-    expect(TextFormats.plain(fixture('config-sample.txt'), 'config-sample.txt').mono, isTrue);
+    final ReadingDocument code = TextFormats.plain(fixture('config-sample.txt'), 'config-sample.txt');
+    expect(code.mono, isTrue);
+    // Mono changes the font only: one paragraph, line breaks and indents kept, no code boxes.
+    final List<Block> lines = code.sections.single.blocks;
+    expect(lines, hasLength(1));
+    expect(lines.single.kind, BlockKind.paragraph);
+    expect(lines.single.text, contains('\n    return'));
   });
 
   test('format registry capability lookup', () {
     expect(Formats.of('a.PDF')!.hasModeToggle, isTrue);
     expect(Formats.of('a.epub')!.hasModeToggle, isFalse);
     expect(Formats.of('a.xlsx')!.readerMode, isFalse);
+    expect(Formats.of('a.pptx')!.hasModeToggle, isFalse, reason: 'slides only');
     expect(Formats.of('a.md')!.view, ViewKind.reader);
     expect(Formats.of('a.rar'), isNull);
     expect(Formats.of('noext', 'application/pdf'), Formats.pdf);

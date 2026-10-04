@@ -47,3 +47,9 @@ kotlin {
 flutter {
     source = "../.."
 }
+
+dependencies {
+    // FileProvider, for sharing paths from the Files tab. Already on the classpath
+    // through Flutter's embedding; pinned here because Unfurl now uses it directly.
+    implementation("androidx.core:core:1.17.0")
+}

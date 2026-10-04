@@ -36,6 +36,9 @@ class ReadAloud extends ChangeNotifier {
     final RegExp end = RegExp(r'[.!?…]+["”’)\]]*(?=\s)|\n');
     int start = 0;
     for (final RegExpMatch m in end.allMatches(text)) {
+      // Blank lines: the skip past whitespace below can run beyond the next
+      // newline match.
+      if (m.end <= start) continue;
       if (m[0] == '.' && _abbreviation.hasMatch(text.substring(start, m.start))) continue;
       final int stop = m.end;
       if (text.substring(start, stop).trim().isNotEmpty) out.add((start, stop));
