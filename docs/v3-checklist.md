@@ -31,4 +31,9 @@ phone (CPH2723) was not connected; Phase A and B checks on it stand.
 
 Found and fixed in this round (decisions 43–46): a DRM book that opened past the first-bytes check stayed
 in Continue reading; each rotation slid the reader back about a page; switching Paged and Scroll lost the
-place; Scroll had no first-line indents; the place saved in Scroll could trail the screen.
+place; Scroll had no first-line indents; the place saved in Scroll could trail the screen. Found while
+taking the screenshots (decisions 47–48): Scroll always opened at the top of the book; words left were
+saved only when the reader closed.
+
+Screenshots: `docs/v3-screens/<ID>-<view>-{light,dark}.png` from the phone AVD (Insights, book insights,
+formats, comics, highlight cards, comfort), and `V3-TABLET-*.png` from the Pixel Tablet AVD.

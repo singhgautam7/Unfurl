@@ -191,3 +191,8 @@ are the ones worth a second opinion.
 46. **Scroll layout fixes** (Phase H): book paragraphs had no first-line indent in Scroll (each block was laid
     out alone, without the paragraph before it), and the place saved in Scroll could trail what was on screen
     (measured before the last frame of a scroll was laid out; it is measured again after that frame).
+47. **Scroll layout opens at the saved place** (Phase H screenshots): a book in Scroll always opened at its
+    top, because only the paged layout found its page from the start position. The scroll list now jumps to
+    it once the view is ready, retrying for a few frames while the blocks above are only estimated.
+48. **Words left are saved when the app goes to the background**, not only when the reader closes: Android can
+    end a backgrounded app without disposing the reader, which left "Estimated time left" without a count.

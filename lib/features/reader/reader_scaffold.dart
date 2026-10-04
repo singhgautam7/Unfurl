@@ -212,6 +212,9 @@ class ReaderScaffoldState extends ConsumerState<ReaderScaffold> with WidgetsBind
     if (state == AppLifecycleState.paused || state == AppLifecycleState.inactive) {
       unawaited(_save(force: true));
     }
+    // Android may end the app in the background without disposing the
+    // reader: words left (for time-left estimates) are saved here too.
+    if (state == AppLifecycleState.paused) unawaited(_saveWords());
   }
 
   // ------------------------------------------------------------ position

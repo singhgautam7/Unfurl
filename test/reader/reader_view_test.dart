@@ -11,7 +11,8 @@ import 'package:unfurl/formats/reading_document.dart';
 /// Global index of the last character on screen.
 int lastIndex(ReaderController c) => c.doc.sections[c.lastVisible.$1].blocks[c.lastVisible.$2].start + c.lastVisible.$3;
 
-ReaderController book() => ReaderController(
+ReaderController book({(int, int, int)? start}) => ReaderController(
+  start: start,
   ReadingDocument(
     title: 't',
     sections: <Section>[
@@ -96,6 +97,18 @@ void main() {
     await tester.pumpAndSettle();
     final int at = c.doc.sections[0].blocks[scrolled.$2].start;
     expect(at, inInclusiveRange(c.globalIndex, lastIndex(c)), reason: 'paged opens on the page holding it');
+  });
+
+  testWidgets('scroll layout opens at the saved place', (WidgetTester tester) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(400, 860);
+    addTearDown(tester.view.reset);
+    final ReaderController c = book(start: (0, 40, 0));
+    await tester.pumpWidget(view(c, layout: ReaderLayout.scroll));
+    await tester.pumpAndSettle();
+    // Paragraphs are 464px here: paragraph 40 starts near 18,500.
+    expect(tester.state<ScrollableState>(find.byType(Scrollable).first).position.pixels, greaterThan(17000));
+    expect(c.position.$2, inInclusiveRange(39, 40));
   });
 
   test('scroll layout: a paragraph laid out alone still indents after a paragraph', () {

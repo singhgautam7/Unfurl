@@ -199,7 +199,10 @@ class _ReaderViewState extends State<ReaderView> {
           if (b.image != null) b.image!,
     ];
     await _images.load(widget.controller.doc.resources, keys);
-    if (mounted) setState(() => _imagesReady = true);
+    if (!mounted) return;
+    setState(() => _imagesReady = true);
+    // Paged finds its page in layout; Scroll opens at the top unless told.
+    if (widget.layoutMode == ReaderLayout.scroll && _c.position != (0, 0, 0)) _goTo(_c.position, animate: false);
   }
 
   @override
@@ -581,14 +584,21 @@ class _ReaderViewState extends State<ReaderView> {
 
   final Map<int, GlobalKey> _itemKeys = <int, GlobalKey>{};
 
-  void _jumpToFlat(int i, int offset) {
-    // Estimate, then correct once the item is built.
+  void _jumpToFlat(int i, int offset, [int tries = 8]) {
+    final BuildContext? ctx = _itemKeys[i]?.currentContext;
+    if (ctx != null && ctx.mounted) {
+      Scrollable.ensureVisible(ctx, alignment: 0.05);
+      return;
+    }
+    if (tries == 0 || !_scroll.hasClients) return;
+    // Not built yet: jump to an estimate (blocks above are only estimated
+    // until built, so it can take a few frames to land), then look again.
     final double est = _scroll.position.maxScrollExtent * (i / math.max(1, _flat.length));
     _scroll.jumpTo(est.clamp(0, _scroll.position.maxScrollExtent));
     SchedulerBinding.instance.addPostFrameCallback((_) {
-      final BuildContext? ctx = _itemKeys[i]?.currentContext;
-      if (ctx != null && ctx.mounted) Scrollable.ensureVisible(ctx, alignment: 0.05);
+      if (mounted) _jumpToFlat(i, offset, tries - 1);
     });
+    SchedulerBinding.instance.ensureVisualUpdate();
   }
 
   bool _onScroll(ScrollNotification n) {
