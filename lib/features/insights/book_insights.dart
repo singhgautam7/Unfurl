@@ -55,7 +55,12 @@ Future<void> showBookInsights(
       ),
     );
   }
-  return showReaderSheet<void>(context, heightFactor: 0.9, (BuildContext ctx) => view(() => Navigator.of(ctx).pop()));
+  return showReaderSheet<void>(
+    context,
+    surface: true,
+    heightFactor: 0.9,
+    (BuildContext ctx) => view(() => Navigator.of(ctx).pop()),
+  );
 }
 
 /// "Insights" in a reader's or viewer's overflow menu (board 6, V2: third).

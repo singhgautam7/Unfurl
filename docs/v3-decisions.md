@@ -143,3 +143,12 @@ are the ones worth a second opinion.
     `cache/cards/` (files older than an hour are deleted on the next render) and goes through the existing
     FileProvider; the URI rides as ClipData so the share sheet's own preview can read it (the same fix
     went to "Share file").
+34. **Quote size follows board 6's examples.** Auto-fit starts at the ratio's maximum as specified, but
+    into 28% of the card's height rather than all the free space; the spec's fitted examples (56, 60, 48,
+    34, 40, 30, 84 px) come out within 4 px (`test/tool/fit_calibration_test.dart`). A quote that can't
+    fit there at 30 px may use the free space before it is shortened with "…". (Owner feedback,
+    5 Oct 2026: sizes looked off.)
+35. **v3 sheets sit on `surface`** (board 6 `sheetP`) with tiles, the preview box and Insights cards on
+    `surfaceContainer`: the card editor, comic settings and bookmarks, book insights, sleep timer and
+    Reading sheets. v1/v2 reader sheets keep `surfaceContainer`. Option tiles draw at the spec's size
+    (44dp tiles, 40dp swatches) inside 48dp touch targets; toggle rows are 48dp (56 in comic settings).

@@ -60,6 +60,7 @@ Future<void> showCardEditor(BuildContext context, CardContent content) {
   }
   return showReaderSheet<void>(
     context,
+    surface: true,
     heightFactor: 0.94,
     (BuildContext ctx) => editor(() => Navigator.of(ctx).pop()),
   );
@@ -270,7 +271,7 @@ class _CardEditorState extends ConsumerState<CardEditor> {
         Container(
           margin: const EdgeInsets.fromLTRB(Space.lg, Space.xs, Space.lg, Space.xs),
           padding: const EdgeInsets.all(Space.lg),
-          decoration: BoxDecoration(color: c.surfaceContainerHigh, borderRadius: Radii.cardR),
+          decoration: BoxDecoration(color: c.surfaceContainer, borderRadius: Radii.cardR),
           child: Column(
             spacing: Space.sm,
             children: <Widget>[
@@ -391,31 +392,22 @@ class _CardEditorState extends ConsumerState<CardEditor> {
                     ),
                 ],
               ),
-              ExplorerRow(
-                name: 'Book title',
-                switchValue: s.showTitle,
-                onSwitch: (bool v) => _set(s.copyWith(showTitle: v)),
-              ),
-              ExplorerRow(
-                name: 'Author',
-                switchValue: s.showAuthor,
-                onSwitch: (bool v) => _set(s.copyWith(showAuthor: v)),
-              ),
-              ExplorerRow(
-                name: 'Cover thumbnail',
-                switchValue: s.template == CardTemplate.cover || s.showCover,
-                onSwitch: s.template == CardTemplate.cover ? null : (bool v) => _set(s.copyWith(showCover: v)),
-              ),
-              ExplorerRow(
-                name: 'Page or location',
-                switchValue: s.showLocation,
-                onSwitch: (bool v) => _set(s.copyWith(showLocation: v)),
-              ),
-              ExplorerRow(
-                name: 'Unfurl mark',
-                switchValue: s.showMark,
-                onSwitch: (bool v) => _set(s.copyWith(showMark: v)),
-              ),
+              // Board 6 `toggles`: 48dp rows divided by hairlines.
+              for (final (int i, (String name, bool value, ValueChanged<bool>? onSwitch))
+                  in <(String, bool, ValueChanged<bool>?)>[
+                    ('Book title', s.showTitle, (bool v) => _set(s.copyWith(showTitle: v))),
+                    ('Author', s.showAuthor, (bool v) => _set(s.copyWith(showAuthor: v))),
+                    (
+                      'Cover thumbnail',
+                      s.template == CardTemplate.cover || s.showCover,
+                      s.template == CardTemplate.cover ? null : (bool v) => _set(s.copyWith(showCover: v)),
+                    ),
+                    ('Page or location', s.showLocation, (bool v) => _set(s.copyWith(showLocation: v))),
+                    ('Unfurl mark', s.showMark, (bool v) => _set(s.copyWith(showMark: v))),
+                  ].indexed) ...<Widget>[
+                if (i > 0) Divider(height: 1, color: c.divider),
+                ExplorerRow(name: name, minHeight: 48, switchValue: value, onSwitch: onSwitch),
+              ],
             ],
           ),
         ),

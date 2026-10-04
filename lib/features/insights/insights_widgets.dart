@@ -9,17 +9,14 @@ import '../../core/theme/palette.dart';
 import '../../core/theme/tokens.dart';
 import '../../core/theme/typography.dart';
 import '../../design_system/app_icon.dart';
-import '../reader/sheets.dart' show ReaderSheet;
 
 /// Board 6, V1 components: StatTile, BarChart, Heatmap, KeyValueCard,
 /// StackedBar and the More tab's InsightsCard. Charts are painters over
 /// theme colours, grown in once with the reveal motion.
 
-/// A module's fill: `surfaceContainer`, one step up inside a reader sheet
-/// (itself `surfaceContainer`), so tiles still read on it.
-Color insightsFill(BuildContext context) => context.findAncestorWidgetOfExactType<ReaderSheet>() != null
-    ? context.colors.surfaceContainerHigh
-    : context.colors.surfaceContainer;
+/// A module's fill: `surfaceContainer`, on `surface` pages, panels and v3
+/// sheets alike.
+Color insightsFill(BuildContext context) => context.colors.surfaceContainer;
 
 /// The card every module sits in: `surfaceContainer`, radius 20.
 class InsightsBox extends StatelessWidget {

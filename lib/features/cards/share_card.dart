@@ -81,6 +81,13 @@ abstract final class CardSpec {
   static const double gap = 40;
   static const double minPx = 30;
   static const double stepPx = 2;
+
+  /// The quote's share of the card's height. Board 6 shows fitted sizes well
+  /// under the ratio maximum (56 px for a two-line-ish quote at 1:1, 34 px for
+  /// a long one at 4:5); fitting into 28% of the height reproduces every
+  /// example within 4 px (test/tool/fit_calibration_test.dart). Filling all
+  /// the free space made short quotes land at the maximum.
+  static const double quoteShare = 0.28;
   static const List<(double, double)> accentTones = <(double, double)>[
     (0.95, 0.035),
     (0.86, 0.07),
@@ -260,7 +267,6 @@ class ShareCard extends StatelessWidget {
       fontVariations: <FontVariation>[FontVariation('wght', t == CardTemplate.bold ? 600 : 400)],
       fontStyle: t == CardTemplate.classic && style.font == ReaderFont.literata ? FontStyle.italic : FontStyle.normal,
       height: t == CardTemplate.bold ? 1.22 : 1.45,
-      letterSpacing: t == CardTemplate.bold ? -0.01 * style.ratio.maxPx : 0,
       color: p.ink,
     );
     final bool centred = t == CardTemplate.classic;
@@ -325,16 +331,31 @@ class ShareCard extends StatelessWidget {
                   Flexible(
                     child: LayoutBuilder(
                       builder: (BuildContext context, BoxConstraints box) {
-                        final ({double size, bool fits}) fit = fitQuote(
+                        // Into 28% of the card first; a quote that can't fit
+                        // there even at 30 px may use the free space, and only
+                        // past that is it shortened.
+                        ({double size, bool fits}) fit = fitQuote(
                           content.quote,
                           quoteStyle,
-                          Size(box.maxWidth, box.maxHeight),
+                          Size(box.maxWidth, math.min(box.maxHeight, style.ratio.height * CardSpec.quoteShare)),
                           maxPx: style.ratio.maxPx,
                         );
+                        if (!fit.fits) {
+                          fit = fitQuote(
+                            content.quote,
+                            quoteStyle,
+                            Size(box.maxWidth, box.maxHeight),
+                            maxPx: CardSpec.minPx,
+                          );
+                        }
                         if (onFit != null) {
                           WidgetsBinding.instance.addPostFrameCallback((_) => onFit!(fit.size, fit.fits));
                         }
-                        final TextStyle s = quoteStyle.copyWith(fontSize: fit.size);
+                        // Bold tightens by 0.01em of the size it lands on.
+                        final TextStyle s = quoteStyle.copyWith(
+                          fontSize: fit.size,
+                          letterSpacing: t == CardTemplate.bold ? -0.01 * fit.size : 0,
+                        );
                         // At the minimum, as many lines as fit, then "…".
                         final int lines = math.max(1, (box.maxHeight / (fit.size * (s.height ?? 1.45))).floor());
                         return Text(

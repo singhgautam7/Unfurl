@@ -97,58 +97,55 @@ class OptionTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final UnfurlColors c = context.colors;
-    // Reader sheets sit on surfaceContainer, so an unselected tile steps up one tone.
-    final Color bg = background ?? (selected ? c.primaryContainer : c.surfaceContainerHigh);
+    final Color bg = background ?? (selected ? c.primaryContainer : c.surfaceContainer);
     final Color fg = foreground ?? (selected ? c.onPrimaryContainer : c.onSurface);
+    // Drawn at the spec's size (a 40dp swatch, a 44dp tile) inside a 48dp
+    // touch target, as v2 did for the boards' 44dp controls (gap v2-13).
+    final Widget face = AnimatedContainer(
+      duration: Motion.of(context, Motion.fast),
+      curve: Motion.decelerate,
+      width: width ?? double.infinity,
+      height: height,
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: round ? Radii.fullR : BorderRadius.circular(14),
+        border: Border.all(
+          color: selected ? c.primary : (background != null ? c.outline : bg),
+          width: selected ? 2 : 1,
+        ),
+      ),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        spacing: Space.xs,
+        children: <Widget>[
+          if (icon != null) AppIcon(icon!, size: 20, color: fg),
+          if (label != null)
+            Text(
+              label!,
+              maxLines: 1,
+              style: (style ?? UnfurlType.label.copyWith(fontSize: 13).weight(selected ? 600 : 500)).copyWith(
+                color: fg,
+              ),
+            ),
+        ],
+      ),
+    );
     final Widget tile = Semantics(
       button: true,
       selected: selected,
       label: semanticLabel ?? label,
       excludeSemantics: true,
       child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
         onTap: onTap,
-        child: AnimatedContainer(
-          duration: Motion.of(context, Motion.fast),
-          curve: Motion.decelerate,
-          width: width,
-          // A swatch is drawn at its own size (a 40dp circle); other tiles
-          // grow to the 48dp touch height.
-          height: round ? height : (height < IconSpec.tapTarget ? IconSpec.tapTarget : height),
-          decoration: BoxDecoration(
-            color: bg,
-            borderRadius: round ? Radii.fullR : BorderRadius.circular(14),
-            border: Border.all(
-              color: selected ? c.primary : (background != null ? c.outline : bg),
-              width: selected ? 2 : 1,
-            ),
-          ),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            spacing: Space.xs,
-            children: <Widget>[
-              if (icon != null) AppIcon(icon!, size: 20, color: fg),
-              if (label != null)
-                Text(
-                  label!,
-                  maxLines: 1,
-                  style: (style ?? UnfurlType.label.copyWith(fontSize: 13).weight(selected ? 600 : 500)).copyWith(
-                    color: fg,
-                  ),
-                ),
-            ],
-          ),
+        child: SizedBox(
+          width: width == null ? null : (width! < IconSpec.tapTarget ? IconSpec.tapTarget : width),
+          height: height < IconSpec.tapTarget ? IconSpec.tapTarget : height,
+          child: Center(child: face),
         ),
       ),
     );
-    if (width == null) return Expanded(child: tile);
-    // A round swatch keeps a 48dp touch target around its circle.
-    return round
-        ? SizedBox(
-            width: width! < IconSpec.tapTarget ? IconSpec.tapTarget : width,
-            height: IconSpec.tapTarget,
-            child: Center(child: tile),
-          )
-        : tile;
+    return width == null ? Expanded(child: tile) : tile;
   }
 }
 

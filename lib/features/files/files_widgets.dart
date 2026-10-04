@@ -93,8 +93,12 @@ class ExplorerRow extends StatelessWidget {
     this.onTap,
     this.onLongPress,
     this.semanticLabel,
+    this.minHeight = 60,
     super.key,
   });
+
+  /// 60 for Files rows; 48 or 56 in v3 sheets (board 6 `rows`).
+  final double minHeight;
 
   final String name;
   final IconData? icon;
@@ -128,7 +132,7 @@ class ExplorerRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final UnfurlColors c = context.colors;
     final Widget body = ConstrainedBox(
-      constraints: const BoxConstraints(minHeight: 60),
+      constraints: BoxConstraints(minHeight: minHeight),
       child: Padding(
         padding: const EdgeInsets.fromLTRB(Space.lg, 10, Space.md, 10),
         child: Row(

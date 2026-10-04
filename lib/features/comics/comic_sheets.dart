@@ -22,7 +22,7 @@ import 'comic_prefs.dart';
 /// Board 6, V4 "Comic settings": reading mode, fit, right to left, spreads,
 /// the cover alone and the page surround. Changes apply as they are made.
 Future<void> showComicSettings(BuildContext context, {required bool rtl, required ValueChanged<bool> onRtl}) =>
-    showReaderSheet<void>(context, (BuildContext ctx) => _ComicSettings(rtl: rtl, onRtl: onRtl));
+    showReaderSheet<void>(context, surface: true, (BuildContext ctx) => _ComicSettings(rtl: rtl, onRtl: onRtl));
 
 class _ComicSettings extends ConsumerStatefulWidget {
   const _ComicSettings({required this.rtl, required this.onRtl});
@@ -83,6 +83,7 @@ class _ComicSettingsState extends ConsumerState<_ComicSettings> {
           name: 'Right to left (manga)',
           meta: 'Mirrors swipes and the scrubber',
           sansMeta: true,
+          minHeight: 56,
           switchValue: _rtl,
           onSwitch: (bool v) {
             setState(() => _rtl = v);
@@ -93,6 +94,7 @@ class _ComicSettingsState extends ConsumerState<_ComicSettings> {
           name: 'Two pages in landscape',
           meta: 'Automatic on wide screens',
           sansMeta: true,
+          minHeight: 56,
           switchValue: p.spreadInLandscape,
           onSwitch: (bool v) => ctl.update((ComicPrefs x) => x.copyWith(spreadInLandscape: v)),
         ),
@@ -100,6 +102,7 @@ class _ComicSettingsState extends ConsumerState<_ComicSettings> {
           name: 'Show the cover on its own',
           meta: 'Keeps spreads aligned',
           sansMeta: true,
+          minHeight: 56,
           switchValue: p.coverAlone,
           onSwitch: (bool v) => ctl.update((ComicPrefs x) => x.copyWith(coverAlone: v)),
         ),
@@ -137,7 +140,7 @@ Future<void> showComicBookmarks(
   required ValueChanged<int> onOpen,
   required ValueChanged<Annotation> onDelete,
   required VoidCallback onAdd,
-}) => showReaderSheet<void>(context, (BuildContext ctx) {
+}) => showReaderSheet<void>(context, surface: true, (BuildContext ctx) {
   final UnfurlColors c = ctx.colors;
   final List<(Annotation, int)> rows = <(Annotation, int)>[
     for (final Annotation a in bookmarks) (a, ((a.progress * pages.count).round() - 1).clamp(0, pages.count - 1)),

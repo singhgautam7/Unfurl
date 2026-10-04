@@ -29,11 +29,16 @@ class ReaderSheet extends StatelessWidget {
     this.heightFactor,
     this.padding = const EdgeInsets.fromLTRB(Space.screen, 10, Space.screen, 0),
     this.controller,
+    this.surface = false,
     super.key,
   });
 
   /// A draggable sheet's controller, so scrolling the content resizes it.
   final ScrollController? controller;
+
+  /// v3 sheets (board 6 `sheetP`) sit on `surface`, their tiles on
+  /// `surfaceContainer`; v1/v2 reader sheets keep `surfaceContainer`.
+  final bool surface;
 
   final Widget child;
 
@@ -57,7 +62,7 @@ class ReaderSheet extends StatelessWidget {
       height: heightFactor == null ? null : h * heightFactor!,
       constraints: BoxConstraints(maxHeight: h * 0.94),
       decoration: BoxDecoration(
-        color: c.surfaceContainer,
+        color: surface ? c.surface : c.surfaceContainer,
         borderRadius: Radii.sheetR,
         border: Border(top: BorderSide(color: c.outline)),
       ),
@@ -84,25 +89,31 @@ class ReaderSheet extends StatelessWidget {
   }
 }
 
-Future<T?> showReaderSheet<T>(BuildContext context, WidgetBuilder builder, {bool scrim = true, double? heightFactor}) =>
-    showModalBottomSheet<T>(
-      context: context,
-      useRootNavigator: true,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      barrierColor: scrim ? context.colors.scrim : Colors.transparent,
-      sheetAnimationStyle: AnimationStyle(
-        duration: Motion.of(context, Motion.sheet),
-        curve: Motion.curveOf(context, Motion.decelerate),
-      ),
-      builder: (BuildContext ctx) => Padding(
-        padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(ctx).bottom),
-        child: ReaderSheet(
-          heightFactor: heightFactor,
-          child: Builder(builder: builder),
-        ),
-      ),
-    );
+Future<T?> showReaderSheet<T>(
+  BuildContext context,
+  WidgetBuilder builder, {
+  bool scrim = true,
+  double? heightFactor,
+  bool surface = false,
+}) => showModalBottomSheet<T>(
+  context: context,
+  useRootNavigator: true,
+  isScrollControlled: true,
+  backgroundColor: Colors.transparent,
+  barrierColor: scrim ? context.colors.scrim : Colors.transparent,
+  sheetAnimationStyle: AnimationStyle(
+    duration: Motion.of(context, Motion.sheet),
+    curve: Motion.curveOf(context, Motion.decelerate),
+  ),
+  builder: (BuildContext ctx) => Padding(
+    padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(ctx).bottom),
+    child: ReaderSheet(
+      heightFactor: heightFactor,
+      surface: surface,
+      child: Builder(builder: builder),
+    ),
+  ),
+);
 
 // ------------------------------------------------------------ reading settings
 
