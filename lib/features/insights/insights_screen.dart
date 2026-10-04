@@ -33,6 +33,7 @@ class InsightsScreen extends ConsumerWidget {
     final SizeClass size = SizeClass.of(context);
     return AppScaffold(
       title: 'Insights',
+      wide: true,
       onBack: () => context.pop(),
       children: <Widget>[
         AnimatedSwitcher(

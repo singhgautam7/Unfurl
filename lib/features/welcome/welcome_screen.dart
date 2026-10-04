@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../core/layout.dart';
 import '../../core/db/database.dart';
 import '../../core/library/library.dart' show readableFiles;
 import '../../core/motion/motion.dart';
@@ -94,155 +95,171 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen> {
     final _Actions a = _actions;
     return Scaffold(
       body: SafeArea(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: <Widget>[
-            SizedBox(
-              height: 64,
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(28, Space.sm, Space.md, Space.sm),
-                child: Row(
-                  children: <Widget>[
-                    for (int i = 0; i < 4; i++)
-                      AnimatedContainer(
-                        duration: Motion.of(context, Motion.navIndicator),
-                        curve: Motion.curveOf(context, Motion.spring),
-                        margin: const EdgeInsets.only(right: 6),
-                        width: i == _page ? 22 : 8,
-                        height: 8,
-                        decoration: BoxDecoration(color: i == _page ? c.primary : c.outline, borderRadius: Radii.fullR),
-                      ),
-                  ],
-                ),
-              ),
-            ),
-            Expanded(
-              child: PageView(
-                controller: _pages,
-                onPageChanged: (int i) => setState(() => _page = i),
-                children: <Widget>[
-                  const _Page(
-                    art: UnfurlMark(),
-                    title: 'Open a file and start reading',
-                    body: 'PDFs and books open where you left off, in the font, size and theme you choose.',
-                  ),
-                  _Page(
-                    art: Wrap(
-                      spacing: Space.sm,
-                      runSpacing: Space.sm,
+        child: Center(
+          // The pages centre at 720dp on wide windows, as More does.
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: AdaptiveSpec.centred),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                SizedBox(
+                  height: 64,
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(28, Space.sm, Space.md, Space.sm),
+                    child: Row(
                       children: <Widget>[
-                        for (final String f in <String>['PDF', 'EPUB']) _FormatChip(f, tier1: true),
-                        for (final String f in <String>[
-                          'DOCX',
-                          'PPTX',
-                          'XLSX',
-                          'XLS',
-                          'ODS',
-                          'CSV',
-                          'MD',
-                          'TXT',
-                          'JPG',
-                          'PNG',
-                          'WEBP',
-                        ])
-                          _FormatChip(f, tier1: false),
-                      ],
-                    ),
-                    title: 'Opens more than books',
-                    body: 'Documents, slides, sheets, notes and images open too. Any of them with text can unfurl into Reader mode.',
-                    extra: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      spacing: Space.sm,
-                      children: <Widget>[
-                        _Legend(color: c.primary, text: 'Full reader: bookmarks, highlights, read aloud'),
-                        _Legend(color: c.primaryContainer, text: 'Viewer, plus Reader mode for text'),
-                      ],
-                    ),
-                  ),
-                  _Page(
-                    art: const _Tile(icon: AppIcons.folderOpen),
-                    title: 'Choose where your books live',
-                    body: 'Pick a folder and Unfurl lists what it can open inside it, including subfolders.',
-                    extra: Container(
-                      decoration: BoxDecoration(
-                        color: c.surfaceContainer,
-                        borderRadius: Radii.cardR,
-                        border: Border.all(color: c.outline),
-                      ),
-                      clipBehavior: Clip.antiAlias,
-                      child: Column(
-                        children: <Widget>[
-                          for (final (IconData i, String t) in <(IconData, String)>[
-                            (AppIcons.visibility, 'Read only. Unfurl never edits, moves or deletes your files.'),
-                            (AppIcons.folder, 'It sees only the folders you pick, and you can remove access any time.'),
-                            (AppIcons.shield, 'Unfurl has no internet access, so nothing can leave your phone.'),
-                          ]) ...<Widget>[
-                            if (i != AppIcons.visibility) Divider(color: c.divider),
-                            Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: Space.lg, vertical: Space.md),
-                              child: Row(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                spacing: Space.md,
-                                children: <Widget>[
-                                  AppIcon(i, size: 22, color: c.icon),
-                                  Expanded(
-                                    child: Text(t, style: UnfurlType.note.copyWith(height: 1.5, color: c.onSurface)),
-                                  ),
-                                ],
-                              ),
+                        for (int i = 0; i < 4; i++)
+                          AnimatedContainer(
+                            duration: Motion.of(context, Motion.navIndicator),
+                            curve: Motion.curveOf(context, Motion.spring),
+                            margin: const EdgeInsets.only(right: 6),
+                            width: i == _page ? 22 : 8,
+                            height: 8,
+                            decoration: BoxDecoration(
+                              color: i == _page ? c.primary : c.outline,
+                              borderRadius: Radii.fullR,
                             ),
+                          ),
+                      ],
+                    ),
+                  ),
+                ),
+                Expanded(
+                  child: PageView(
+                    controller: _pages,
+                    onPageChanged: (int i) => setState(() => _page = i),
+                    children: <Widget>[
+                      const _Page(
+                        art: UnfurlMark(),
+                        title: 'Open a file and start reading',
+                        body: 'PDFs and books open where you left off, in the font, size and theme you choose.',
+                      ),
+                      _Page(
+                        art: Wrap(
+                          spacing: Space.sm,
+                          runSpacing: Space.sm,
+                          children: <Widget>[
+                            for (final String f in <String>['PDF', 'EPUB']) _FormatChip(f, tier1: true),
+                            for (final String f in <String>[
+                              'DOCX',
+                              'PPTX',
+                              'XLSX',
+                              'XLS',
+                              'ODS',
+                              'CSV',
+                              'MD',
+                              'TXT',
+                              'JPG',
+                              'PNG',
+                              'WEBP',
+                            ])
+                              _FormatChip(f, tier1: false),
                           ],
-                        ],
+                        ),
+                        title: 'Opens more than books',
+                        body: 'Documents, slides, sheets, notes and images open too. Any of them with text can unfurl into Reader mode.',
+                        extra: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          spacing: Space.sm,
+                          children: <Widget>[
+                            _Legend(color: c.primary, text: 'Full reader: bookmarks, highlights, read aloud'),
+                            _Legend(color: c.primaryContainer, text: 'Viewer, plus Reader mode for text'),
+                          ],
+                        ),
                       ),
-                    ),
-                    note: 'Android doesn’t allow picking the whole Download folder, but any folder inside it works.',
-                  ),
-                  _Page(
-                    art: const _Tile(icon: AppIcons.doneAll),
-                    title: 'Get started',
-                    body: _added == null
-                        ? 'Open something now, or add a folder.'
-                        : 'Books added: ${readableFiles(counts[_added!.id] ?? 0)} in ${_added!.name}. Open something now, or add another folder.',
-                    extra: Align(
-                      alignment: AlignmentDirectional.centerStart,
-                      child: AppButton(
-                        label: _added == null ? 'Add a folder' : 'Add another folder',
-                        icon: AppIcons.createNewFolder,
-                        type: AppButtonType.secondary,
-                        height: 48,
-                        onPressed: () => _addFolder(advance: false),
+                      _Page(
+                        art: const _Tile(icon: AppIcons.folderOpen),
+                        title: 'Choose where your books live',
+                        body: 'Pick a folder and Unfurl lists what it can open inside it, including subfolders.',
+                        extra: Container(
+                          decoration: BoxDecoration(
+                            color: c.surfaceContainer,
+                            borderRadius: Radii.cardR,
+                            border: Border.all(color: c.outline),
+                          ),
+                          clipBehavior: Clip.antiAlias,
+                          child: Column(
+                            children: <Widget>[
+                              for (final (IconData i, String t) in <(IconData, String)>[
+                                (AppIcons.visibility, 'Read only. Unfurl never edits, moves or deletes your files.'),
+                                (
+                                  AppIcons.folder,
+                                  'It sees only the folders you pick, and you can remove access any time.',
+                                ),
+                                (AppIcons.shield, 'Unfurl has no internet access, so nothing can leave your phone.'),
+                              ]) ...<Widget>[
+                                if (i != AppIcons.visibility) Divider(color: c.divider),
+                                Padding(
+                                  padding: const EdgeInsets.symmetric(horizontal: Space.lg, vertical: Space.md),
+                                  child: Row(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    spacing: Space.md,
+                                    children: <Widget>[
+                                      AppIcon(i, size: 22, color: c.icon),
+                                      Expanded(
+                                        child: Text(
+                                          t,
+                                          style: UnfurlType.note.copyWith(height: 1.5, color: c.onSurface),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
+                        note:
+                            'Android doesn’t allow picking the whole Download folder, but any folder inside it works.',
                       ),
-                    ),
+                      _Page(
+                        art: const _Tile(icon: AppIcons.doneAll),
+                        title: 'Get started',
+                        body: _added == null
+                            ? 'Open something now, or add a folder.'
+                            : 'Books added: ${readableFiles(counts[_added!.id] ?? 0)} in ${_added!.name}. Open something now, or add another folder.',
+                        extra: Align(
+                          alignment: AlignmentDirectional.centerStart,
+                          child: AppButton(
+                            label: _added == null ? 'Add a folder' : 'Add another folder',
+                            icon: AppIcons.createNewFolder,
+                            type: AppButtonType.secondary,
+                            height: 48,
+                            onPressed: () => _addFolder(advance: false),
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
-                ],
-              ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(Space.screen, Space.md, Space.screen, Space.xl),
+                  child: Row(
+                    spacing: Space.md,
+                    children: <Widget>[
+                      AnimatedSize(
+                        duration: Motion.of(context, Motion.containerTransform),
+                        curve: Motion.decelerate,
+                        child: _Swap(
+                          id: a.quiet,
+                          child: AppButton(label: a.quiet, type: AppButtonType.text, onPressed: a.onQuiet),
+                        ),
+                      ),
+                      Expanded(
+                        child: _Swap(
+                          id: a.main,
+                          child: SizedBox(
+                            width: double.infinity,
+                            child: AppButton(label: a.main, icon: a.mainIcon, onPressed: a.onMain),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(Space.screen, Space.md, Space.screen, Space.xl),
-              child: Row(
-                spacing: Space.md,
-                children: <Widget>[
-                  AnimatedSize(
-                    duration: Motion.of(context, Motion.containerTransform),
-                    curve: Motion.decelerate,
-                    child: _Swap(
-                      id: a.quiet,
-                      child: AppButton(label: a.quiet, type: AppButtonType.text, onPressed: a.onQuiet),
-                    ),
-                  ),
-                  Expanded(
-                    child: _Swap(
-                      id: a.main,
-                      child: SizedBox(
-                        width: double.infinity,
-                        child: AppButton(label: a.main, icon: a.mainIcon, onPressed: a.onMain),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
+          ),
         ),
       ),
     );

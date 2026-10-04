@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../core/layout.dart';
 import '../core/motion/motion.dart';
 import '../core/theme/app_theme.dart';
 import '../core/theme/palette.dart';
@@ -64,40 +65,53 @@ class EmptyState extends StatelessWidget {
       EmptyTone.neutral => (c.surfaceContainerHigh, c.icon),
       EmptyTone.danger => (c.dangerContainer, c.onDangerContainer),
     };
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: <Widget>[
-        Expanded(
-          child: SingleChildScrollView(
-            padding: EdgeInsets.fromLTRB(28, top ?? (small ? 110 : 150), 28, Space.xl),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              spacing: Space.lg,
-              children: <Widget>[
-                Container(
-                  width: 64,
-                  height: 64,
-                  decoration: BoxDecoration(color: tileBg, borderRadius: Radii.cardR),
-                  child: AppIcon(icon, size: 32, color: tileFg),
+    // Wide windows: centred at 720dp, as More (board 6, V7).
+    return Align(
+      alignment: Alignment.topCenter,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: AdaptiveSpec.centred),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            Expanded(
+              child: SingleChildScrollView(
+                padding: EdgeInsets.fromLTRB(28, top ?? (small ? 110 : 150), 28, Space.xl),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  spacing: Space.lg,
+                  children: <Widget>[
+                    Container(
+                      width: 64,
+                      height: 64,
+                      decoration: BoxDecoration(color: tileBg, borderRadius: Radii.cardR),
+                      child: AppIcon(icon, size: 32, color: tileFg),
+                    ),
+                    Text(
+                      title,
+                      style: (small ? UnfurlType.displaySmall : UnfurlType.display).copyWith(color: c.onSurface),
+                    ),
+                    Text(message, style: UnfurlType.body.copyWith(color: c.onSurfaceVariant)),
+                    if (detail != null)
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: Space.md, vertical: 10),
+                        decoration: BoxDecoration(color: c.surfaceContainer, borderRadius: Radii.boxR),
+                        child: Text(
+                          detail!,
+                          style: UnfurlType.monoLabel.copyWith(height: 1.5, color: c.onSurfaceVariant),
+                        ),
+                      ),
+                  ],
                 ),
-                Text(title, style: (small ? UnfurlType.displaySmall : UnfurlType.display).copyWith(color: c.onSurface)),
-                Text(message, style: UnfurlType.body.copyWith(color: c.onSurfaceVariant)),
-                if (detail != null)
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: Space.md, vertical: 10),
-                    decoration: BoxDecoration(color: c.surfaceContainer, borderRadius: Radii.boxR),
-                    child: Text(detail!, style: UnfurlType.monoLabel.copyWith(height: 1.5, color: c.onSurfaceVariant)),
-                  ),
-              ],
+              ),
             ),
-          ),
+            if (actions.isNotEmpty)
+              Padding(
+                padding: EdgeInsets.fromLTRB(Space.screen, 0, Space.screen, aboveNav ? Space.bottomSafe : 36),
+                child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, spacing: 10, children: actions),
+              ),
+          ],
         ),
-        if (actions.isNotEmpty)
-          Padding(
-            padding: EdgeInsets.fromLTRB(Space.screen, 0, Space.screen, aboveNav ? Space.bottomSafe : 36),
-            child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, spacing: 10, children: actions),
-          ),
-      ],
+      ),
     );
   }
 }

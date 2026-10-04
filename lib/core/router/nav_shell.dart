@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../design_system/nav_pill.dart';
 import '../../features/settings/settings_controller.dart';
 import '../explorer.dart';
+import '../layout.dart';
 import '../motion/motion.dart';
 import '../providers.dart';
 
@@ -135,6 +136,7 @@ class _NavShellState extends ConsumerState<NavShell> with TickerProviderStateMix
     // The board puts the pill 22 above the frame's edge, where the gesture
     // bar sits; with three-button navigation it clears the buttons instead.
     final double bottom = math.max(22, MediaQuery.viewPaddingOf(context).bottom);
+    final bool rail = SizeClass.of(context).rail;
 
     return PopScope(
       // Back from any other tab's root lands on Home; on Home it leaves the
@@ -144,60 +146,94 @@ class _NavShellState extends ConsumerState<NavShell> with TickerProviderStateMix
         if (!didPop) widget.onSelect(0);
       },
       child: Scaffold(
-        body: NotificationListener<ScrollNotification>(
-          onNotification: _onScroll,
-          child: Stack(
-            children: <Widget>[
-              Positioned.fill(
-                child: GestureDetector(
-                  onHorizontalDragEnd: _onHorizontalFling,
-                  behavior: HitTestBehavior.translucent,
-                  child: ClipRect(
-                    // The translation stays in the tree at rest (offset zero)
-                    // rather than being added for the animation, so a switch
-                    // never re-parents the branches (Headshorts). The
-                    // boundary sits inside it: the page rasterises once and
-                    // only moves.
-                    child: AnimatedBuilder(
-                      animation: pageCurved,
-                      builder: (BuildContext context, Widget? child) {
-                        final double t = reduced ? 1 : pageCurved.value;
-                        return FractionalTranslation(translation: Offset(_forward ? 1 - t : t - 1, 0), child: child);
-                      },
-                      child: RepaintBoundary(child: widget.child),
+        body: rail
+            ? Row(
+                children: <Widget>[
+                  // Board 6, V7: a rail on expanded widths, out of the way of
+                  // a landscape tablet's height; it leaves only on first launch.
+                  AnimatedBuilder(
+                    animation: _hidden,
+                    builder: (BuildContext context, Widget? child) => Align(
+                      alignment: Alignment.centerRight,
+                      widthFactor: 1 - Motion.decelerate.transform(_hidden.value),
+                      child: child,
                     ),
+                    child: NavRail(index: widget.index, onSelect: widget.onSelect),
                   ),
-                ),
-              ),
-              Positioned(
-                left: 0,
-                right: 0,
-                bottom: bottom,
-                child: RepaintBoundary(
-                  child: AnimatedBuilder(
-                    animation: hide,
-                    builder: (BuildContext context, Widget? child) {
-                      final double t = Motion.decelerate.transform(hide.value);
-                      return IgnorePointer(
-                        ignoring: t > 0.5,
-                        child: Opacity(
-                          opacity: 1 - t,
-                          child: Transform.translate(offset: Offset(0, reduced ? 0 : 72 * t), child: child),
+                  Expanded(child: _pages(pageCurved, reduced)),
+                ],
+              )
+            : NotificationListener<ScrollNotification>(
+                onNotification: _onScroll,
+                child: Stack(
+                  children: <Widget>[
+                    Positioned.fill(
+                      child: GestureDetector(
+                        onHorizontalDragEnd: _onHorizontalFling,
+                        behavior: HitTestBehavior.translucent,
+                        child: ClipRect(
+                          // The translation stays in the tree at rest (offset zero)
+                          // rather than being added for the animation, so a switch
+                          // never re-parents the branches (Headshorts). The
+                          // boundary sits inside it: the page rasterises once and
+                          // only moves.
+                          child: AnimatedBuilder(
+                            animation: pageCurved,
+                            builder: (BuildContext context, Widget? child) {
+                              final double t = reduced ? 1 : pageCurved.value;
+                              return FractionalTranslation(
+                                translation: Offset(_forward ? 1 - t : t - 1, 0),
+                                child: child,
+                              );
+                            },
+                            child: RepaintBoundary(child: widget.child),
+                          ),
                         ),
-                      );
-                    },
-                    child: Center(
-                      child: NavPill(index: widget.index, onSelect: widget.onSelect),
+                      ),
                     ),
-                  ),
+                    Positioned(
+                      left: 0,
+                      right: 0,
+                      bottom: bottom,
+                      child: RepaintBoundary(
+                        child: AnimatedBuilder(
+                          animation: hide,
+                          builder: (BuildContext context, Widget? child) {
+                            final double t = Motion.decelerate.transform(hide.value);
+                            return IgnorePointer(
+                              ignoring: t > 0.5,
+                              child: Opacity(
+                                opacity: 1 - t,
+                                child: Transform.translate(offset: Offset(0, reduced ? 0 : 72 * t), child: child),
+                              ),
+                            );
+                          },
+                          child: Center(
+                            child: NavPill(index: widget.index, onSelect: widget.onSelect),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
-            ],
-          ),
-        ),
       ),
     );
   }
+}
+
+extension on _NavShellState {
+  /// The tabs, sliding in from the side they lie on.
+  Widget _pages(Animation<double> pageCurved, bool reduced) => ClipRect(
+    child: AnimatedBuilder(
+      animation: pageCurved,
+      builder: (BuildContext context, Widget? child) {
+        final double t = reduced ? 1 : pageCurved.value;
+        return FractionalTranslation(translation: Offset(_forward ? 1 - t : t - 1, 0), child: child);
+      },
+      child: RepaintBoundary(child: widget.child),
+    ),
+  );
 }
 
 /// The further-hidden of the two reasons the pill leaves: scroll or state.

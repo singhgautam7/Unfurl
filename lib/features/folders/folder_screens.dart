@@ -10,6 +10,7 @@ import 'package:go_router/go_router.dart';
 import '../../core/db/database.dart';
 import '../../core/explorer.dart';
 import '../../core/files.dart';
+import '../../core/layout.dart';
 import '../../core/library/library.dart';
 import '../../core/locator.dart';
 import '../../core/motion/motion.dart';
@@ -1109,17 +1110,18 @@ class _FolderScreenState extends ConsumerState<FolderScreen> {
           sliver: _grid
               ? SliverGrid.builder(
                   gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: 3,
+                    crossAxisCount: _gridGeometry.columns,
                     // Rows fit their tiles: books carry a track, other
                     // files a name line.
-                    mainAxisExtent: skeleton || anyNonBook ? 188 : 170,
+                    mainAxisExtent: _gridGeometry.extent(skeleton || anyNonBook ? 52 : 34),
                     mainAxisSpacing: 18,
+                    crossAxisSpacing: _gridGeometry.columns == 3 ? 0 : 12,
                   ),
                   itemCount: skeleton ? 9 : shown.length + (loadingMore != null ? 3 : 0),
                   itemBuilder: (BuildContext context, int i) => Align(
-                    alignment: <Alignment>[Alignment.topLeft, Alignment.topCenter, Alignment.topRight][i % 3],
+                    alignment: _gridGeometry.alignment(i),
                     child: SizedBox(
-                      width: 96,
+                      width: _gridGeometry.tile,
                       child: skeleton || i >= shown.length
                           ? const SkeletonTile()
                           : Reveal(index: i < 9 ? i : 0, child: _tile(shown[i])),
@@ -1226,7 +1228,11 @@ class _FolderScreenState extends ConsumerState<FolderScreen> {
     _printing = false;
   }
 
+  /// The grid's geometry for this window (board 6, V7: 3 / 5 / 7 columns).
+  CoverGrid get _gridGeometry => CoverGrid.of(context);
+
   Widget _tile(_Item e) {
+    final CoverGrid g = _gridGeometry;
     final FormatModule? m = e.format;
     final String meta = '${Files.size(e.size)} · ${Files.when(e.modified)}';
     if (m != null && m.book && !e.hidden) {
@@ -1245,6 +1251,8 @@ class _FolderScreenState extends ConsumerState<FolderScreen> {
           format: m,
           badge: Formats.labelOf(e.name),
           issue: e.issue,
+          width: g.tile,
+          height: g.cover,
         ),
         progress: progress,
         finished: doc?.finished ?? false,
@@ -1257,11 +1265,13 @@ class _FolderScreenState extends ConsumerState<FolderScreen> {
     final bool image = _explorer && m == Formats.image && !e.hidden;
     return CoverTile(
       cover: image
-          ? _Thumb(path: e.path, label: Formats.labelOf(e.name))
+          ? _Thumb(path: e.path, label: Formats.labelOf(e.name), width: g.tile, height: g.cover)
           : FormatTile(
               label: Formats.labelOf(e.name),
               icon: m?.icon ?? unknownIcon(e.name),
               muted: m == null || e.hidden,
+              width: g.tile,
+              height: g.cover,
             ),
       progress: 0,
       finished: false,
@@ -1539,10 +1549,12 @@ _Item _itemOf(String root, DirEntry e, Document? doc) => _Item(
 
 /// An image file's own picture, decoded at the size it is drawn.
 class _Thumb extends StatelessWidget {
-  const _Thumb({required this.path, required this.label});
+  const _Thumb({required this.path, required this.label, this.width = 96, this.height = 136});
 
   final String path;
   final String label;
+  final double width;
+  final double height;
 
   @override
   Widget build(BuildContext context) {
@@ -1550,10 +1562,10 @@ class _Thumb extends StatelessWidget {
     return ClipRRect(
       borderRadius: Radii.coverR,
       child: SizedBox(
-        width: 96,
-        height: 136,
+        width: width,
+        height: height,
         child: Image(
-          image: ResizeImage(FileImage(File(path)), width: (96 * dpr).round()),
+          image: ResizeImage(FileImage(File(path)), width: (width * dpr).round()),
           fit: BoxFit.cover,
           gaplessPlayback: true,
           frameBuilder: (BuildContext context, Widget child, int? frame, bool sync) => sync

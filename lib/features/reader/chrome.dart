@@ -3,6 +3,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
+import '../../core/layout.dart';
 import '../../core/motion/motion.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/theme/palette.dart';
@@ -587,8 +588,13 @@ class SelectionToolbar extends StatelessWidget {
     required this.onReadAloud,
     this.onMore,
     required this.onDefine,
+    this.centre,
     super.key,
   });
+
+  /// Where the selection's middle is across the toolbar's slot. On wide
+  /// windows the toolbar keeps its phone width and sits over the selection.
+  final double? centre;
 
   /// Room the toolbar needs above a selection to sit there.
   static const double clearance = 200;
@@ -608,7 +614,22 @@ class SelectionToolbar extends StatelessWidget {
   final void Function(BuildContext anchor)? onMore;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (BuildContext context, BoxConstraints box) {
+      final double w = math.min(box.maxWidth, AdaptiveSpec.selectionToolbar);
+      final double left = ((centre ?? box.maxWidth / 2) - w / 2).clamp(0, box.maxWidth - w);
+      return Padding(
+        padding: EdgeInsets.only(left: left),
+        child: Align(
+          alignment: Alignment.centerLeft,
+          widthFactor: 1,
+          child: SizedBox(width: w, child: _bar(context)),
+        ),
+      );
+    },
+  );
+
+  Widget _bar(BuildContext context) {
     final UnfurlColors c = context.colors;
     return Material(
       color: Colors.transparent,

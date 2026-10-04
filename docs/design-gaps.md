@@ -91,3 +91,6 @@ the build prompt, what was done, and which Mull file it follows.
 | v3-19 | V3-COMFORT | One frame draws the read-aloud mini player on Home. | Read aloud is per reader (v2), so the mini player and its time-left chip stay in the reader. | v2 |
 | v3-20 | V3-COMFORT | Settings › Controls also lists Tap zones and Swipe to turn pages, which Unfurl doesn't have as settings. | Only the volume button rows and the read-aloud note. | — |
 | v3-21 | V3-COMFORT | No entry point for auto-scroll is drawn. | Reader, PDF and comics overflows open the Reading sheet (decision 36). | Board 6 V6 |
+| v3-22 | V3-TABLET | Insights and Settings landscape frames draw the rail beside them. | Pushed pages cover the rail as they cover the pill on phones; moving them inside the More branch would keep the pill on phone sub-pages, a v2 behaviour change. | Board 6 V7 |
+| v3-23 | V3-TABLET | No tablet frames for welcome, empty states or the selection toolbar. | Centred at 720dp; the toolbar keeps its phone width over the selection (decision 42). | — |
+| v3-24 | V3-TABLET | Board 6 draws Home with Recently added. | Home keeps its v2 sections (Continue reading, Recent files, In your library) laid out as grid rows. | Board 6 V7 |

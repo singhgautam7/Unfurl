@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../core/layout.dart';
 import '../core/motion/motion.dart';
 import '../core/theme/app_theme.dart';
 import '../core/theme/palette.dart';
@@ -105,12 +106,17 @@ class AppScaffold extends StatelessWidget {
     this.onBack,
     this.actions = const <Widget>[],
     this.backIcon = AppIcons.back,
+    this.wide = false,
     super.key,
   });
 
   final String title;
   final VoidCallback? onBack;
   final IconData backIcon;
+
+  /// Uses the full width on expanded windows (Insights' two columns); other
+  /// pages centre at 720dp there (board 6, V7).
+  final bool wide;
   final List<Widget> actions;
   final List<Widget> children;
 
@@ -118,19 +124,36 @@ class AppScaffold extends StatelessWidget {
   Widget build(BuildContext context) => Scaffold(
     body: SafeArea(
       bottom: false,
-      child: CollapseOnScroll(
-        builder: (BuildContext context, bool collapsed) => Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: <Widget>[
-            AppHeader(title: title, onBack: onBack, actions: actions, collapsed: collapsed, backIcon: backIcon),
-            Expanded(
-              child: ListView(
-                padding: const EdgeInsets.fromLTRB(Space.screen, 6, Space.screen, Space.bottomSafe),
-                children: children,
-              ),
+      child: LayoutBuilder(
+        builder: (BuildContext context, BoxConstraints box) {
+          // Expanded windows: header and body centred at 720dp, unless [wide].
+          final double side =
+              !wide &&
+                  SizeClass.ofWidth(box.maxWidth + (SizeClass.of(context).rail ? AdaptiveSpec.railWidth : 0)) ==
+                      SizeClass.expanded
+              ? ((box.maxWidth - AdaptiveSpec.centred) / 2).clamp(Space.screen, double.infinity)
+              : Space.screen;
+          return CollapseOnScroll(
+            builder: (BuildContext context, bool collapsed) => Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                Padding(
+                  padding: EdgeInsets.symmetric(horizontal: side - Space.screen),
+                  child: AppHeader(
+                    title: title,
+                    onBack: onBack,
+                    actions: actions,
+                    collapsed: collapsed,
+                    backIcon: backIcon,
+                  ),
+                ),
+                Expanded(
+                  child: ListView(padding: EdgeInsets.fromLTRB(side, 6, side, Space.bottomSafe), children: children),
+                ),
+              ],
             ),
-          ],
-        ),
+          );
+        },
       ),
     ),
   );

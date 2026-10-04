@@ -14,6 +14,7 @@ import 'package:vector_math/vector_math_64.dart' show Quad;
 import '../../core/db/database.dart';
 import '../../core/files.dart';
 import '../../core/library/enrich.dart';
+import '../../core/layout.dart';
 import '../../core/library/library.dart';
 import '../../core/locator.dart';
 import '../../core/motion/motion.dart';
@@ -139,7 +140,7 @@ class _PdfScreenState extends ConsumerState<PdfScreen> with WidgetsBindingObserv
       final int dir = p.volumeInvert ? -d : d;
       // Paged: the next or previous page. Continuous: 90% of a screen.
       p.pdfLayout == PdfLayout.paged
-          ? _goToPage(_page + dir, animate: true)
+          ? _goToPage(_page + dir * _step, animate: true)
           : _pagesKey.currentState?.scrollScreen(ComfortSpec.volumeScrollFraction * dir);
     });
     _auto = AutoAdvance(
@@ -148,7 +149,7 @@ class _PdfScreenState extends ConsumerState<PdfScreen> with WidgetsBindingObserv
       scrollBy: (double px) => _pagesKey.currentState?.scrollByPixels(px) ?? false,
       turn: () {
         if (_page >= _pages) return false;
-        _goToPage(_page + 1, animate: true);
+        _goToPage(_page + _step, animate: true);
         return true;
       },
       level: ComfortPrefs.level(ref.read(prefsProvider), 'pdf'),
@@ -546,6 +547,9 @@ class _PdfScreenState extends ConsumerState<PdfScreen> with WidgetsBindingObserv
       mode: _reader ? 'reader' : 'page',
     );
   }
+
+  /// Pages per turn: two in a tablet spread.
+  int get _step => (_pagesKey.currentState?.spread ?? false) ? 2 : 1;
 
   void _goToPage(int page, {bool animate = false, double fraction = 0}) {
     final int p = page.clamp(1, _pages);
@@ -1198,10 +1202,10 @@ class _PdfScreenState extends ConsumerState<PdfScreen> with WidgetsBindingObserv
                         }
                       }
                       if (prefs.pdfLayout == PdfLayout.paged && x < 0.25) {
-                        return _goToPage(_page - 1, animate: true);
+                        return _goToPage(_page - _step, animate: true);
                       }
                       if (prefs.pdfLayout == PdfLayout.paged && x > 0.75) {
-                        return _goToPage(_page + 1, animate: true);
+                        return _goToPage(_page + _step, animate: true);
                       }
                       _toggleChrome();
                     },
@@ -1390,6 +1394,7 @@ class _PdfScreenState extends ConsumerState<PdfScreen> with WidgetsBindingObserv
       bottom: above ? h - r.top + 8 : null,
       child: Reveal(
         child: SelectionToolbar(
+          centre: r.center.dx - 14,
           theme: _theme,
           selectedColor: _highlightOver(s)?.color,
           onCopy: () {
@@ -1858,6 +1863,7 @@ class _PagesState extends State<_Pages> with SingleTickerProviderStateMixin {
       final int keep = _page;
       _pager.dispose();
       _pager = PageController(initialPage: keep - 1, viewportFraction: 0.92);
+      _spread = false;
       _restored = false;
     }
   }
@@ -1966,10 +1972,11 @@ class _PagesState extends State<_Pages> with SingleTickerProviderStateMixin {
   void goTo(int page, {double fraction = 0, bool animate = false}) {
     if (widget.paged) {
       if (!_pager.hasClients) return;
+      final int index = _spread ? (page - 1) ~/ 2 : page - 1;
       if (animate && !Motion.reduced(context)) {
-        unawaited(_pager.animateToPage(page - 1, duration: Motion.pageTurn, curve: Motion.spring));
+        unawaited(_pager.animateToPage(index, duration: Motion.pageTurn, curve: Motion.spring));
       } else {
-        _pager.jumpToPage(page - 1);
+        _pager.jumpToPage(index);
       }
       return;
     }
@@ -2072,43 +2079,71 @@ class _PagesState extends State<_Pages> with SingleTickerProviderStateMixin {
     );
   }
 
+  /// Two pages side by side (tablets in landscape, board 6, V7).
+  bool _spread = false;
+  bool get spread => _spread;
+
   Widget _pagedView() => LayoutBuilder(
-    builder: (BuildContext context, BoxConstraints box) => PageView.builder(
-      controller: _pager,
-      itemCount: _count,
-      onPageChanged: (int i) {
-        setState(() => _page = i + 1);
-        widget.onPage(i + 1, 0);
-      },
-      itemBuilder: (BuildContext context, int i) {
-        final int page = i + 1;
+    builder: (BuildContext context, BoxConstraints box) {
+      final bool spread = SizeClass.of(context) == SizeClass.expanded && MediaQuery.sizeOf(context).shortestSide >= 600;
+      if (spread != _spread) {
+        // Rotation or a resize: the same page, paired or alone.
+        final PageController old = _pager;
+        _spread = spread;
+        _pager = PageController(
+          initialPage: spread ? (_page - 1) ~/ 2 : _page - 1,
+          viewportFraction: spread ? 1 : 0.92,
+        );
+        WidgetsBinding.instance.addPostFrameCallback((_) => old.dispose());
+      }
+      final double maxH = box.maxHeight - widget.topInset - 120;
+      Widget tile(int page, double maxW) {
         final double aspect = widget.pageAspect(page);
-        final double maxW = box.maxWidth * 0.92 - 8, maxH = box.maxHeight - widget.topInset - 120;
         final double w = math.min(maxW, maxH * aspect);
         widget.needText(page);
-        return Padding(
-          padding: EdgeInsets.only(top: widget.topInset, bottom: 120, left: 4, right: 4),
-          child: Center(
-            child: SizedBox(
-              width: w,
-              height: w / aspect,
-              child: _PageTile(
-                key: ValueKey<int>(page),
-                page: page,
-                renderer: widget.renderer,
-                look: widget.lookFor(page),
-                size: Size(w, w / aspect),
-                zoom: 1,
-                marks: widget.paintFor(page),
-                onTap: (Offset f, double x) => widget.onTap(page, f, x),
-                onLongPress: (Offset f, Rect Function(Rect) g) => widget.onLongPress(page, f, g),
-                onDrag: (Offset f, Rect Function(Rect) g) => widget.onDragSelect(page, f, g),
-              ),
-            ),
+        return SizedBox(
+          width: w,
+          height: w / aspect,
+          child: _PageTile(
+            key: ValueKey<int>(page),
+            page: page,
+            renderer: widget.renderer,
+            look: widget.lookFor(page),
+            size: Size(w, w / aspect),
+            zoom: 1,
+            marks: widget.paintFor(page),
+            onTap: (Offset f, double x) => widget.onTap(page, f, x),
+            onLongPress: (Offset f, Rect Function(Rect) g) => widget.onLongPress(page, f, g),
+            onDrag: (Offset f, Rect Function(Rect) g) => widget.onDragSelect(page, f, g),
           ),
         );
-      },
-    ),
+      }
+
+      return PageView.builder(
+        controller: _pager,
+        itemCount: spread ? (_count + 1) ~/ 2 : _count,
+        onPageChanged: (int i) {
+          final int page = spread ? i * 2 + 1 : i + 1;
+          setState(() => _page = page);
+          widget.onPage(page, 0);
+        },
+        itemBuilder: (BuildContext context, int i) => Padding(
+          padding: EdgeInsets.only(top: widget.topInset, bottom: 120, left: 4, right: 4),
+          child: Center(
+            child: spread
+                ? Row(
+                    mainAxisSize: MainAxisSize.min,
+                    spacing: Space.xs,
+                    children: <Widget>[
+                      tile(i * 2 + 1, (box.maxWidth - 24) / 2),
+                      if (i * 2 + 2 <= _count) tile(i * 2 + 2, (box.maxWidth - 24) / 2),
+                    ],
+                  )
+                : tile(i + 1, box.maxWidth * 0.92 - 8),
+          ),
+        ),
+      );
+    },
   );
 }
 

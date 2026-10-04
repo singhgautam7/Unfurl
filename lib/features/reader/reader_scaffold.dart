@@ -10,6 +10,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../core/db/database.dart';
 import '../../core/files.dart';
+import '../../core/layout.dart';
 import '../../core/library/library.dart';
 import '../../core/locator.dart';
 import '../../core/motion/motion.dart';
@@ -906,7 +907,9 @@ class ReaderScaffoldState extends ConsumerState<ReaderScaffold> with WidgetsBind
         if (_auto.enabled) _auto.play();
       }
     });
-    final bool wide = MediaQuery.sizeOf(context).width >= 840;
+    // Spreads on tablets in landscape only; reflowable text stays one page
+    // on phones, even turned sideways (board 6, V7).
+    final bool wide = SizeClass.of(context) == SizeClass.expanded && MediaQuery.sizeOf(context).shortestSide >= 600;
     final ReaderStyle style = ReaderStyle.of(
       prefs,
       theme,
@@ -1192,6 +1195,7 @@ class ReaderScaffoldState extends ConsumerState<ReaderScaffold> with WidgetsBind
       bottom: above ? h - first.top + 8 : null,
       child: Reveal(
         child: SelectionToolbar(
+          centre: (first.left + last.right) / 2 - 14,
           theme: theme,
           selectedColor: _highlightOver(sel)?.color,
           onCopy: () {

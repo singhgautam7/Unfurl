@@ -166,3 +166,15 @@ are the ones worth a second opinion.
 38. **Not built:** shake to cancel the fade (no sensor code in Unfurl; a touch restarts it), and comfort for
     DOCX pages and slides (not continuous reading surfaces). Read aloud stays per reader as in v2, so its mini
     player (with the timer chip) is in the reader, not on Home as one board 6 frame draws (gap v3-19).
+39. **Spreads for text only on tablets:** Reader mode, EPUB, Kindle and FB2 spread when the window is expanded
+    and its shortest side is at least 600dp, so a phone in landscape keeps one page (board 6, V7: "On phones
+    only comics use spreads"). The gutter is a 1dp rule in the reading theme's muted ink at 25%.
+40. **PDF spreads pair from page 1** (1–2, 3–4): PDFs carry no reliable "first page is a cover" flag, and
+    pairing from the first page keeps a page's partner stable when the document is reopened. Auto page turn and
+    volume keys step two pages in a spread.
+41. **Home on tablets** shows Continue reading and In your library as one row of the 5 or 7 column grid, in
+    place of the phone's hero card and horizontal list, as board 6 V7 draws. Continue reading now lists every
+    Library format (it listed only PDF and EPUB, so Kindle, FB2 and comic books never appeared).
+42. **Wide-window centring:** More, Settings pages, empty states and the welcome pages centre at 720dp on
+    expanded windows, header included. The selection toolbar keeps a phone's width (440dp) and sits over the
+    selection, so on a spread it stays on its page.

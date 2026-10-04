@@ -166,3 +166,71 @@ class _NavItem extends StatelessWidget {
     return item;
   }
 }
+
+/// Board 6, V7: the nav rail on expanded widths (≥840dp). The same five tabs
+/// and icons; the selected one in a 56 × 32 `primaryContainer` indicator,
+/// labels below. 80dp wide on the left, a hairline on its right.
+class NavRail extends StatelessWidget {
+  const NavRail({required this.index, required this.onSelect, super.key});
+
+  final int index;
+  final ValueChanged<int> onSelect;
+
+  @override
+  Widget build(BuildContext context) {
+    final UnfurlColors c = context.colors;
+    return Container(
+      width: 80,
+      decoration: BoxDecoration(
+        color: c.surface,
+        border: Border(right: BorderSide(color: c.divider)),
+      ),
+      padding: EdgeInsets.only(top: MediaQuery.paddingOf(context).top + Space.xl),
+      child: Column(
+        spacing: Space.lg,
+        children: <Widget>[
+          for (int i = 0; i < kDestinations.length; i++)
+            Semantics(
+              button: true,
+              selected: i == index,
+              label: kDestinations[i].label,
+              excludeSemantics: true,
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () => onSelect(i),
+                child: SizedBox(
+                  width: 80,
+                  child: Column(
+                    spacing: Space.xs,
+                    children: <Widget>[
+                      AnimatedContainer(
+                        duration: Motion.of(context, Motion.navIndicator),
+                        curve: Motion.curveOf(context, Motion.spring),
+                        width: 56,
+                        height: 32,
+                        decoration: BoxDecoration(
+                          color: i == index ? c.primaryContainer : c.primaryContainer.withValues(alpha: 0),
+                          borderRadius: Radii.fullR,
+                        ),
+                        child: AppIcon(
+                          kDestinations[i].icon,
+                          fill: i == index,
+                          color: i == index ? c.onPrimaryContainer : c.iconMuted,
+                        ),
+                      ),
+                      Text(
+                        kDestinations[i].label,
+                        style: UnfurlType.label
+                            .copyWith(color: i == index ? c.onSurface : c.onSurfaceVariant)
+                            .weight(i == index ? 600 : 500),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}

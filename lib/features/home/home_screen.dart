@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/db/database.dart';
 import '../../core/files.dart';
+import '../../core/layout.dart';
 import '../../core/library/library.dart';
 import '../../core/locator.dart';
 import '../../core/motion/motion.dart';
@@ -53,10 +54,13 @@ class HomeScreen extends ConsumerWidget {
     final List<Folder> lost = folders.where((Folder f) => f.accessLost).toList();
 
     final List<Document> reading = opened
-        .where((Document d) => (d.format == 'pdf' || d.format == 'epub') && !d.finished)
+        .where((Document d) => (Formats.of(d.name)?.book ?? false) && !d.finished)
         .toList();
-    final Document? hero = reading.firstOrNull;
-    final List<Document> recentBooks = reading.skip(1).take(8).toList();
+    // Tablets show Continue reading as a row of covers (board 6, V7).
+    final CoverGrid grid = CoverGrid.of(context);
+    final bool wide = grid.columns > 3;
+    final Document? hero = wide ? null : reading.firstOrNull;
+    final List<Document> recentBooks = (wide ? reading : reading.skip(1)).take(wide ? grid.columns : 8).toList();
     // Until a few books have been read, suggest ones not opened yet.
     final List<BookItem> unopened = books.where((BookItem b) => b.doc == null).toList();
     final List<Recent> files = recents
@@ -151,53 +155,48 @@ class HomeScreen extends ConsumerWidget {
                     ],
                     if (recentBooks.isNotEmpty) ...<Widget>[
                       SectionHeader(
-                        label: 'Recent books',
+                        label: wide ? 'Continue reading' : 'Recent books',
+                        accent: wide,
                         action: 'Library',
                         onAction: () => StatefulNavigationShell.maybeOf(context)?.goBranch(1),
                       ),
                       const SizedBox(height: Space.md),
                       Reveal(
                         index: 1,
-                        child: SizedBox(
-                          height: 186,
-                          child: ListView.separated(
-                            scrollDirection: Axis.horizontal,
-                            clipBehavior: Clip.none,
-                            itemCount: recentBooks.length,
-                            separatorBuilder: (BuildContext context, int i) => const SizedBox(width: 14),
-                            itemBuilder: (BuildContext context, int i) {
-                              final Document d = recentBooks[i];
-                              return SizedBox(
-                                width: 96,
-                                child: Builder(
-                                  builder: (BuildContext tile) => CoverTile(
-                                    onLongPress: () => _bookMenu(
-                                      context,
-                                      tile,
-                                      onOpen: () => _resume(context, d, 'home:${d.fingerprint}'),
-                                      uri: d.uri,
-                                      fingerprint: d.fingerprint,
-                                      title: d.title ?? _stem(d.name),
-                                      author: d.author,
-                                      name: d.name,
-                                    ),
-                                    heroTag: 'home:${d.fingerprint}',
-                                    cover: CoverArt(
-                                      title: d.title ?? _stem(d.name),
-                                      author: d.author,
-                                      fingerprint: d.fingerprint,
-                                      format: Formats.of(d.name) ?? Formats.pdf,
-                                      badge: Formats.labelOf(d.name),
-                                      issue: d.issue,
-                                    ),
-                                    progress: d.progress,
-                                    finished: d.finished,
-                                    onTap: () => _resume(context, d, 'home:${d.fingerprint}'),
-                                  ),
+                        child: _CoverRow(
+                          grid: grid,
+                          count: recentBooks.length,
+                          tile: (int i, double w, double h) {
+                            final Document d = recentBooks[i];
+                            return Builder(
+                              builder: (BuildContext tile) => CoverTile(
+                                onLongPress: () => _bookMenu(
+                                  context,
+                                  tile,
+                                  onOpen: () => _resume(context, d, 'home:${d.fingerprint}'),
+                                  uri: d.uri,
+                                  fingerprint: d.fingerprint,
+                                  title: d.title ?? _stem(d.name),
+                                  author: d.author,
+                                  name: d.name,
                                 ),
-                              );
-                            },
-                          ),
+                                heroTag: 'home:${d.fingerprint}',
+                                cover: CoverArt(
+                                  title: d.title ?? _stem(d.name),
+                                  author: d.author,
+                                  width: w,
+                                  height: h,
+                                  fingerprint: d.fingerprint,
+                                  format: Formats.of(d.name) ?? Formats.pdf,
+                                  badge: Formats.labelOf(d.name),
+                                  issue: d.issue,
+                                ),
+                                progress: d.progress,
+                                finished: d.finished,
+                                onTap: () => _resume(context, d, 'home:${d.fingerprint}'),
+                              ),
+                            );
+                          },
                         ),
                       ),
                       const SizedBox(height: Space.section),
@@ -219,47 +218,41 @@ class HomeScreen extends ConsumerWidget {
                       const SizedBox(height: Space.md),
                       Reveal(
                         index: 1,
-                        child: SizedBox(
-                          height: 186,
-                          child: ListView.separated(
-                            scrollDirection: Axis.horizontal,
-                            clipBehavior: Clip.none,
-                            itemCount: math.min(unopened.length, 8),
-                            separatorBuilder: (BuildContext context, int i) => const SizedBox(width: 14),
-                            itemBuilder: (BuildContext context, int i) {
-                              final BookItem b = unopened[i];
-                              final String tag = 'home:lib:${b.entry.id}';
-                              return SizedBox(
-                                width: 96,
-                                child: Builder(
-                                  builder: (BuildContext tileCtx) => CoverTile(
-                                    onLongPress: () => _bookMenu(
-                                      context,
-                                      tileCtx,
-                                      onOpen: () => openBook(context, b, heroTag: tag),
-                                      uri: b.entry.uri,
-                                      fingerprint: b.fingerprint,
-                                      title: b.title,
-                                      author: b.author,
-                                      name: b.entry.name,
-                                    ),
-                                    heroTag: tag,
-                                    cover: CoverArt(
-                                      title: b.title,
-                                      author: b.author,
-                                      fingerprint: b.fingerprint,
-                                      format: b.format,
-                                      badge: Formats.labelOf(b.entry.name),
-                                      issue: b.issue,
-                                    ),
-                                    progress: b.progress,
-                                    finished: b.finished,
-                                    onTap: () => openBook(context, b, heroTag: tag),
-                                  ),
+                        child: _CoverRow(
+                          grid: grid,
+                          count: math.min(unopened.length, wide ? grid.columns : 8),
+                          tile: (int i, double w, double h) {
+                            final BookItem b = unopened[i];
+                            final String tag = 'home:lib:${b.entry.id}';
+                            return Builder(
+                              builder: (BuildContext tileCtx) => CoverTile(
+                                onLongPress: () => _bookMenu(
+                                  context,
+                                  tileCtx,
+                                  onOpen: () => openBook(context, b, heroTag: tag),
+                                  uri: b.entry.uri,
+                                  fingerprint: b.fingerprint,
+                                  title: b.title,
+                                  author: b.author,
+                                  name: b.entry.name,
                                 ),
-                              );
-                            },
-                          ),
+                                heroTag: tag,
+                                cover: CoverArt(
+                                  title: b.title,
+                                  author: b.author,
+                                  width: w,
+                                  height: h,
+                                  fingerprint: b.fingerprint,
+                                  format: b.format,
+                                  badge: Formats.labelOf(b.entry.name),
+                                  issue: b.issue,
+                                ),
+                                progress: b.progress,
+                                finished: b.finished,
+                                onTap: () => openBook(context, b, heroTag: tag),
+                              ),
+                            );
+                          },
                         ),
                       ),
                       const SizedBox(height: Space.section),
@@ -286,6 +279,43 @@ class HomeScreen extends ConsumerWidget {
 }
 
 /// Resume: the exact passage and mode last used.
+/// A row of covers: a horizontal list of 96dp tiles on phones, one row of
+/// the 5 or 7 column grid on tablets.
+class _CoverRow extends StatelessWidget {
+  const _CoverRow({required this.grid, required this.count, required this.tile});
+
+  final CoverGrid grid;
+  final int count;
+  final Widget Function(int i, double width, double height) tile;
+
+  @override
+  Widget build(BuildContext context) {
+    if (grid.columns == 3) {
+      return SizedBox(
+        height: 186,
+        child: ListView.separated(
+          scrollDirection: Axis.horizontal,
+          clipBehavior: Clip.none,
+          itemCount: count,
+          separatorBuilder: (BuildContext context, int i) => const SizedBox(width: 14),
+          itemBuilder: (BuildContext context, int i) => SizedBox(width: 96, child: tile(i, 96, 136)),
+        ),
+      );
+    }
+    return SizedBox(
+      height: grid.extent(50),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        spacing: CoverGrid.gap,
+        children: <Widget>[
+          for (int i = 0; i < math.min(count, grid.columns); i++)
+            SizedBox(width: grid.tile, child: tile(i, grid.tile, grid.cover)),
+        ],
+      ),
+    );
+  }
+}
+
 Future<void> _resume(BuildContext context, Document d, String tag) => openDocument(
   context,
   DocRef(uri: d.uri, name: d.name, size: d.size),

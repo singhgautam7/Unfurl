@@ -849,6 +849,15 @@ class _Spread extends StatelessWidget {
                   style: meta,
                 ),
               ),
+            // A spread's gutter: a 1dp rule in muted ink (board 6, V7).
+            if (columns == 2)
+              Positioned(
+                left: style.margin + layout.pageSize.width + 32,
+                top: headH,
+                width: 1,
+                height: layout.pageSize.height,
+                child: ColoredBox(color: style.theme.inkMuted.withValues(alpha: 0.25)),
+              ),
             for (int col = 0; col < columns; col++)
               if (layout.page(first + col) != null)
                 Positioned(

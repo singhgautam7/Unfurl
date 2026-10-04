@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 import '../../core/db/database.dart';
 import '../../core/explorer.dart';
 import '../../core/files.dart';
+import '../../core/layout.dart';
 import '../../core/library/library.dart';
 import '../../core/locator.dart';
 import '../../core/motion/motion.dart';
@@ -86,6 +87,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
     // folder row would list every folder: it steps away (board 5, X7).
     final bool device = s.findOnDevice && ref.watch(filesAccessProvider.select((FilesAccess a) => a.granted));
     final bool filtered0 = _family == null && _status == _Status.all;
+    final CoverGrid grid = CoverGrid.of(context);
     final bool showFolders = !device && filtered0 && _query.isEmpty && folders.isNotEmpty;
     final String sortLabel = switch (s.librarySort) {
       'title' => 'Title',
@@ -235,23 +237,21 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                             SliverPadding(
                               padding: const EdgeInsets.fromLTRB(Space.screen, 0, Space.screen, Space.bottomSafe),
                               sliver: SliverGrid.builder(
-                                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                                  crossAxisCount: 3,
-                                  mainAxisExtent: 190,
+                                // 3 / 5 / 7 columns (board 6, V7).
+                                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                                  crossAxisCount: grid.columns,
+                                  mainAxisExtent: grid.extent(54),
                                   mainAxisSpacing: 18,
+                                  crossAxisSpacing: grid.columns == 3 ? 0 : 12,
                                 ),
                                 itemCount: filtered.length,
                                 itemBuilder: (BuildContext context, int i) => Align(
-                                  alignment: <Alignment>[
-                                    Alignment.topLeft,
-                                    Alignment.topCenter,
-                                    Alignment.topRight,
-                                  ][i % 3],
+                                  alignment: grid.alignment(i),
                                   child: SizedBox(
-                                    width: 96,
+                                    width: grid.tile,
                                     child: Reveal(
                                       index: i < 9 ? i : 0,
-                                      child: _BookTile(book: filtered[i]),
+                                      child: _BookTile(book: filtered[i], width: grid.tile, height: grid.cover),
                                     ),
                                   ),
                                 ),
@@ -361,6 +361,18 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
   }
 }
 
+double _lineHeight(BuildContext context, TextStyle style) {
+  final TextPainter tp = TextPainter(
+    text: TextSpan(text: 'Ag', style: style),
+    textDirection: TextDirection.ltr,
+    textScaler: MediaQuery.textScalerOf(context),
+    maxLines: 1,
+  )..layout();
+  final double h = tp.height;
+  tp.dispose();
+  return h;
+}
+
 class _FolderRow extends StatelessWidget {
   const _FolderRow({required this.folders, required this.counts});
 
@@ -407,7 +419,13 @@ class _FolderRow extends StatelessWidget {
                       overflow: TextOverflow.ellipsis,
                       style: UnfurlType.titleMedium.copyWith(fontSize: 14, height: 1.25, color: tint ?? c.onSurface),
                     ),
-                    if (meta != null) Text(meta, style: UnfurlType.monoLabel.copyWith(color: c.onSurfaceVariant)),
+                    if (meta != null)
+                      Text(
+                        meta,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: UnfurlType.monoLabel.copyWith(color: c.onSurfaceVariant),
+                      ),
                   ],
                 ),
               ],
@@ -419,7 +437,15 @@ class _FolderRow extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.only(top: 14),
       child: SizedBox(
-        height: 92,
+        // The cards' height from their text as drawn (font scale included):
+        // padding, the icon, the gap, the name and the meta line.
+        height:
+            Space.md * 2 +
+            IconSpec.size +
+            Space.sm +
+            _lineHeight(context, UnfurlType.titleMedium.copyWith(fontSize: 14, height: 1.25)) +
+            _lineHeight(context, UnfurlType.monoLabel) +
+            1,
         child: Consumer(
           builder: (BuildContext context, WidgetRef ref, _) => ListView(
             scrollDirection: Axis.horizontal,
@@ -467,9 +493,11 @@ Future<void> openBook(BuildContext context, BookItem b, {String? heroTag}) => op
 );
 
 class _BookTile extends ConsumerWidget {
-  const _BookTile({required this.book});
+  const _BookTile({required this.book, this.width = 96, this.height = 136});
 
   final BookItem book;
+  final double width;
+  final double height;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -483,6 +511,8 @@ class _BookTile extends ConsumerWidget {
         format: book.format,
         badge: Formats.labelOf(book.entry.name),
         issue: book.issue,
+        width: width,
+        height: height,
       ),
       progress: book.progress,
       finished: book.finished,
