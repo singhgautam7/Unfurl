@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:unfurl/core/theme/app_theme.dart';
 import 'package:unfurl/core/theme/palette.dart';
 import 'package:unfurl/core/theme/reading_theme.dart';
+import 'package:unfurl/design_system/option_tiles.dart';
 import 'package:unfurl/features/cards/card_editor.dart';
 import 'package:unfurl/features/cards/share_card.dart';
 import 'package:unfurl/features/settings/settings_controller.dart';
@@ -92,6 +93,12 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
+    // Background swatches are 40dp circles (board 6, V5), not stretched to the touch height.
+    final Finder swatch = find.descendant(
+      of: find.byWidgetPredicate((Widget w) => w is OptionTile && w.round).first,
+      matching: find.byType(AnimatedContainer),
+    );
+    expect(tester.getSize(swatch), const Size(40, 40));
     final Size square = tester.getSize(find.byType(FittedBox));
     expect(square.width, closeTo(square.height, 1));
     await tester.tap(find.text('9:16'));

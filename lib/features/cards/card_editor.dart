@@ -338,7 +338,7 @@ class _CardEditorState extends ConsumerState<CardEditor> {
                 padding: const EdgeInsets.fromLTRB(Space.screen, 6, Space.screen, 0),
                 child: SegmentedToggle<CardSource>(
                   options: const <(CardSource, String, IconData?)>[
-                    (CardSource.themes, 'Reading themes', null),
+                    (CardSource.themes, 'Theme', null),
                     (CardSource.accent, 'Accent', null),
                     (CardSource.cover, 'Book cover', null),
                   ],
@@ -349,7 +349,7 @@ class _CardEditorState extends ConsumerState<CardEditor> {
               OptionGroup(
                 label: 'Background',
                 value: _swatchName(family, swatch),
-                gap: Space.md,
+                gap: Space.xs, // 12dp between circles: 4 plus the targets' 4dp margins.
                 scroll: true,
                 children: <Widget>[
                   for (int i = 0; i < palettes.length; i++)

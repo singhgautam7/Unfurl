@@ -111,8 +111,9 @@ class OptionTile extends StatelessWidget {
           duration: Motion.of(context, Motion.fast),
           curve: Motion.decelerate,
           width: width,
-          constraints: BoxConstraints(minHeight: height < IconSpec.tapTarget ? IconSpec.tapTarget : height),
-          height: height < IconSpec.tapTarget ? IconSpec.tapTarget : height,
+          // A swatch is drawn at its own size (a 40dp circle); other tiles
+          // grow to the 48dp touch height.
+          height: round ? height : (height < IconSpec.tapTarget ? IconSpec.tapTarget : height),
           decoration: BoxDecoration(
             color: bg,
             borderRadius: round ? Radii.fullR : BorderRadius.circular(14),
@@ -139,7 +140,15 @@ class OptionTile extends StatelessWidget {
         ),
       ),
     );
-    return width == null ? Expanded(child: tile) : tile;
+    if (width == null) return Expanded(child: tile);
+    // A round swatch keeps a 48dp touch target around its circle.
+    return round
+        ? SizedBox(
+            width: width! < IconSpec.tapTarget ? IconSpec.tapTarget : width,
+            height: IconSpec.tapTarget,
+            child: Center(child: tile),
+          )
+        : tile;
   }
 }
 
