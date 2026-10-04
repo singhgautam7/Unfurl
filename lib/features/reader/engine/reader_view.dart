@@ -70,6 +70,15 @@ class ReaderController extends ChangeNotifier {
   /// +1 next page, -1 previous (or a screenful in scroll layout).
   void turn(int delta) => _view?._turn(delta);
 
+  /// Auto-scroll (scroll layout): moves by [pixels]; false at the end.
+  bool scrollBy(double pixels) => _view?._scrollBy(pixels) ?? false;
+
+  /// Volume keys (scroll layout): a [fraction] of the viewport, animated.
+  void scrollScreen(double fraction) => _view?._scrollScreen(fraction);
+
+  /// Auto page turn: past the last page there is nothing to turn to.
+  bool get atEnd => progress >= 0.999;
+
   void setMarks(List<Mark> m) {
     marks = m;
     notifyListeners();
@@ -294,6 +303,26 @@ class _ReaderViewState extends State<ReaderView> {
     if (l == null) return;
     final int target = _spreadOf(l.pageOf(at.$1, at.$2, at.$3));
     _setIndex(target, animate: animate);
+  }
+
+  bool _scrollBy(double pixels) {
+    if (!_scroll.hasClients) return false;
+    final ScrollPosition p = _scroll.position;
+    if (p.pixels >= p.maxScrollExtent) return false;
+    _scroll.jumpTo((p.pixels + pixels).clamp(p.minScrollExtent, p.maxScrollExtent));
+    return true;
+  }
+
+  void _scrollScreen(double fraction) {
+    if (!_scroll.hasClients) return;
+    final ScrollPosition p = _scroll.position;
+    unawaited(
+      _scroll.animateTo(
+        (p.pixels + p.viewportDimension * fraction).clamp(p.minScrollExtent, p.maxScrollExtent),
+        duration: Motion.of(context, Motion.volumeScroll),
+        curve: Motion.decelerate,
+      ),
+    );
   }
 
   void _turn(int delta) {

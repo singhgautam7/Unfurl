@@ -152,3 +152,17 @@ are the ones worth a second opinion.
     `surfaceContainer`: the card editor, comic settings and bookmarks, book insights, sleep timer and
     Reading sheets. v1/v2 reader sheets keep `surfaceContainer`. Option tiles draw at the spec's size
     (44dp tiles, 40dp swatches) inside 48dp touch targets; toggle rows are 48dp (56 in comic settings).
+
+## Comfort
+
+36. **Where auto-scroll lives.** Board 6 shows the floating control and a "Reading" sheet for auto page turn
+    but no entry point. The reader overflow gets "Sleep timer" (as drawn) and "Auto page turn" / "Auto-scroll"
+    (with its on/off state), which opens that Reading sheet; PDF and comics overflows get the same sheet.
+    Paged modes reuse the floating control too (play/pause, − / + step the interval, "30s"), so a touch-paused
+    auto page turn can be resumed the same way.
+37. **Speeds and intervals** are remembered per mode (`autoscroll.reader`, `.pdf`, `.webtoon`) and once for
+    auto page turn. While it runs the screen stays on even with "Keep screen on" off; each tick is tracker
+    activity, so a hands-free page never idles out.
+38. **Not built:** shake to cancel the fade (no sensor code in Unfurl; a touch restarts it), and comfort for
+    DOCX pages and slides (not continuous reading surfaces). Read aloud stays per reader as in v2, so its mini
+    player (with the timer chip) is in the reader, not on Home as one board 6 frame draws (gap v3-19).

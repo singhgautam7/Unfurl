@@ -250,7 +250,7 @@ class AboutScreen extends ConsumerWidget {
     (
       AppIcons.folderOpen,
       'Everything',
-      'PDF and EPUB get the full reader. Word, slides, sheets, Markdown, text and images open too.',
+      'PDF, EPUB, Kindle, FB2 and HTML books get the full reader; comics their own viewer. Word, slides, sheets, Markdown, text and images open too.',
     ),
     (
       AppIcons.visibility,

@@ -53,11 +53,13 @@ class Speech(private val context: Context, private val send: (String, Any?) -> U
         }
     }
 
-    fun speak(text: String, id: String): Boolean {
+    fun speak(text: String, id: String, volume: Float = 1f): Boolean {
         requestFocus()
         withEngine {
             tts?.setSpeechRate(rate)
-            tts?.speak(text, TextToSpeech.QUEUE_FLUSH, Bundle(), id)
+            // Per-sentence volume: the sleep timer's fade (TTS has no live volume).
+            val params = Bundle().apply { putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME, volume.coerceIn(0f, 1f)) }
+            tts?.speak(text, TextToSpeech.QUEUE_FLUSH, params, id)
         }
         return true
     }

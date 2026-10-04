@@ -7,6 +7,7 @@ import 'package:drift/drift.dart' show Value;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:pdfrx/pdfrx.dart';
 import 'package:vector_math/vector_math_64.dart' show Quad;
 
@@ -37,6 +38,7 @@ import '../../formats/pdf/pdf_reflow.dart';
 import '../../formats/reading_document.dart';
 import '../reader/chrome.dart';
 import '../reader/reader_scaffold.dart';
+import '../reader/comfort.dart';
 import '../reader/reading_prefs.dart';
 import '../reader/sheets.dart';
 import '../reader/unfurl_transition.dart';
@@ -60,7 +62,7 @@ class PdfScreen extends ConsumerStatefulWidget {
   ConsumerState<PdfScreen> createState() => _PdfScreenState();
 }
 
-class _PdfScreenState extends ConsumerState<PdfScreen> with WidgetsBindingObserver {
+class _PdfScreenState extends ConsumerState<PdfScreen> with WidgetsBindingObserver, TickerProviderStateMixin {
   int? _fd;
   PdfDocument? _pdf;
   PageRenderer? _renderer;
@@ -84,6 +86,11 @@ class _PdfScreenState extends ConsumerState<PdfScreen> with WidgetsBindingObserv
   final GlobalKey<_PagesState> _pagesKey = GlobalKey<_PagesState>();
   bool _chrome = false;
   int _page = 1;
+
+  // V3-COMFORT: auto-scroll (continuous) or auto page turn (paged), and the
+  // sleep timer that stops it.
+  late final AutoAdvance _auto;
+  late final SleepTimer _sleep = SleepTimer(onExpire: () => _auto.pause());
   double _pageOffset = 0;
   int? _lastPage;
   String? _backChip;
@@ -127,8 +134,27 @@ class _PdfScreenState extends ConsumerState<PdfScreen> with WidgetsBindingObserv
       if (mounted) setState(() => _annotations = a);
     });
     _volSub = Platform.volumeKeyPresses.listen((int d) {
-      if (!_reader) _goToPage(_page + d, animate: true);
+      if (_reader) return;
+      final ReadingPrefs p = ref.read(readingPrefsProvider);
+      final int dir = p.volumeInvert ? -d : d;
+      // Paged: the next or previous page. Continuous: 90% of a screen.
+      p.pdfLayout == PdfLayout.paged
+          ? _goToPage(_page + dir, animate: true)
+          : _pagesKey.currentState?.scrollScreen(ComfortSpec.volumeScrollFraction * dir);
     });
+    _auto = AutoAdvance(
+      vsync: this,
+      paged: ref.read(readingPrefsProvider).pdfLayout == PdfLayout.paged,
+      scrollBy: (double px) => _pagesKey.currentState?.scrollByPixels(px) ?? false,
+      turn: () {
+        if (_page >= _pages) return false;
+        _goToPage(_page + 1, animate: true);
+        return true;
+      },
+      level: ComfortPrefs.level(ref.read(prefsProvider), 'pdf'),
+      seconds: ComfortPrefs.seconds(ref.read(prefsProvider)),
+      onTick: ref.read(trackerProvider).activity,
+    )..addListener(_onAuto);
     final ReadingPrefs prefs = ref.read(readingPrefsProvider);
     if (prefs.keepScreenOn) unawaited(Platform.keepScreenOn(on: true));
     if (prefs.volumeKeys) unawaited(Platform.volumeKeys(on: true));
@@ -146,6 +172,8 @@ class _PdfScreenState extends ConsumerState<PdfScreen> with WidgetsBindingObserv
     // already read for this page, or the page alone.
     if (!_reader && _pdf != null) unawaited(_save(locator: _pageLocatorNow()));
     _saveTimer?.cancel();
+    _auto.dispose();
+    _sleep.dispose();
     unawaited(_annSub?.cancel());
     unawaited(_volSub?.cancel());
     _renderer?.dispose();
@@ -940,6 +968,26 @@ class _PdfScreenState extends ConsumerState<PdfScreen> with WidgetsBindingObserv
     );
   }
 
+  void _onAuto() {
+    final SharedPreferences p = ref.read(prefsProvider);
+    unawaited(ComfortPrefs.setLevel(p, 'pdf', _auto.level));
+    unawaited(ComfortPrefs.setSeconds(p, _auto.seconds));
+    if (!ref.read(readingPrefsProvider).keepScreenOn) unawaited(Platform.keepScreenOn(on: _auto.running));
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _openSleep() => showSleepTimerSheet(context, _sleep, readAloud: false);
+
+  Future<void> _openComfort() {
+    final bool paged = ref.read(readingPrefsProvider).pdfLayout == PdfLayout.paged;
+    if (_auto.paged != paged) {
+      _auto
+        ..pause()
+        ..paged = paged;
+    }
+    return showComfortSheet(context, auto: _auto, timer: _sleep, onSleep: () => unawaited(_openSleep()));
+  }
+
   Future<void> _overflow(BuildContext anchor) async {
     final String? choice = await showAppMenu<String>(
       context: context,
@@ -947,6 +995,7 @@ class _PdfScreenState extends ConsumerState<PdfScreen> with WidgetsBindingObserv
       entries: const <AppMenuEntry<String>>[
         AppMenuEntry<String>(value: 'info', label: 'Book info', icon: AppIcons.info),
         kInsightsEntry,
+        AppMenuEntry<String>(value: 'auto', label: 'Auto-scroll or page turn', icon: AppIcons.schedule),
         AppMenuEntry<String>(value: 'share', label: 'Share file', icon: AppIcons.share),
         AppMenuEntry<String>.divider(),
         AppMenuEntry<String>(value: 'other', label: 'Open in another app', icon: AppIcons.openInNew),
@@ -957,6 +1006,8 @@ class _PdfScreenState extends ConsumerState<PdfScreen> with WidgetsBindingObserv
         await _bookInfo();
       case 'insights':
         if (mounted) await showDocInsights(context, doc);
+      case 'auto':
+        await _openComfort();
       case 'share':
         await Platform.shareFile(doc.ref.uri, doc.ref.mime);
       case 'other':
@@ -1088,69 +1139,75 @@ class _PdfScreenState extends ConsumerState<PdfScreen> with WidgetsBindingObserv
                 fingerprint: doc.fingerprint,
                 format: doc.format.id,
                 page: _page - 1,
-                child: _Pages(
-                  key: _pagesKey,
-                  pdf: _pdf!,
-                  renderer: _renderer!,
-                  initialPage: _page,
-                  paged: prefs.pdfLayout == PdfLayout.paged,
-                  topInset: MediaQuery.paddingOf(context).top + (_chrome ? 64 : 0) + Space.md,
-                  lookFor: (int p) => _look(page: p),
-                  paintFor: _paintFor,
-                  pageAspect: (int p) {
-                    final PdfPage pg = _pdf!.pages[p - 1];
-                    final Rect crop = (prefs.pdfCrop ? _crops[p] : null) ?? const Rect.fromLTRB(0, 0, 1, 1);
-                    return (pg.width * crop.width) / (pg.height * crop.height);
+                child: Listener(
+                  onPointerDown: (_) {
+                    if (_auto.running) _auto.pause(byTouch: true);
+                    _sleep.touched();
                   },
-                  cropFor: (int p) => prefs.pdfCrop ? _crops[p] : null,
-                  needText: (int p) => unawaited(_text(p)),
-                  onPage: _onPageChanged,
-                  onTap: (int page, Offset fraction, double x) async {
-                    if (_selection != null) return _clearSelection();
-                    for (final PdfLink l in await _linksOf(page)) {
-                      final PdfPage pg = _pdf!.pages[page - 1];
-                      for (final PdfRect r in l.rects) {
-                        final Rect f = Rect.fromLTRB(
-                          r.left / pg.width,
-                          1 - r.top / pg.height,
-                          r.right / pg.width,
-                          1 - r.bottom / pg.height,
-                        );
-                        if (f.contains(fraction)) {
-                          if (l.dest != null) {
-                            return _jumpWithBack(l.dest!.pageNumber);
-                          }
-                          if (l.url != null) {
-                            return Platform.openUrl(l.url.toString());
+                  child: _Pages(
+                    key: _pagesKey,
+                    pdf: _pdf!,
+                    renderer: _renderer!,
+                    initialPage: _page,
+                    paged: prefs.pdfLayout == PdfLayout.paged,
+                    topInset: MediaQuery.paddingOf(context).top + (_chrome ? 64 : 0) + Space.md,
+                    lookFor: (int p) => _look(page: p),
+                    paintFor: _paintFor,
+                    pageAspect: (int p) {
+                      final PdfPage pg = _pdf!.pages[p - 1];
+                      final Rect crop = (prefs.pdfCrop ? _crops[p] : null) ?? const Rect.fromLTRB(0, 0, 1, 1);
+                      return (pg.width * crop.width) / (pg.height * crop.height);
+                    },
+                    cropFor: (int p) => prefs.pdfCrop ? _crops[p] : null,
+                    needText: (int p) => unawaited(_text(p)),
+                    onPage: _onPageChanged,
+                    onTap: (int page, Offset fraction, double x) async {
+                      if (_selection != null) return _clearSelection();
+                      for (final PdfLink l in await _linksOf(page)) {
+                        final PdfPage pg = _pdf!.pages[page - 1];
+                        for (final PdfRect r in l.rects) {
+                          final Rect f = Rect.fromLTRB(
+                            r.left / pg.width,
+                            1 - r.top / pg.height,
+                            r.right / pg.width,
+                            1 - r.bottom / pg.height,
+                          );
+                          if (f.contains(fraction)) {
+                            if (l.dest != null) {
+                              return _jumpWithBack(l.dest!.pageNumber);
+                            }
+                            if (l.url != null) {
+                              return Platform.openUrl(l.url.toString());
+                            }
                           }
                         }
                       }
-                    }
-                    final PageText? t = _texts[page];
-                    if (t != null) {
-                      final int? i = t.indexAt(fraction);
-                      if (i != null &&
-                          _annotations.any((Annotation a) {
-                            final Locator l = Locator.fromJson(a.locator);
-                            return a.kind == 'highlight' &&
-                                l.page == page &&
-                                l.pageStart != null &&
-                                i >= l.pageStart! &&
-                                i < l.pageStart! + l.length;
-                          })) {
-                        return _tapHighlight(page, fraction);
+                      final PageText? t = _texts[page];
+                      if (t != null) {
+                        final int? i = t.indexAt(fraction);
+                        if (i != null &&
+                            _annotations.any((Annotation a) {
+                              final Locator l = Locator.fromJson(a.locator);
+                              return a.kind == 'highlight' &&
+                                  l.page == page &&
+                                  l.pageStart != null &&
+                                  i >= l.pageStart! &&
+                                  i < l.pageStart! + l.length;
+                            })) {
+                          return _tapHighlight(page, fraction);
+                        }
                       }
-                    }
-                    if (prefs.pdfLayout == PdfLayout.paged && x < 0.25) {
-                      return _goToPage(_page - 1, animate: true);
-                    }
-                    if (prefs.pdfLayout == PdfLayout.paged && x > 0.75) {
-                      return _goToPage(_page + 1, animate: true);
-                    }
-                    _toggleChrome();
-                  },
-                  onLongPress: _onLongPress,
-                  onDragSelect: _extendSelection,
+                      if (prefs.pdfLayout == PdfLayout.paged && x < 0.25) {
+                        return _goToPage(_page - 1, animate: true);
+                      }
+                      if (prefs.pdfLayout == PdfLayout.paged && x > 0.75) {
+                        return _goToPage(_page + 1, animate: true);
+                      }
+                      _toggleChrome();
+                    },
+                    onLongPress: _onLongPress,
+                    onDragSelect: _extendSelection,
+                  ),
                 ),
               ),
             ),
@@ -1291,6 +1348,12 @@ class _PdfScreenState extends ConsumerState<PdfScreen> with WidgetsBindingObserv
                     },
                   ),
                 ),
+              ),
+            if (_auto.enabled && !_reader)
+              Positioned(
+                right: Space.lg,
+                bottom: MediaQuery.paddingOf(context).bottom + 28,
+                child: AutoControl(auto: _auto),
               ),
             if (selecting) _toolbar(),
           ],
@@ -1762,7 +1825,7 @@ class _Pages extends StatefulWidget {
   State<_Pages> createState() => _PagesState();
 }
 
-class _PagesState extends State<_Pages> {
+class _PagesState extends State<_Pages> with SingleTickerProviderStateMixin {
   final TransformationController _tx = TransformationController();
   late PageController _pager = PageController(initialPage: widget.initialPage - 1, viewportFraction: 0.92);
   int _page = 1;
@@ -1779,6 +1842,10 @@ class _PagesState extends State<_Pages> {
   @override
   void initState() {
     super.initState();
+    _glide.addListener(() {
+      final Animation<double>? g = _glideY;
+      if (g != null) _setY(g.value);
+    });
     _page = widget.initialPage;
     _tx.addListener(_onTransform);
     widget.renderer.ready.addListener(_rebuild);
@@ -1798,6 +1865,7 @@ class _PagesState extends State<_Pages> {
   @override
   void dispose() {
     _sharpen?.cancel();
+    _glide.dispose();
     _tx.dispose();
     _pager.dispose();
     widget.renderer.ready.removeListener(_rebuild);
@@ -1857,6 +1925,41 @@ class _PagesState extends State<_Pages> {
       if (_tops[i] <= y) page = i + 1;
     }
     return (page, ((y - _tops[page - 1]) / _heights[page - 1]).clamp(0.0, 1.0));
+  }
+
+  late final AnimationController _glide = AnimationController(vsync: this);
+  Animation<double>? _glideY;
+
+  double get _maxY {
+    final double view = context.size?.height ?? 800;
+    return math.max(0, _total * _scale - view);
+  }
+
+  /// Auto-scroll (continuous): moves by [px]; false at the end.
+  bool scrollByPixels(double px) {
+    if (widget.paged || _tops.isEmpty) return false;
+    final double y = -_tx.value.getTranslation().y;
+    if (y >= _maxY) return false;
+    _setY((y + px).clamp(0, _maxY));
+    return true;
+  }
+
+  /// Volume keys (continuous): [fraction] of a screen over 280 ms.
+  void scrollScreen(double fraction) {
+    if (widget.paged || _tops.isEmpty) return;
+    final double view = context.size?.height ?? 800;
+    final double from = -_tx.value.getTranslation().y;
+    _glide.duration = Motion.of(context, Motion.volumeScroll);
+    _glideY = Tween<double>(
+      begin: from,
+      end: (from + view * fraction).clamp(0, _maxY),
+    ).animate(CurvedAnimation(parent: _glide, curve: Motion.decelerate));
+    unawaited(_glide.forward(from: 0));
+  }
+
+  void _setY(double y) {
+    final Matrix4 m = _tx.value.clone()..setTranslationRaw(_tx.value.getTranslation().x, -y, 0);
+    _tx.value = m;
   }
 
   /// Scrolls (or turns) to page [page], [fraction] down it.

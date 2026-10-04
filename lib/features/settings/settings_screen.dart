@@ -62,6 +62,11 @@ class SettingsScreen extends ConsumerWidget {
               value: '${ReadingTheme.names[current.index]} · ${p.font.label} · ${p.size.round()}',
               onTap: () => context.push(Routes.reader),
             ),
+            ListRow(
+              label: 'Controls',
+              value: p.volumeKeys ? 'Volume buttons on' : 'Taps and gestures',
+              onTap: () => context.push(Routes.controls),
+            ),
           ],
         ),
         const SizedBox(height: Space.xl),
@@ -108,7 +113,7 @@ class SettingsScreen extends ConsumerWidget {
                 if (access)
                   ExplorerRow(
                     name: 'Find books across this device',
-                    meta: 'Books lists every PDF and EPUB on the phone',
+                    meta: 'Library lists every book on the phone',
                     sansMeta: true,
                     switchValue: s.findOnDevice,
                     onSwitch: (bool v) async {
@@ -315,15 +320,58 @@ class ReaderSettingsScreen extends ConsumerWidget {
                 onChanged: (bool v) => ctl.update((ReadingPrefs x) => x.copyWith(keepScreenOn: v)),
               ),
             ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+/// Settings › Controls (board 6, V6): volume buttons. They turn pages in
+/// paged modes, scroll about a screen in continuous ones and step through
+/// comics; never while read aloud plays. Off by default.
+class ControlsScreen extends ConsumerWidget {
+  const ControlsScreen({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final ReadingPrefs p = ref.watch(readingPrefsProvider);
+    final ReadingPrefsController ctl = ref.read(readingPrefsProvider.notifier);
+    final UnfurlColors c = context.colors;
+    return AppScaffold(
+      title: 'Controls',
+      onBack: () => context.pop(),
+      children: <Widget>[
+        const SectionHeader(label: 'Volume buttons'),
+        const SizedBox(height: 10),
+        ListContainer(
+          children: <Widget>[
             ListRow(
-              label: 'Volume keys turn pages',
-              subtitle: 'Only while a book is open',
+              label: 'Turn pages with volume buttons',
+              subtitle: 'Paged: next or previous page. Scrolling: about a screen. Comics: next or previous page.',
               trailing: Switch(
                 value: p.volumeKeys,
                 onChanged: (bool v) => ctl.update((ReadingPrefs x) => x.copyWith(volumeKeys: v)),
               ),
             ),
+            ListRow(
+              label: 'Invert direction',
+              subtitle: 'Volume up goes forward',
+              trailing: Switch(
+                value: p.volumeInvert,
+                onChanged: p.volumeKeys
+                    ? (bool v) => ctl.update((ReadingPrefs x) => x.copyWith(volumeInvert: v))
+                    : null,
+              ),
+            ),
           ],
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(Space.xs, Space.sm, Space.xs, 0),
+          child: Text(
+            'While read aloud is playing, the volume buttons change the volume.',
+            style: UnfurlType.note.copyWith(height: 1.5, color: c.onSurfaceVariant),
+          ),
         ),
       ],
     );

@@ -408,7 +408,9 @@ abstract final class Platform {
 
   static Future<void> volumeKeys({required bool on}) => _call<void>('volumeKeys', <String, Object?>{'on': on});
 
-  static Future<void> speak(String text, String id) => _call<bool>('speak', <String, Object?>{'text': text, 'id': id});
+  /// [volume] 0..1 for this sentence (the sleep timer's fade).
+  static Future<void> speak(String text, String id, {double volume = 1}) =>
+      _call<bool>('speak', <String, Object?>{'text': text, 'id': id, 'volume': volume});
 
   static Future<void> stopSpeaking() => _call<void>('stopSpeaking');
 

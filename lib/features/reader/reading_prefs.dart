@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../core/theme/reading_theme.dart';
+import '../../core/theme/tokens.dart';
 import '../settings/settings_controller.dart';
 
 /// The four reading fonts (board 1, section 5), all bundled.
@@ -59,6 +60,7 @@ class ReadingPrefs {
     this.brightness,
     this.keepScreenOn = true,
     this.volumeKeys = false,
+    this.volumeInvert = false,
     this.pdfOpensReader = false,
     this.pdfLayout = PdfLayout.continuous,
     this.pdfCrop = false,
@@ -88,6 +90,9 @@ class ReadingPrefs {
   final double? brightness;
   final bool keepScreenOn;
   final bool volumeKeys;
+
+  /// "Invert direction": volume up goes forward (v3, Settings › Controls).
+  final bool volumeInvert;
 
   /// "PDFs open in": Page (false) or Reader.
   final bool pdfOpensReader;
@@ -119,6 +124,7 @@ class ReadingPrefs {
     bool clearBrightness = false,
     bool? keepScreenOn,
     bool? volumeKeys,
+    bool? volumeInvert,
     bool? pdfOpensReader,
     PdfLayout? pdfLayout,
     bool? pdfCrop,
@@ -138,6 +144,7 @@ class ReadingPrefs {
     brightness: clearBrightness ? null : (brightness ?? this.brightness),
     keepScreenOn: keepScreenOn ?? this.keepScreenOn,
     volumeKeys: volumeKeys ?? this.volumeKeys,
+    volumeInvert: volumeInvert ?? this.volumeInvert,
     pdfOpensReader: pdfOpensReader ?? this.pdfOpensReader,
     pdfLayout: pdfLayout ?? this.pdfLayout,
     pdfCrop: pdfCrop ?? this.pdfCrop,
@@ -162,6 +169,7 @@ class ReadingPrefs {
     brightness: p.getDouble('reading.brightness'),
     keepScreenOn: p.getBool('reading.keepScreenOn') ?? true,
     volumeKeys: p.getBool('reading.volumeKeys') ?? false,
+    volumeInvert: p.getBool('reading.volumeInvert') ?? false,
     pdfOpensReader: p.getBool('pdf.opensReader') ?? false,
     pdfLayout: _enum(PdfLayout.values, p.getString('pdf.layout'), PdfLayout.continuous),
     pdfCrop: p.getBool('pdf.crop') ?? false,
@@ -183,6 +191,7 @@ class ReadingPrefs {
     brightness == null ? await p.remove('reading.brightness') : await p.setDouble('reading.brightness', brightness!);
     await p.setBool('reading.keepScreenOn', keepScreenOn);
     await p.setBool('reading.volumeKeys', volumeKeys);
+    await p.setBool('reading.volumeInvert', volumeInvert);
     await p.setBool('pdf.opensReader', pdfOpensReader);
     await p.setString('pdf.layout', pdfLayout.name);
     await p.setBool('pdf.crop', pdfCrop);
@@ -209,6 +218,7 @@ class ReadingPrefsController extends Notifier<ReadingPrefs> {
         theme: p.theme,
         keepScreenOn: p.keepScreenOn,
         volumeKeys: p.volumeKeys,
+        volumeInvert: p.volumeInvert,
         pdfOpensReader: p.pdfOpensReader,
         pageTurn: p.pageTurn,
         ttsRate: p.ttsRate,
@@ -221,3 +231,12 @@ class ReadingPrefsController extends Notifier<ReadingPrefs> {
 
 final NotifierProvider<ReadingPrefsController, ReadingPrefs> readingPrefsProvider =
     NotifierProvider<ReadingPrefsController, ReadingPrefs>(ReadingPrefsController.new);
+
+/// Auto-scroll's speed level, remembered per mode ('reader', 'pdf',
+/// 'webtoon'), and auto page turn's interval (v3 · V3-COMFORT).
+abstract final class ComfortPrefs {
+  static int level(SharedPreferences p, String mode) => p.getInt('autoscroll.$mode') ?? ComfortSpec.defaultLevel;
+  static Future<void> setLevel(SharedPreferences p, String mode, int level) => p.setInt('autoscroll.$mode', level);
+  static int seconds(SharedPreferences p) => p.getInt('autoturn.seconds') ?? ComfortSpec.defaultTurn;
+  static Future<void> setSeconds(SharedPreferences p, int s) => p.setInt('autoturn.seconds', s);
+}

@@ -444,6 +444,28 @@ class WebtoonComicState extends State<WebtoonComic> {
     if (_scroll.hasClients && page < _tops.length) _scroll.jumpTo(_tops[page]);
   }
 
+  /// Auto-scroll: moves by [pixels]; false at the end.
+  bool scrollByPixels(double pixels) {
+    if (!_scroll.hasClients) return false;
+    final ScrollPosition p = _scroll.position;
+    if (p.pixels >= p.maxScrollExtent) return false;
+    _scroll.jumpTo((p.pixels + pixels).clamp(p.minScrollExtent, p.maxScrollExtent));
+    return true;
+  }
+
+  /// Volume keys: the next or previous page's top, animated.
+  void pageBy(int delta) {
+    if (!_scroll.hasClients || _tops.isEmpty) return;
+    final int to = (_current + delta).clamp(0, widget.pages.count - 1);
+    unawaited(
+      _scroll.animateTo(
+        _tops[to].clamp(0, _scroll.position.maxScrollExtent),
+        duration: Motion.of(context, Motion.volumeScroll),
+        curve: Motion.decelerate,
+      ),
+    );
+  }
+
   /// Volume keys and paging: about a screen, animated.
   void scrollBy(double fraction, Duration duration) {
     if (!_scroll.hasClients) return;

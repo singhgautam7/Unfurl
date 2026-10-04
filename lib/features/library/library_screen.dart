@@ -36,7 +36,7 @@ import '../files/files_screen.dart' show addFolder;
 /// holds format families (board 6, V3 chips).
 enum _Status { all, unread, finished }
 
-/// Board 2, A2 and A3: every PDF and EPUB in every folder, subfolders too.
+/// Board 2, A2 and A3 (v3 families): every book in every folder, subfolders too.
 class LibraryScreen extends ConsumerStatefulWidget {
   const LibraryScreen({super.key});
 

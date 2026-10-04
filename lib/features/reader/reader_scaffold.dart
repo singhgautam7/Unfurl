@@ -6,6 +6,7 @@ import 'package:drift/drift.dart' show Value;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../core/db/database.dart';
 import '../../core/files.dart';
@@ -34,6 +35,7 @@ import '../cards/share_card.dart';
 import '../insights/book_insights.dart';
 import '../viewer/document_screen.dart';
 import 'chrome.dart';
+import 'comfort.dart';
 import 'engine/reader_style.dart';
 import 'engine/reader_view.dart';
 import 'read_aloud.dart';
@@ -85,7 +87,7 @@ class ReaderScaffold extends ConsumerStatefulWidget {
   ConsumerState<ReaderScaffold> createState() => ReaderScaffoldState();
 }
 
-class ReaderScaffoldState extends ConsumerState<ReaderScaffold> with WidgetsBindingObserver {
+class ReaderScaffoldState extends ConsumerState<ReaderScaffold> with WidgetsBindingObserver, TickerProviderStateMixin {
   late final ReaderController controller;
   ReadAloud? _tts;
   bool _chrome = false;
@@ -109,6 +111,13 @@ class ReaderScaffoldState extends ConsumerState<ReaderScaffold> with WidgetsBind
 
   /// This book's or the reader's own speed, for time left (null: 230 wpm).
   double? _wpm;
+
+  // V3-COMFORT.
+  late final SleepTimer _sleep = SleepTimer(onExpire: _sleepExpired)..addListener(_onSleep);
+  late final AutoAdvance _auto;
+
+  /// The section End of chapter was set in.
+  int? _sleepSection;
   String? _backChip;
   (int, int, int)? _backTo;
   int? _sizeChip;
@@ -158,7 +167,20 @@ class ReaderScaffoldState extends ConsumerState<ReaderScaffold> with WidgetsBind
     if (prefs.brightness != null) {
       unawaited(Platform.setBrightness(prefs.brightness));
     }
-    _volumeSub = Platform.volumeKeyPresses.listen(controller.turn);
+    _volumeSub = Platform.volumeKeyPresses.listen(_onVolumeKey);
+    _auto = AutoAdvance(
+      vsync: this,
+      paged: prefs.layout == ReaderLayout.paged,
+      scrollBy: controller.scrollBy,
+      turn: () {
+        if (controller.atEnd) return false;
+        controller.turn(1);
+        return true;
+      },
+      level: ComfortPrefs.level(ref.read(prefsProvider), 'reader'),
+      seconds: ComfortPrefs.seconds(ref.read(prefsProvider)),
+      onTick: _tracker.activity,
+    )..addListener(_onAuto);
     unawaited(SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky));
   }
 
@@ -175,6 +197,8 @@ class ReaderScaffoldState extends ConsumerState<ReaderScaffold> with WidgetsBind
     controller.removeListener(_onPosition);
     controller.dispose();
     _tts?.dispose();
+    _auto.dispose();
+    _sleep.dispose();
     unawaited(Platform.keepScreenOn(on: false));
     unawaited(Platform.volumeKeys(on: false));
     unawaited(Platform.setBrightness(null));
@@ -203,6 +227,10 @@ class ReaderScaffoldState extends ConsumerState<ReaderScaffold> with WidgetsBind
       _saveTimer = Timer(const Duration(milliseconds: 600), _save);
       _tracker.readerAt(controller.globalIndex, jump: _jumping);
       _jumping = false;
+      final int? sleepSection = _sleepSection;
+      if (sleepSection != null && controller.position.$1 > sleepSection && !(_tts?.playing ?? false)) {
+        _sleep.chapterEnded();
+      }
     }
     if (mounted) setState(() {});
   }
@@ -577,8 +605,65 @@ class ReaderScaffoldState extends ConsumerState<ReaderScaffold> with WidgetsBind
 
   // ------------------------------------------------------------ read aloud
 
+  // ------------------------------------------------------------ comfort
+
+  /// Paged: a page turn. Scrolling: 90% of a screen over 280 ms. Inverted
+  /// in Settings › Controls.
+  void _onVolumeKey(int d) {
+    final ReadingPrefs p = ref.read(readingPrefsProvider);
+    final int dir = p.volumeInvert ? -d : d;
+    p.layout == ReaderLayout.scroll
+        ? controller.scrollScreen(ComfortSpec.volumeScrollFraction * dir)
+        : controller.turn(dir);
+    _tracker.activity();
+  }
+
+  void _sleepExpired() {
+    if (_tts?.playing ?? false) unawaited(_tts!.toggle());
+    if (_auto.running) _auto.pause();
+  }
+
+  void _onSleep() {
+    if (!_sleep.chapter) {
+      _sleepSection = null;
+    } else {
+      final (int, int)? spoken = _tts?.current;
+      _sleepSection ??= spoken == null ? controller.position.$1 : reading.positionOfIndex(spoken.$1).$1;
+    }
+  }
+
+  void _onAuto() {
+    final SharedPreferences p = ref.read(prefsProvider);
+    unawaited(ComfortPrefs.setLevel(p, 'reader', _auto.level));
+    unawaited(ComfortPrefs.setSeconds(p, _auto.seconds));
+    // The screen stays on while it runs, even with Keep screen on off.
+    if (!ref.read(readingPrefsProvider).keepScreenOn) unawaited(Platform.keepScreenOn(on: _auto.running));
+    if (mounted) setState(() {});
+  }
+
+  /// "Chapter 3 · about 6 min left", at read-aloud pace if it is playing.
+  String _chapterLeft() {
+    final (int s, int b, int o) = controller.position;
+    final Section sec = reading.sections[s];
+    final int end = sec.blocks.isEmpty ? sec.start : sec.blocks.last.start + sec.blocks.last.text.length;
+    final int words = reading.wordsBetween(sec.blocks[b].start + o, end);
+    final double wpm = (_tts?.active ?? false) ? 160 * (_tts?.rate ?? 1) : (_wpm ?? 230);
+    final String name = sec.title.isEmpty ? '${reading.unitLabel} ${s + 1}' : sec.title;
+    return '$name · about ${math.max(1, (words / wpm).ceil())} min left';
+  }
+
+  Future<void> _openSleep() => showSleepTimerSheet(
+    context,
+    _sleep,
+    chapterLeft: _chapterLeft(),
+    readAloud: !_auto.enabled || (_tts?.active ?? false),
+  );
+
+  Future<void> _openComfort() =>
+      showComfortSheet(context, auto: _auto, timer: _sleep, onSleep: () => unawaited(_openSleep()));
+
   Future<void> _readAloud({int? from}) async {
-    final ReadAloud tts = _tts ??= ReadAloud(reading)..addListener(_onTts);
+    final ReadAloud tts = _tts ??= ReadAloud(reading, volume: () => _sleep.volume)..addListener(_onTts);
     final ReadingPrefs p = ref.read(readingPrefsProvider);
     if (p.ttsVoice != null) await Platform.setVoice(p.ttsVoice);
     await tts.start(from ?? controller.globalIndex, speed: p.ttsRate);
@@ -591,6 +676,13 @@ class ReaderScaffoldState extends ConsumerState<ReaderScaffold> with WidgetsBind
     if (t == null) return;
     controller.setSpoken(t.active ? t.current : null);
     _tracker.listening(on: t.playing);
+    // While read aloud plays, the volume keys set the volume.
+    unawaited(Platform.volumeKeys(on: ref.read(readingPrefsProvider).volumeKeys && !t.playing));
+    final (int, int)? spoken = t.current;
+    final int? sleepSection = _sleepSection;
+    if (sleepSection != null && spoken != null && reading.positionOfIndex(spoken.$1).$1 > sleepSection) {
+      _sleep.chapterEnded();
+    }
     if (t.error != null && mounted) {
       AppSnackbar.error(context, t.error!);
       t.error = null;
@@ -753,6 +845,13 @@ class ReaderScaffoldState extends ConsumerState<ReaderScaffold> with WidgetsBind
         if (format.annotations)
           const AppMenuEntry<String>(value: 'export', label: 'Export highlights', icon: AppIcons.share),
         kInsightsEntry,
+        const AppMenuEntry<String>(value: 'sleep', label: 'Sleep timer', icon: AppIcons.bedtime),
+        AppMenuEntry<String>(
+          value: 'auto',
+          label: ref.read(readingPrefsProvider).layout == ReaderLayout.paged ? 'Auto page turn' : 'Auto-scroll',
+          icon: AppIcons.schedule,
+          switchValue: _auto.enabled,
+        ),
         const AppMenuEntry<String>(value: 'share', label: 'Share file', icon: AppIcons.share),
         const AppMenuEntry<String>.divider(),
         AppMenuEntry<String>(
@@ -770,6 +869,10 @@ class ReaderScaffoldState extends ConsumerState<ReaderScaffold> with WidgetsBind
         await exportHighlights();
       case 'insights':
         if (mounted) await showDocInsights(context, doc);
+      case 'sleep':
+        await _openSleep();
+      case 'auto':
+        await _openComfort();
       case 'share':
         await Platform.shareFile(doc.ref.uri, doc.ref.mime);
       case 'other':
@@ -794,6 +897,13 @@ class ReaderScaffoldState extends ConsumerState<ReaderScaffold> with WidgetsBind
       }
       if (a?.keepScreenOn != b.keepScreenOn) {
         unawaited(Platform.keepScreenOn(on: b.keepScreenOn));
+      }
+      if (a?.layout != b.layout) {
+        // Paged turns on a timer; scrolling moves continuously.
+        _auto
+          ..pause()
+          ..paged = b.layout == ReaderLayout.paged;
+        if (_auto.enabled) _auto.play();
       }
     });
     final bool wide = MediaQuery.sizeOf(context).width >= 840;
@@ -829,27 +939,35 @@ class ReaderScaffoldState extends ConsumerState<ReaderScaffold> with WidgetsBind
                   duration: Motion.of(context, Motion.background),
                   color: theme.paper,
                   child: RepaintBoundary(
-                    child: TrackActivity(
-                      child: ReaderView(
-                        controller: controller,
-                        style: style,
-                        layoutMode: prefs.layout,
-                        pageTurn: prefs.pageTurn.effective(reduced: Motion.reduced(context)),
-                        columns: wide && prefs.layout == ReaderLayout.paged ? 2 : 1,
-                        onCentreTap: _toggleChrome,
-                        onLink: _onLink,
-                        onMarkTap: (int id, Offset at) => id >= 0 ? _highlightMenu(id, at) : null,
-                        onSelection: (List<Rect> r) => setState(() => _selectionRects = r),
-                        onFontStep: _fontStep,
-                        runningHead: ((int, int, int) at) => reading.sections[at.$1].title.isEmpty
-                            ? (reading.title.isEmpty ? doc.ref.name : reading.title)
-                            : reading.sections[at.$1].title,
-                        footer: ((int, int, int) at) {
-                          final SourceRef? src = reading.sections[at.$1].blocks[at.$2].source;
-                          final String? page = src == null ? null : widget.pageLabel?.call(src);
-                          final String pct = '${(reading.progressAt(at.$1, at.$2, at.$3) * 100).round()}%';
-                          return (page == null ? pct : '$page · $pct', _timeLeft(controller.position));
-                        },
+                    child: Listener(
+                      // A touch on the page pauses auto-scroll (with a hint)
+                      // and restarts a fading sleep timer.
+                      onPointerDown: (_) {
+                        if (_auto.running) _auto.pause(byTouch: true);
+                        _sleep.touched();
+                      },
+                      child: TrackActivity(
+                        child: ReaderView(
+                          controller: controller,
+                          style: style,
+                          layoutMode: prefs.layout,
+                          pageTurn: prefs.pageTurn.effective(reduced: Motion.reduced(context)),
+                          columns: wide && prefs.layout == ReaderLayout.paged ? 2 : 1,
+                          onCentreTap: _toggleChrome,
+                          onLink: _onLink,
+                          onMarkTap: (int id, Offset at) => id >= 0 ? _highlightMenu(id, at) : null,
+                          onSelection: (List<Rect> r) => setState(() => _selectionRects = r),
+                          onFontStep: _fontStep,
+                          runningHead: ((int, int, int) at) => reading.sections[at.$1].title.isEmpty
+                              ? (reading.title.isEmpty ? doc.ref.name : reading.title)
+                              : reading.sections[at.$1].title,
+                          footer: ((int, int, int) at) {
+                            final SourceRef? src = reading.sections[at.$1].blocks[at.$2].source;
+                            final String? page = src == null ? null : widget.pageLabel?.call(src);
+                            final String pct = '${(reading.progressAt(at.$1, at.$2, at.$3) * 100).round()}%';
+                            return (page == null ? pct : '$page · $pct', _timeLeft(controller.position));
+                          },
+                        ),
                       ),
                     ),
                   ),
@@ -1015,7 +1133,15 @@ class ReaderScaffoldState extends ConsumerState<ReaderScaffold> with WidgetsBind
                     onClose: () => unawaited(tts.stop()),
                     onSpeed: () =>
                         showVoiceSheet(context, rate: tts.rate, onRate: (double r) => unawaited(tts.setRate(r))),
+                    sleep: SleepChip(timer: _sleep, onTap: () => unawaited(_openSleep())),
                   ),
+                ),
+              // Auto-scroll or auto page turn (board 6, V6).
+              if (_auto.enabled)
+                Positioned(
+                  right: Space.lg,
+                  bottom: MediaQuery.paddingOf(context).bottom + ((tts?.active ?? false) ? 100 : 28),
+                  child: AutoControl(auto: _auto),
                 ),
               // Back chip and size chip.
               Positioned(

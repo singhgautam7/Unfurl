@@ -88,3 +88,6 @@ the build prompt, what was done, and which Mull file it follows.
 | v3-16 | V3-HIGHLIGHT-CARDS | v2's highlight tap opened the note sheet directly; board 6 draws a tap menu. | The tap menu (Add or Edit note, Change colour, Copy, Share as card, Delete highlight); Change colour opens a second short menu of the four colours. | Board 6 V5 |
 | v3-17 | V3-HIGHLIGHT-CARDS | The selection toolbar's Listen button and board 6's More. | More replaces Listen in the toolbar; "Read aloud from here" moves into More with Share as card and Search in book. | Board 6 V5 |
 | v3-18 | V3-HIGHLIGHT-CARDS | Notes items had no overflow in v2. | A ⋮ on each highlight row: Go to page, Add or Edit note, Copy, Share as card, Delete. | Board 6 V5 |
+| v3-19 | V3-COMFORT | One frame draws the read-aloud mini player on Home. | Read aloud is per reader (v2), so the mini player and its time-left chip stay in the reader. | v2 |
+| v3-20 | V3-COMFORT | Settings › Controls also lists Tap zones and Swipe to turn pages, which Unfurl doesn't have as settings. | Only the volume button rows and the read-aloud note. | — |
+| v3-21 | V3-COMFORT | No entry point for auto-scroll is drawn. | Reader, PDF and comics overflows open the Reading sheet (decision 36). | Board 6 V6 |

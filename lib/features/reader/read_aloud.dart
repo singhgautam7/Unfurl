@@ -9,11 +9,14 @@ import '../../formats/reading_document.dart';
 /// current sentence can be tinted and the page can follow it. Pauses when
 /// another app takes audio focus.
 class ReadAloud extends ChangeNotifier {
-  ReadAloud(this.doc) {
+  ReadAloud(this.doc, {this.volume}) {
     _events = Platform.speechEvents.listen(_onEvent);
   }
 
   final ReadingDocument doc;
+
+  /// The sleep timer's fade (1 until the last 10 s), applied per sentence.
+  final double Function()? volume;
   late final StreamSubscription<(String, Object?)> _events;
   late final List<(int, int)> sentences = segment(doc.plainText);
 
@@ -78,7 +81,11 @@ class ReadAloud extends ChangeNotifier {
     playing = true;
     notifyListeners();
     final (int a, int b) = sentences[index];
-    await Platform.speak(doc.plainText.substring(a, b).replaceAll('\n', ' '), 'u${++_utterance}');
+    await Platform.speak(
+      doc.plainText.substring(a, b).replaceAll('\n', ' '),
+      'u${++_utterance}',
+      volume: volume?.call() ?? 1,
+    );
   }
 
   void _onEvent((String, Object?) e) {

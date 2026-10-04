@@ -80,3 +80,19 @@ abstract final class Elevations {
   static const double navPill = 6;
   static const double navPillBlur = 18;
 }
+
+/// V3-COMFORT (`sleepTimer`, `autoScroll`, `autoPageTurn`, `volumeKeys`).
+abstract final class ComfortSpec {
+  static const List<int> sleepMinutes = <int>[15, 30, 45, 60];
+
+  /// Nine auto-scroll speeds, dp per second; level 4 (60) by default.
+  static const List<double> scrollSpeeds = <double>[20, 30, 45, 60, 80, 105, 135, 170, 210];
+  static const int defaultLevel = 4;
+
+  /// Auto page turn intervals, seconds; 30 by default.
+  static const List<int> turnSeconds = <int>[10, 15, 20, 30, 45, 60, 90, 120];
+  static const int defaultTurn = 30;
+
+  /// A volume key scrolls this much of the viewport in continuous modes.
+  static const double volumeScrollFraction = 0.9;
+}

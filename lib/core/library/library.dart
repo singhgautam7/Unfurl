@@ -184,7 +184,7 @@ class Library {
     return out;
   }
 
-  /// Books (PDF and EPUB) indexed under a folder.
+  /// Books (every book format) indexed under a folder.
   Future<int> bookCount(int folderId) async => (await (db.select(
     db.entries,
   )..where((e) => e.folderId.equals(folderId) & e.isDir.equals(false) & e.ext.isIn(bookExts))).get()).length;

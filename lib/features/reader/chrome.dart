@@ -481,8 +481,12 @@ class MiniPlayer extends StatelessWidget {
     required this.onNext,
     required this.onClose,
     required this.onSpeed,
+    this.sleep,
     super.key,
   });
+
+  /// The sleep timer's chip (v3 · V3-COMFORT), before close.
+  final Widget? sleep;
 
   final bool playing;
   final double rate;
@@ -559,6 +563,7 @@ class MiniPlayer extends StatelessWidget {
           ),
           AppIconButton(icon: AppIcons.skipNext, filled: false, semanticLabel: 'Next sentence', onPressed: onNext),
           const Spacer(),
+          ?sleep,
           AppIconButton(icon: AppIcons.close, filled: false, semanticLabel: 'Stop reading aloud', onPressed: onClose),
         ],
       ),

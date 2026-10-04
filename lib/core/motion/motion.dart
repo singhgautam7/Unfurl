@@ -44,6 +44,15 @@ abstract final class Motion {
   static const Duration stagger = Duration(milliseconds: 28);
   static const int staggerCap = 8;
 
+  /// V3-COMFORT (`unfurl-v3-tokens.js`): a volume-key scroll of 90% of a
+  /// screen, a held key's repeat, auto-scroll easing up to speed, its control
+  /// hiding, and the sleep timer's fade.
+  static const Duration volumeScroll = Duration(milliseconds: 280);
+  static const Duration volumeRepeat = Duration(milliseconds: 400);
+  static const Duration autoScrollRamp = Duration(milliseconds: 300);
+  static const Duration autoControlHide = Duration(milliseconds: 2500);
+  static const Duration sleepFade = Duration(seconds: 10);
+
   /// Anything the finger caused.
   static const Curve spring = Curves.easeOutBack;
 

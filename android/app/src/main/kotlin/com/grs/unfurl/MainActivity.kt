@@ -24,6 +24,7 @@ class MainActivity : FlutterActivity() {
     private var pending: MethodChannel.Result? = null
     private var pendingIntent: Map<String, Any?>? = null
     private var volumeKeys = false
+    private var lastVolumeKey = 0L
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -59,7 +60,11 @@ class MainActivity : FlutterActivity() {
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         val code = event.keyCode
         if (volumeKeys && (code == KeyEvent.KEYCODE_VOLUME_UP || code == KeyEvent.KEYCODE_VOLUME_DOWN)) {
-            if (event.action == KeyEvent.ACTION_DOWN) channel.invokeMethod("volumeKey", if (code == KeyEvent.KEYCODE_VOLUME_DOWN) 1 else -1)
+            // A held key repeats every 400 ms (board 6, V6 `volumeKeys.repeatMs`).
+            if (event.action == KeyEvent.ACTION_DOWN && (event.repeatCount == 0 || event.eventTime - lastVolumeKey >= 400)) {
+                lastVolumeKey = event.eventTime
+                channel.invokeMethod("volumeKey", if (code == KeyEvent.KEYCODE_VOLUME_DOWN) 1 else -1)
+            }
             return true
         }
         return super.dispatchKeyEvent(event)
@@ -166,7 +171,9 @@ class MainActivity : FlutterActivity() {
                     result.success(null)
                 }
                 "volumeKeys" -> { volumeKeys = call.argument<Boolean>("on") == true; result.success(null) }
-                "speak" -> result.success(speech.speak(call.argument<String>("text")!!, call.argument<String>("id")!!))
+                "speak" -> result.success(
+                    speech.speak(call.argument<String>("text")!!, call.argument<String>("id")!!, (call.argument<Double>("volume") ?: 1.0).toFloat()),
+                )
                 "stopSpeaking" -> { speech.stop(); result.success(null) }
                 "speechRate" -> { speech.rate = (call.argument<Double>("rate") ?: 1.0).toFloat(); result.success(null) }
                 "voices" -> speech.voices { result.success(it) }

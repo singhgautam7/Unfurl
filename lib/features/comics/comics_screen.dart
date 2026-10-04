@@ -4,6 +4,7 @@ import 'package:drift/drift.dart' show Value;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../core/db/database.dart';
 import '../../core/library/enrich.dart';
@@ -24,6 +25,7 @@ import '../../design_system/buttons.dart';
 import '../../formats/comics/comic_archive.dart';
 import '../../formats/format_problem.dart';
 import '../reader/chrome.dart';
+import '../reader/comfort.dart';
 import '../reader/reading_prefs.dart';
 import '../reader/sheets.dart';
 import '../settings/settings_controller.dart';
@@ -48,7 +50,7 @@ class ComicsScreen extends ConsumerStatefulWidget {
   ConsumerState<ComicsScreen> createState() => _ComicsScreenState();
 }
 
-class _ComicsScreenState extends ConsumerState<ComicsScreen> with WidgetsBindingObserver {
+class _ComicsScreenState extends ConsumerState<ComicsScreen> with WidgetsBindingObserver, TickerProviderStateMixin {
   ComicArchive? _archive;
   ComicPages? _pages;
   FormatProblem? _problem;
@@ -63,6 +65,12 @@ class _ComicsScreenState extends ConsumerState<ComicsScreen> with WidgetsBinding
   int? _lastSaved;
   final GlobalKey<PagedComicState> _paged = GlobalKey<PagedComicState>();
   final GlobalKey<WebtoonComicState> _webtoon = GlobalKey<WebtoonComicState>();
+
+  // V3-COMFORT: auto-scroll (webtoon) or auto page turn, its sleep timer,
+  // and the volume keys (next or previous page in every mode).
+  late final AutoAdvance _auto;
+  late final SleepTimer _sleep = SleepTimer(onExpire: () => _auto.pause());
+  StreamSubscription<int>? _volumeSub;
 
   /// Held so the position can be saved from dispose().
   late final Library _library = ref.read(libraryProvider);
@@ -79,6 +87,22 @@ class _ComicsScreenState extends ConsumerState<ComicsScreen> with WidgetsBinding
       if (mounted) setState(() => _bookmarks = a.where((Annotation x) => x.kind == 'bookmark').toList());
     });
     if (ref.read(readingPrefsProvider).keepScreenOn) unawaited(Platform.keepScreenOn(on: true));
+    final ComicPrefs cp = ref.read(comicPrefsProvider);
+    _auto = AutoAdvance(
+      vsync: this,
+      paged: cp.mode != ComicMode.webtoon,
+      scrollBy: (double px) => _webtoon.currentState?.scrollByPixels(px) ?? false,
+      turn: () {
+        if (_page >= _count - 1) return false;
+        _paged.currentState?.turn(1);
+        return true;
+      },
+      level: ComfortPrefs.level(ref.read(prefsProvider), 'webtoon'),
+      seconds: ComfortPrefs.seconds(ref.read(prefsProvider)),
+      onTick: ref.read(trackerProvider).activity,
+    )..addListener(_onAuto);
+    if (ref.read(readingPrefsProvider).volumeKeys) unawaited(Platform.volumeKeys(on: true));
+    _volumeSub = Platform.volumeKeyPresses.listen(_onVolumeKey);
     unawaited(SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky));
   }
 
@@ -134,6 +158,10 @@ class _ComicsScreenState extends ConsumerState<ComicsScreen> with WidgetsBinding
     _saveTimer?.cancel();
     unawaited(_marksSub?.cancel());
     _pages?.dispose();
+    _auto.dispose();
+    _sleep.dispose();
+    unawaited(_volumeSub?.cancel());
+    unawaited(Platform.volumeKeys(on: false));
     unawaited(_archive?.close());
     unawaited(Platform.keepScreenOn(on: false));
     unawaited(SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge));
@@ -146,6 +174,37 @@ class _ComicsScreenState extends ConsumerState<ComicsScreen> with WidgetsBinding
   }
 
   int get _count => _pages?.count ?? 0;
+
+  void _onVolumeKey(int d) {
+    final int dir = ref.read(readingPrefsProvider).volumeInvert ? -d : d;
+    ref.read(comicPrefsProvider).mode == ComicMode.webtoon
+        ? _webtoon.currentState?.pageBy(dir)
+        : _paged.currentState?.turn(dir);
+    ref.read(trackerProvider).activity();
+  }
+
+  void _onAuto() {
+    final SharedPreferences p = ref.read(prefsProvider);
+    unawaited(ComfortPrefs.setLevel(p, 'webtoon', _auto.level));
+    unawaited(ComfortPrefs.setSeconds(p, _auto.seconds));
+    if (!ref.read(readingPrefsProvider).keepScreenOn) unawaited(Platform.keepScreenOn(on: _auto.running));
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _openComfort() {
+    final bool paged = ref.read(comicPrefsProvider).mode != ComicMode.webtoon;
+    if (_auto.paged != paged) {
+      _auto
+        ..pause()
+        ..paged = paged;
+    }
+    return showComfortSheet(
+      context,
+      auto: _auto,
+      timer: _sleep,
+      onSleep: () => unawaited(showSleepTimerSheet(context, _sleep, readAloud: false)),
+    );
+  }
 
   Locator _locator(int page) => Locator(page: page + 1, progress: _count == 0 ? 0 : (page + 1) / _count);
 
@@ -229,6 +288,7 @@ class _ComicsScreenState extends ConsumerState<ComicsScreen> with WidgetsBinding
         AppMenuEntry<String>(value: 'bookmarks', label: 'Bookmarks', icon: AppIcons.bookmark),
         AppMenuEntry<String>(value: 'share', label: 'Share file', icon: AppIcons.share),
         kInsightsEntry,
+        AppMenuEntry<String>(value: 'auto', label: 'Auto-scroll or page turn', icon: AppIcons.schedule),
         AppMenuEntry<String>.divider(),
         AppMenuEntry<String>(value: 'other', label: 'Open in another app', icon: AppIcons.openInNew),
       ],
@@ -240,6 +300,8 @@ class _ComicsScreenState extends ConsumerState<ComicsScreen> with WidgetsBinding
         await Platform.shareFile(doc.ref.uri, doc.ref.mime);
       case 'insights':
         if (mounted) await showDocInsights(context, doc);
+      case 'auto':
+        await _openComfort();
       case 'other':
         await Platform.openWith(doc.ref.uri, doc.ref.mime);
     }
@@ -298,46 +360,53 @@ class _ComicsScreenState extends ConsumerState<ComicsScreen> with WidgetsBinding
                 duration: Motion.of(context, Motion.background),
                 color: surround.paper,
                 child: RepaintBoundary(
-                  child: TrackedPages(
-                    fingerprint: doc.fingerprint,
-                    format: doc.format.id,
-                    mode: 'comics',
-                    page: _page,
-                    child: AnimatedSwitcher(
-                      duration: Motion.of(context, Motion.fast),
-                      switchInCurve: Motion.decelerate,
-                      child: prefs.mode == ComicMode.webtoon
-                          ? WebtoonComic(
-                              key: _webtoon,
-                              pages: pages,
-                              page: _page,
-                              onPage: _onPage,
-                              onTap: _toggleChrome,
-                            )
-                          : ValueListenableBuilder<int>(
-                              key: const ValueKey<String>('paged'),
-                              valueListenable: pages.measured,
-                              builder: (BuildContext context, int _, Widget? _) => PagedComic(
-                                key: _paged,
+                  child: Listener(
+                    // A touch pauses auto-scroll and restarts a fading timer.
+                    onPointerDown: (_) {
+                      if (_auto.running) _auto.pause(byTouch: true);
+                      _sleep.touched();
+                    },
+                    child: TrackedPages(
+                      fingerprint: doc.fingerprint,
+                      format: doc.format.id,
+                      mode: 'comics',
+                      page: _page,
+                      child: AnimatedSwitcher(
+                        duration: Motion.of(context, Motion.fast),
+                        switchInCurve: Motion.decelerate,
+                        child: prefs.mode == ComicMode.webtoon
+                            ? WebtoonComic(
+                                key: _webtoon,
                                 pages: pages,
-                                spreads: spreads
-                                    ? comicSpreads(pages.count, coverAlone: prefs.coverAlone, wide: pages.wide)
-                                    : <List<int>>[
-                                        for (int i = 0; i < pages.count; i++) <int>[i],
-                                      ],
                                 page: _page,
-                                rtl: _rtl,
-                                fit: prefs.fit,
                                 onPage: _onPage,
-                                onTap: (TapZone z) => z == TapZone.centre ? _toggleChrome() : null,
-                                onZoom: (double s) {
-                                  final double rounded = (s * 20).round() / 20;
-                                  if (rounded != _zoomChip && (s > 1.01 || _zoomChip != null)) {
-                                    setState(() => _zoomChip = s > 1.01 ? rounded : null);
-                                  }
-                                },
+                                onTap: _toggleChrome,
+                              )
+                            : ValueListenableBuilder<int>(
+                                key: const ValueKey<String>('paged'),
+                                valueListenable: pages.measured,
+                                builder: (BuildContext context, int _, Widget? _) => PagedComic(
+                                  key: _paged,
+                                  pages: pages,
+                                  spreads: spreads
+                                      ? comicSpreads(pages.count, coverAlone: prefs.coverAlone, wide: pages.wide)
+                                      : <List<int>>[
+                                          for (int i = 0; i < pages.count; i++) <int>[i],
+                                        ],
+                                  page: _page,
+                                  rtl: _rtl,
+                                  fit: prefs.fit,
+                                  onPage: _onPage,
+                                  onTap: (TapZone z) => z == TapZone.centre ? _toggleChrome() : null,
+                                  onZoom: (double s) {
+                                    final double rounded = (s * 20).round() / 20;
+                                    if (rounded != _zoomChip && (s > 1.01 || _zoomChip != null)) {
+                                      setState(() => _zoomChip = s > 1.01 ? rounded : null);
+                                    }
+                                  },
+                                ),
                               ),
-                            ),
+                      ),
                     ),
                   ),
                 ),
@@ -392,6 +461,12 @@ class _ComicsScreenState extends ConsumerState<ComicsScreen> with WidgetsBinding
                 ),
               ),
             ),
+            if (_auto.enabled)
+              Positioned(
+                right: Space.lg,
+                bottom: MediaQuery.paddingOf(context).bottom + (_chrome ? 180 : 28),
+                child: AutoControl(auto: _auto),
+              ),
             // "250%" for a second after a zoom (board 6, V4).
             if (_zoomChip != null)
               Positioned(

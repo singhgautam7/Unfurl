@@ -28,6 +28,7 @@ abstract final class Routes {
   static const String settings = '/settings';
   static const String theme = '/settings/theme';
   static const String reader = '/settings/reader';
+  static const String controls = '/settings/controls';
   static const String about = '/about';
   static const String licences = '/licences';
   static const String privacy = '/privacy';
@@ -116,6 +117,7 @@ GoRouter buildRouter({required bool onboarded}) => GoRouter(
     _pushed(Routes.settings, (GoRouterState s) => const SettingsScreen()),
     _pushed(Routes.theme, (GoRouterState s) => const ThemeScreen()),
     _pushed(Routes.reader, (GoRouterState s) => const ReaderSettingsScreen()),
+    _pushed(Routes.controls, (GoRouterState s) => const ControlsScreen()),
     _pushed(Routes.about, (GoRouterState s) => const AboutScreen()),
     _pushed(Routes.licences, (GoRouterState s) => const LicencesScreen()),
     _pushed(Routes.privacy, (GoRouterState s) => const PrivacyScreen()),
