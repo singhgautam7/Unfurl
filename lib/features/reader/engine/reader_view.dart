@@ -125,7 +125,9 @@ class ReaderView extends StatefulWidget {
   final PageTurn pageTurn;
   final VoidCallback onCentreTap;
   final void Function(String href) onLink;
-  final void Function(int markId) onMarkTap;
+
+  /// A highlight was tapped, at a global position.
+  final void Function(int markId, Offset at) onMarkTap;
 
   /// The selection's rectangles in view coordinates (empty when cleared).
   final void Function(List<Rect> rects) onSelection;
@@ -411,7 +413,7 @@ class _ReaderViewState extends State<ReaderView> {
         if (o != null) {
           final int g = _global(f, o);
           for (final Mark m in _c.marks) {
-            if (g >= m.from && g < m.to) return widget.onMarkTap(m.id);
+            if (g >= m.from && g < m.to) return widget.onMarkTap(m.id, d.globalPosition);
           }
         }
       }
@@ -729,7 +731,7 @@ class _ReaderViewState extends State<ReaderView> {
               spoken: _c.spoken,
               selection: _c.selection,
               images: _images,
-              onTap: (int? global, String? href) {
+              onTap: (int? global, String? href, Offset at) {
                 if (_c.selection != null) {
                   _c.clearSelection();
                   widget.onSelection(const <Rect>[]);
@@ -738,7 +740,7 @@ class _ReaderViewState extends State<ReaderView> {
                 if (href != null) return widget.onLink(href);
                 if (global != null) {
                   for (final Mark m in _c.marks) {
-                    if (global >= m.from && global < m.to) return widget.onMarkTap(m.id);
+                    if (global >= m.from && global < m.to) return widget.onMarkTap(m.id, at);
                   }
                 }
                 widget.onCentreTap();
@@ -1110,7 +1112,7 @@ class _ScrollBlock extends StatefulWidget {
   final (int, int)? spoken;
   final (int, int)? selection;
   final ImageSizes images;
-  final void Function(int? global, String? href) onTap;
+  final void Function(int? global, String? href, Offset at) onTap;
   final void Function((int, int) range, List<Rect> rects) onSelect;
 
   @override
@@ -1179,11 +1181,11 @@ class _ScrollBlockState extends State<_ScrollBlock> {
           onTapUp: (TapUpDetails d) {
             for (final Fragment f in page.fragments) {
               final String? href = f.linkAt(d.localPosition);
-              if (href != null) return widget.onTap(null, href);
+              if (href != null) return widget.onTap(null, href, d.globalPosition);
               final int? o = f.offsetAt(d.localPosition);
-              if (o != null) return widget.onTap(base + o, null);
+              if (o != null) return widget.onTap(base + o, null, d.globalPosition);
             }
-            widget.onTap(null, null);
+            widget.onTap(null, null, d.globalPosition);
           },
           onLongPressStart: (LongPressStartDetails d) {
             for (final Fragment f in page.fragments) {

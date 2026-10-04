@@ -29,6 +29,8 @@ import '../../design_system/search_field.dart';
 import '../../formats/format_registry.dart';
 import '../../formats/reading_document.dart';
 import '../settings/settings_controller.dart';
+import '../cards/card_editor.dart';
+import '../cards/share_card.dart';
 import '../insights/book_insights.dart';
 import '../viewer/document_screen.dart';
 import 'chrome.dart';
@@ -385,6 +387,89 @@ class ReaderScaffoldState extends ConsumerState<ReaderScaffold> with WidgetsBind
     );
     if (text == null) return;
     await ref.read(libraryProvider).updateAnnotation(a.id, note: text.isEmpty ? null : text, clearNote: text.isEmpty);
+  }
+
+  /// Board 6, V5: a highlight tapped. Note, colour, copy, share as card, delete.
+  Future<void> _highlightMenu(int id, Offset at) async {
+    final Annotation? a = _annotations.where((Annotation x) => x.id == id).firstOrNull;
+    if (a == null) return;
+    final String? v = await showAppMenu<String>(
+      context: context,
+      at: at,
+      entries: <AppMenuEntry<String>>[
+        AppMenuEntry<String>(value: 'note', label: a.note == null ? 'Add note' : 'Edit note', icon: AppIcons.editNote),
+        const AppMenuEntry<String>(value: 'colour', label: 'Change colour', icon: AppIcons.palette),
+        const AppMenuEntry<String>(value: 'copy', label: 'Copy', icon: AppIcons.copy),
+        const AppMenuEntry<String>(value: 'card', label: 'Share as card', icon: AppIcons.image),
+        const AppMenuEntry<String>.divider(),
+        const AppMenuEntry<String>(value: 'delete', label: 'Delete highlight', icon: AppIcons.delete, danger: true),
+      ],
+    );
+    if (!mounted) return;
+    switch (v) {
+      case 'note':
+        await _editNote(a.id);
+      case 'colour':
+        final int? colour = await showAppMenu<int>(
+          context: context,
+          at: at,
+          entries: <AppMenuEntry<int>>[
+            for (final HighlightColor h in HighlightColor.values)
+              AppMenuEntry<int>(value: h.index, label: h.label, icon: AppIcons.palette, selected: a.color == h.index),
+          ],
+        );
+        if (colour != null) await ref.read(libraryProvider).updateAnnotation(a.id, color: colour);
+      case 'copy':
+        await copyText(a.quote);
+        if (mounted) AppSnackbar.info(context, 'Copied');
+      case 'card':
+        await _shareCard(a.quote, a.label);
+      case 'delete':
+        await ref.read(libraryProvider).deleteAnnotation(a.id);
+        if (mounted) {
+          AppSnackbar.undo(context, 'Highlight removed', () => ref.read(libraryProvider).restoreAnnotation(a));
+        }
+    }
+  }
+
+  Future<void> _shareCard(String quote, String location) => showCardEditor(
+    context,
+    CardContent(
+      quote: quote.trim(),
+      title: reading.title.isEmpty ? doc.ref.name : reading.title,
+      author: reading.author,
+      location: location,
+      fingerprint: doc.fingerprint,
+      format: format,
+    ),
+  );
+
+  /// The selection toolbar's More: Share as card, Read aloud from here,
+  /// Search in book.
+  Future<void> _selectionMore(BuildContext anchor, (int, int) sel) async {
+    final String text = controller.selectedText;
+    final String? v = await showAppMenu<String>(
+      context: context,
+      anchorContext: anchor,
+      entries: <AppMenuEntry<String>>[
+        const AppMenuEntry<String>(value: 'card', label: 'Share as card', icon: AppIcons.image),
+        if (format.tts)
+          const AppMenuEntry<String>(value: 'aloud', label: 'Read aloud from here', icon: AppIcons.readAloud),
+        if (format.search) const AppMenuEntry<String>(value: 'search', label: 'Search in book', icon: AppIcons.search),
+      ],
+    );
+    if (!mounted) return;
+    switch (v) {
+      case 'card':
+        _clearSelection();
+        await _shareCard(text, _labelFor(sel.$1));
+      case 'aloud':
+        await _readAloud(from: sel.$1);
+      case 'search':
+        _clearSelection();
+        setState(() => _searching = true);
+        _search(text);
+    }
   }
 
   void _clearSelection() {
@@ -753,7 +838,7 @@ class ReaderScaffoldState extends ConsumerState<ReaderScaffold> with WidgetsBind
                         columns: wide && prefs.layout == ReaderLayout.paged ? 2 : 1,
                         onCentreTap: _toggleChrome,
                         onLink: _onLink,
-                        onMarkTap: (int id) => id >= 0 ? _editNote(id) : null,
+                        onMarkTap: (int id, Offset at) => id >= 0 ? _highlightMenu(id, at) : null,
                         onSelection: (List<Rect> r) => setState(() => _selectionRects = r),
                         onFontStep: _fontStep,
                         runningHead: ((int, int, int) at) => reading.sections[at.$1].title.isEmpty
@@ -991,6 +1076,7 @@ class ReaderScaffoldState extends ConsumerState<ReaderScaffold> with WidgetsBind
           onHighlight: (int i) => unawaited(_highlight(i)),
           onNote: () => unawaited(_note()),
           onReadAloud: format.tts ? () => unawaited(_readAloud(from: sel.$1)) : null,
+          onMore: (BuildContext anchor) => unawaited(_selectionMore(anchor, sel)),
           onDefine: () {
             final String word = controller.selectedText;
             _clearSelection();

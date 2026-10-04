@@ -107,10 +107,18 @@ class MainActivity : FlutterActivity() {
                 "takeIntent" -> { result.success(pendingIntent); pendingIntent = null }
                 "openWith" -> result.success(launch(Intent.createChooser(viewIntent(call), null)))
                 "shareFile" -> {
-                    val send = Intent(Intent.ACTION_SEND).setType(call.argument<String>("mime") ?: "*/*")
-                        .putExtra(Intent.EXTRA_STREAM, shareable(call.argument<String>("uri")!!))
-                        .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                    result.success(launch(Intent.createChooser(send, null)))
+                    result.success(launch(chooser(shareable(call.argument<String>("uri")!!), call.argument<String>("mime") ?: "*/*")))
+                }
+                "saveImage" -> {
+                    val bytes = call.argument<ByteArray>("bytes")!!
+                    val name = call.argument<String>("name")!!
+                    // MediaStore I/O off the platform thread.
+                    Thread { val uri = saveImage(bytes, name); runOnUiThread { result.success(uri) } }.start()
+                }
+                "shareImage" -> {
+                    val file = java.io.File(call.argument<String>("path")!!)
+                    val uri = androidx.core.content.FileProvider.getUriForFile(this, "$packageName.files", file)
+                    result.success(launch(chooser(uri, "image/png")))
                 }
                 "shareText" -> {
                     val send = Intent(Intent.ACTION_SEND).setType("text/markdown")
@@ -232,6 +240,44 @@ class MainActivity : FlutterActivity() {
             if (launch(go)) return true
         }
         return false
+    }
+
+    /**
+     * A new PNG in Pictures/Unfurl (a highlight card the reader asked to save). MediaStore
+     * needs no permission for an app's own new images from Android 10; nothing existing is
+     * touched. Null before Android 10 or on failure.
+     */
+    private fun saveImage(bytes: ByteArray, name: String): String? {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return null
+        return try {
+            val values = android.content.ContentValues().apply {
+                put(android.provider.MediaStore.Images.Media.DISPLAY_NAME, name)
+                put(android.provider.MediaStore.Images.Media.MIME_TYPE, "image/png")
+                put(android.provider.MediaStore.Images.Media.RELATIVE_PATH, "${android.os.Environment.DIRECTORY_PICTURES}/Unfurl")
+                put(android.provider.MediaStore.Images.Media.IS_PENDING, 1)
+            }
+            val collection = android.provider.MediaStore.Images.Media.getContentUri(android.provider.MediaStore.VOLUME_EXTERNAL_PRIMARY)
+            val uri = contentResolver.insert(collection, values) ?: return null
+            contentResolver.openOutputStream(uri)?.use { it.write(bytes) }
+            values.clear()
+            values.put(android.provider.MediaStore.Images.Media.IS_PENDING, 0)
+            contentResolver.update(uri, values, null, null)
+            uri.toString()
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    /**
+     * The share sheet for one file. The URI also rides as ClipData, so the read grant
+     * reaches the chooser itself (its preview) and not only the app picked.
+     */
+    private fun chooser(uri: Uri, mime: String): Intent {
+        val send = Intent(Intent.ACTION_SEND).setType(mime)
+            .putExtra(Intent.EXTRA_STREAM, uri)
+            .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        send.clipData = android.content.ClipData.newRawUri(null, uri)
+        return Intent.createChooser(send, null).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
     }
 
     private fun launch(intent: Intent): Boolean = try {

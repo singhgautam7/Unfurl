@@ -123,11 +123,16 @@ class AppButton extends StatelessWidget {
   const AppButton({
     required this.label,
     required this.onPressed,
+    this.tight = false,
     this.type = AppButtonType.primary,
     this.icon,
     this.height = 52,
     super.key,
   });
+
+  /// Side by side in a row of two (the card editor's Save and Share): 12dp
+  /// side padding so the label fits a half-width pill.
+  final bool tight;
 
   final String label;
   final VoidCallback? onPressed;
@@ -161,7 +166,7 @@ class AppButton extends StatelessWidget {
           child: InkWell(
             onTap: onPressed,
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: Space.xl, vertical: Space.xs),
+              padding: EdgeInsets.symmetric(horizontal: tight ? Space.md : Space.xl, vertical: Space.xs),
               // Min-sized: a stretched parent (pinned actions) still centres
               // it, and it sits naturally in a row.
               child: Row(

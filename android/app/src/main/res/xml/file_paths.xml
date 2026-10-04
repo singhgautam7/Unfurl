@@ -4,4 +4,6 @@
 <paths>
     <external-path name="internal" path="." />
     <root-path name="volumes" path="storage/" />
+    <!-- Highlight cards rendered for the share sheet (v3), in the app's own cache. -->
+    <cache-path name="cards" path="cards/" />
 </paths>

@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/db/database.dart';
 import '../../core/files.dart';
+import '../../core/library/library.dart';
 import '../../core/locator.dart';
 import '../../core/motion/motion.dart';
 import '../../core/open.dart';
@@ -17,11 +18,16 @@ import '../../core/theme/tokens.dart';
 import '../../core/theme/typography.dart';
 import '../../design_system/app_header.dart';
 import '../../design_system/app_icon.dart';
+import '../../design_system/app_menu.dart';
+import '../../design_system/app_snackbar.dart';
 import '../../design_system/buttons.dart';
 import '../../design_system/chips.dart';
 import '../../design_system/containers.dart';
 import '../../design_system/search_field.dart';
 import '../../design_system/states.dart';
+import '../../formats/format_registry.dart';
+import '../cards/card_editor.dart';
+import '../cards/share_card.dart';
 import '../reader/reading_prefs.dart';
 import '../reader/sheets.dart';
 import '../settings/settings_controller.dart';
@@ -249,29 +255,80 @@ class _NotesScreenState extends ConsumerState<NotesScreen> {
   }
 }
 
-class _NoteRow extends StatelessWidget {
+class _NoteRow extends ConsumerWidget {
   const _NoteRow({required this.annotation, required this.doc, required this.theme});
 
   final Annotation annotation;
   final Document? doc;
   final ReadingTheme theme;
 
+  void _open(BuildContext context) => unawaited(
+    openDocument(
+      context,
+      DocRef(uri: doc!.uri, name: doc!.name, size: doc!.size),
+      at: Locator.fromJson(annotation.locator),
+      mode: annotation.mode,
+    ),
+  );
+
+  /// Board 6, V5: Go to page, Edit note, Copy, Share as card, Delete.
+  Future<void> _menu(BuildContext context, BuildContext anchor, WidgetRef ref) async {
+    final Annotation a = annotation;
+    final String? v = await showAppMenu<String>(
+      context: context,
+      anchorContext: anchor,
+      entries: <AppMenuEntry<String>>[
+        if (doc != null) const AppMenuEntry<String>(value: 'open', label: 'Go to page', icon: AppIcons.arrowOutward),
+        AppMenuEntry<String>(value: 'note', label: a.note == null ? 'Add note' : 'Edit note', icon: AppIcons.editNote),
+        const AppMenuEntry<String>(value: 'copy', label: 'Copy', icon: AppIcons.copy),
+        const AppMenuEntry<String>(value: 'card', label: 'Share as card', icon: AppIcons.image),
+        const AppMenuEntry<String>.divider(),
+        const AppMenuEntry<String>(value: 'delete', label: 'Delete', icon: AppIcons.delete, danger: true),
+      ],
+    );
+    if (!context.mounted) return;
+    final Library library = ref.read(libraryProvider);
+    switch (v) {
+      case 'open':
+        _open(context);
+      case 'note':
+        final String? text = await showNoteSheet(
+          context,
+          quote: a.quote,
+          color: theme.highlights[(a.color ?? 0).clamp(0, 3)],
+          initial: a.note,
+        );
+        if (text != null) {
+          await library.updateAnnotation(a.id, note: text.isEmpty ? null : text, clearNote: text.isEmpty);
+        }
+      case 'copy':
+        await copyText(a.quote);
+        if (context.mounted) AppSnackbar.info(context, 'Copied');
+      case 'card':
+        await showCardEditor(
+          context,
+          CardContent(
+            quote: a.quote,
+            title: doc?.title ?? doc?.name.replaceAll(RegExp(r'\.[^.]+$'), '') ?? '',
+            author: doc?.author,
+            location: a.label,
+            fingerprint: a.fingerprint,
+            format: doc == null ? null : Formats.of(doc!.name),
+          ),
+        );
+      case 'delete':
+        await library.deleteAnnotation(a.id);
+        if (context.mounted) AppSnackbar.undo(context, 'Removed', () => library.restoreAnnotation(a));
+    }
+  }
+
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final UnfurlColors c = context.colors;
     final Annotation a = annotation;
     final bool bookmark = a.kind == 'bookmark';
     return InkWell(
-      onTap: doc == null
-          ? null
-          : () => unawaited(
-              openDocument(
-                context,
-                DocRef(uri: doc!.uri, name: doc!.name, size: doc!.size),
-                at: Locator.fromJson(a.locator),
-                mode: a.mode,
-              ),
-            ),
+      onTap: doc == null ? null : () => _open(context),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: Space.lg, vertical: 14),
         child: Column(
@@ -282,7 +339,7 @@ class _NoteRow extends StatelessWidget {
               spacing: 6,
               children: <Widget>[
                 AppIcon(bookmark ? AppIcons.bookmark : AppIcons.notes, size: 16, color: c.onSurfaceVariant),
-                Flexible(
+                Expanded(
                   child: Text(
                     '${a.label} · ${Files.ago(a.createdAt)}',
                     maxLines: 1,
@@ -290,6 +347,21 @@ class _NoteRow extends StatelessWidget {
                     style: UnfurlType.monoLabel.copyWith(color: c.onSurfaceVariant),
                   ),
                 ),
+                if (!bookmark)
+                  SizedBox(
+                    height: 24,
+                    child: OverflowBox(
+                      maxHeight: IconSpec.tapTarget,
+                      child: Builder(
+                        builder: (BuildContext anchor) => AppIconButton(
+                          icon: AppIcons.moreVert,
+                          filled: false,
+                          semanticLabel: 'Highlight actions',
+                          onPressed: () => unawaited(_menu(context, anchor, ref)),
+                        ),
+                      ),
+                    ),
+                  ),
               ],
             ),
             if (bookmark)

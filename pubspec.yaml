@@ -27,6 +27,9 @@ dependencies:
   markdown: 7.3.1
   # The Quad type of InteractiveViewer.builder (already in the SDK's graph).
   vector_math: 2.4.0
+  # Highlight cards' cover palette (v3): quantise and score a cover's colours.
+  # Already in the graph through Flutter and dynamic_color; imported directly now.
+  material_color_utilities: 0.13.0
 
 dev_dependencies:
   flutter_test:

@@ -580,6 +580,7 @@ class SelectionToolbar extends StatelessWidget {
     required this.onHighlight,
     required this.onNote,
     required this.onReadAloud,
+    this.onMore,
     required this.onDefine,
     super.key,
   });
@@ -596,6 +597,10 @@ class SelectionToolbar extends StatelessWidget {
   final VoidCallback onNote;
   final VoidCallback? onReadAloud;
   final VoidCallback onDefine;
+
+  /// v3 (board 6, V5): More opens Share as card, Read aloud from here and
+  /// Search in book, anchored to the button.
+  final void Function(BuildContext anchor)? onMore;
 
   @override
   Widget build(BuildContext context) {
@@ -667,7 +672,7 @@ class SelectionToolbar extends StatelessWidget {
                     glyph: AppIcon(AppIcons.editNote, size: 22, color: c.icon),
                   ),
                 ),
-                if (onReadAloud != null)
+                if (onReadAloud != null && onMore == null)
                   Expanded(
                     child: _Tool(
                       label: 'Listen',
@@ -687,6 +692,17 @@ class SelectionToolbar extends StatelessWidget {
                     ),
                   ),
                 ),
+                if (onMore != null)
+                  Expanded(
+                    child: Builder(
+                      builder: (BuildContext anchor) => _Tool(
+                        label: 'More',
+                        semantic: 'More actions',
+                        onTap: () => onMore!(anchor),
+                        glyph: AppIcon(AppIcons.moreVert, size: 22, color: c.icon),
+                      ),
+                    ),
+                  ),
               ],
             ),
           ],

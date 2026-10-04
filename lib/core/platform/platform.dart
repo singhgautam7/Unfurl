@@ -293,6 +293,14 @@ abstract final class Platform {
   static Future<void> shareFile(String uri, String? mime) =>
       _call<bool>('shareFile', <String, Object?>{'uri': uri, 'mime': mime});
 
+  /// Saves a new PNG to Pictures/Unfurl; the MediaStore URI, or null (before
+  /// Android 10, or on failure).
+  static Future<String?> saveImage(Uint8List bytes, String name) =>
+      _call<String>('saveImage', <String, Object?>{'bytes': bytes, 'name': name});
+
+  /// Shares an image in the app's cache (`cache/cards/`) through FileProvider.
+  static Future<void> shareImage(String path) => _call<bool>('shareImage', <String, Object?>{'path': path});
+
   static Future<void> shareText(String text, {String? subject}) =>
       _call<bool>('shareText', <String, Object?>{'text': text, 'subject': subject});
 

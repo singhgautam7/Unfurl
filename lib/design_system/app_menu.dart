@@ -17,6 +17,7 @@ class AppMenuEntry<T> {
     this.selected = false,
     this.switchValue,
     this.accentIcon = false,
+    this.danger = false,
   }) : divider = false;
 
   const AppMenuEntry.divider()
@@ -27,6 +28,7 @@ class AppMenuEntry<T> {
       selected = false,
       switchValue = null,
       accentIcon = false,
+      danger = false,
       divider = true;
 
   final T? value;
@@ -45,6 +47,9 @@ class AppMenuEntry<T> {
 
   /// The icon filled and in `accent` (a pinned folder's star).
   final bool accentIcon;
+
+  /// A destructive action ("Delete highlight"), in `danger`.
+  final bool danger;
 }
 
 /// The overflow menu (board 2, A3 and A6): a `surface` card with a 1px
@@ -52,23 +57,33 @@ class AppMenuEntry<T> {
 /// 52dp pills; no shadow, since the nav pill owns the only one.
 Future<T?> showAppMenu<T>({
   required BuildContext context,
-  required BuildContext anchorContext,
   required List<AppMenuEntry<T>> entries,
+  BuildContext? anchorContext,
+  Offset? at,
 }) {
+  assert(anchorContext != null || at != null, 'Anchor a menu to a widget or a point');
   final UnfurlColors c = context.colors;
   final RenderBox overlay =
       Navigator.of(context, rootNavigator: true).overlay!.context.findRenderObject()! as RenderBox;
-  final RenderBox anchor = anchorContext.findRenderObject()! as RenderBox;
-  final Offset topLeft = anchor.localToGlobal(Offset.zero, ancestor: overlay);
-  return showMenu<T>(
-    context: context,
-    useRootNavigator: true,
-    position: RelativeRect.fromLTRB(
+  final RelativeRect position;
+  if (anchorContext != null) {
+    final RenderBox anchor = anchorContext.findRenderObject()! as RenderBox;
+    final Offset topLeft = anchor.localToGlobal(Offset.zero, ancestor: overlay);
+    position = RelativeRect.fromLTRB(
       topLeft.dx,
       topLeft.dy + anchor.size.height,
       overlay.size.width - topLeft.dx - anchor.size.width,
       0,
-    ),
+    );
+  } else {
+    // A point (a tap on a highlight): the menu opens just below it.
+    final Offset p = overlay.globalToLocal(at!);
+    position = RelativeRect.fromLTRB(p.dx, p.dy + Space.sm, overlay.size.width - p.dx, 0);
+  }
+  return showMenu<T>(
+    context: context,
+    useRootNavigator: true,
+    position: position,
     color: c.surface,
     elevation: 0,
     constraints: const BoxConstraints(minWidth: 262),
@@ -105,7 +120,7 @@ class _MenuRow<T> extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final UnfurlColors c = context.colors;
-    final Color fg = entry.selected ? c.onPrimaryContainer : c.onSurface;
+    final Color fg = entry.danger ? c.danger : (entry.selected ? c.onPrimaryContainer : c.onSurface);
     return Container(
       constraints: const BoxConstraints(minHeight: 52),
       margin: const EdgeInsets.symmetric(horizontal: Space.sm),
@@ -121,7 +136,7 @@ class _MenuRow<T> extends StatelessWidget {
             AppIcon(
               entry.icon!,
               fill: entry.accentIcon,
-              color: entry.accentIcon ? c.accent : (entry.selected ? fg : c.icon),
+              color: entry.accentIcon ? c.accent : (entry.selected || entry.danger ? fg : c.icon),
             ),
           Expanded(
             child: Column(

@@ -47,9 +47,8 @@ class Oklch {
     return Color.from(alpha: alpha, red: _encode(r), green: _encode(g), blue: _encode(bl));
   }
 
-  /// The OKLCh hue of a colour, in degrees — used to seed a palette from the
-  /// wallpaper accent the OS hands over.
-  static double hueOf(Color color) {
+  /// A colour in OKLCh (inverse of [toColor]).
+  factory Oklch.fromColor(Color color) {
     final double r = _decode(color.r);
     final double g = _decode(color.g);
     final double b = _decode(color.b);
@@ -58,11 +57,16 @@ class Oklch {
     final double m = math.pow(0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b, 1 / 3).toDouble();
     final double s = math.pow(0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b, 1 / 3).toDouble();
 
+    final double lightness = 0.2104542553 * l + 0.7936177850 * m - 0.0040720468 * s;
     final double a = 1.9779984951 * l - 2.4285922050 * m + 0.4505937099 * s;
     final double bb = 0.0259040371 * l + 0.7827717662 * m - 0.8086757660 * s;
     final double degrees = math.atan2(bb, a) * 180 / math.pi;
-    return degrees < 0 ? degrees + 360 : degrees;
+    return Oklch(lightness, math.sqrt(a * a + bb * bb), degrees < 0 ? degrees + 360 : degrees, color.a);
   }
+
+  /// The OKLCh hue of a colour, in degrees — used to seed a palette from the
+  /// wallpaper accent the OS hands over.
+  static double hueOf(Color color) => Oklch.fromColor(color).h;
 
   /// Gamma-encoded sRGB channel back to linear light.
   static double _decode(double v) => v <= 0.04045 ? v / 12.92 : math.pow((v + 0.055) / 1.055, 2.4).toDouble();

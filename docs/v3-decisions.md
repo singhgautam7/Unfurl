@@ -122,3 +122,24 @@ are the ones worth a second opinion.
 27. **Speed is the median of daily speeds** over 30 days (the spec says "median"), shown once a mode has
     30 minutes; days under a minute in a mode are left out.
 28. **"Mostly 21:00–23:00"** is the busiest hour of the last 90 days and the busier of its neighbours.
+
+## Highlight cards
+
+29. **`material_color_utilities` 0.13.0 as a direct dependency.** It was already in the graph (Flutter and
+    `dynamic_color`); the cover palette imports it to quantise a 64 px cover (Celebi, in an isolate) and
+    score the result. Cached per fingerprint for the session.
+30. **The preview is the export.** The card is laid out at 1080 wide inside a `FittedBox`; export is that
+    `RepaintBoundary` at pixel ratio 1 (1080 × 1080 / 1350 / 1920), encoded to PNG by the engine off the UI
+    isolate.
+31. **Contrast is enforced, not hoped for.** Quote and title ink must reach 4.5:1 and the muted line 3:1
+    on every background. The spec's accent tone at L 0.535 misses 4.5:1 on cyan hues (4.3:1 in the Mull
+    family), so a palette's ink is nudged in OKLCH lightness until it passes. Tested for all 17 families,
+    the four reading themes, four accent tones and six cover hues.
+32. **Cover palette from HCT tones** (40/95, 94/25, 18/92) of the cover's leading colour, so each of the three
+    cover backgrounds keeps its contrast whatever the hue. A book without art uses its typographic cover hue.
+33. **Save to Photos** inserts a new image in `Pictures/Unfurl` through MediaStore (Android 10+, no
+    permission). It writes a new file the reader asked for and never touches an existing one (data rule 1
+    is about the reader's files). Before Android 10 it says so and offers Share. **Share** writes to
+    `cache/cards/` (files older than an hour are deleted on the next render) and goes through the existing
+    FileProvider; the URI rides as ClipData so the share sheet's own preview can read it (the same fix
+    went to "Share file").
