@@ -18,6 +18,7 @@ import '../../design_system/app_snackbar.dart';
 import '../../design_system/buttons.dart';
 import '../../design_system/chips.dart';
 import '../../design_system/search_field.dart';
+import '../../formats/format_registry.dart';
 import '../../formats/office/sheets.dart';
 import '../viewer/document_screen.dart';
 import 'office_screens.dart';
@@ -184,7 +185,10 @@ class _SheetScreenState extends ConsumerState<SheetScreen> {
                               text: s.rows.map((List<String> r) => r.join('\t')).join('\n'),
                               facts: <(String, String)>[
                                 ('Name', widget.doc.ref.name),
-                                ('Size', '${Files.size(widget.doc.ref.size)} · ${widget.doc.format.label}'),
+                                (
+                                  'Size',
+                                  '${Files.size(widget.doc.ref.size)} · ${Formats.labelOf(widget.doc.ref.name)}',
+                                ),
                                 ('Sheets', '${sheets.length}'),
                                 ('This sheet', '${s.rows.length} rows · ${s.columns} columns'),
                               ],

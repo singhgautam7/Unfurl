@@ -604,7 +604,7 @@ class ReaderScaffoldState extends ConsumerState<ReaderScaffold> with WidgetsBind
       author: reading.author,
       facts: <(String, String)>[
         ('Location', doc.ref.name),
-        ('Size', '${Files.size(doc.ref.size)} · ${format.label}'),
+        ('Size', '${Files.size(doc.ref.size)} · ${Formats.labelOf(doc.ref.name)}'),
         ('${reading.unitLabel}s', '${reading.sections.length}'),
         ('Progress', '${(controller.progress * 100).round()}% · $_where'),
         ('Highlights', '${hl.length}${notes > 0 ? ' · $notes ${notes == 1 ? 'note' : 'notes'}' : ''}'),

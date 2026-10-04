@@ -335,6 +335,8 @@ class _Item {
     this.title,
     this.author,
     this.path = '',
+    this.enriched = 0,
+    this.issue,
   });
 
   final String name;
@@ -353,6 +355,13 @@ class _Item {
 
   /// Library: the path within the granted folder. Explorer: the full path.
   final String path;
+
+  /// The index's verdict (`Entries.enriched`): -2 protected (DRM), -3 a
+  /// variant Unfurl can't read.
+  final int enriched;
+  final String? issue;
+
+  bool get protected => enriched == -2;
 
   bool get hidden => name.startsWith('.');
   FormatModule? get format => Formats.of(name, mime);
@@ -571,6 +580,8 @@ class _FolderScreenState extends ConsumerState<FolderScreen> {
             title: e.title,
             author: e.author,
             path: widget.path.isEmpty ? e.name : '${widget.path}/${e.name}',
+            enriched: e.enriched,
+            issue: e.issue,
           ),
       ];
     }
@@ -997,7 +1008,8 @@ class _FolderScreenState extends ConsumerState<FolderScreen> {
               child: SearchField(hint: 'Search in $title', onChanged: (String q) => setState(() => _query = q.trim())),
             ),
           ),
-        if (!_picker)
+        // One family only: no chip row (board 6, V3 chips).
+        if (!_picker && present.length + (hasOther ? 1 : 0) > 1)
           SliverToBoxAdapter(
             child: ChipRow(
               children: <Widget>[
@@ -1222,17 +1234,22 @@ class _FolderScreenState extends ConsumerState<FolderScreen> {
       final (String, Document?)? printed = _prints[e.path];
       final Document? doc = e.doc ?? printed?.$2;
       final double progress = doc?.progress ?? 0;
+      final String state = e.protected
+          ? 'Protected (DRM)'
+          : (doc == null || progress <= 0 ? 'New' : (doc.finished ? 'Finished' : '${(progress * 100).round()}%'));
       return CoverTile(
         cover: CoverArt(
           title: doc?.title ?? e.title ?? _stem(e.name),
           author: doc?.author ?? e.author,
           fingerprint: e.fingerprint ?? doc?.fingerprint ?? printed?.$1,
           format: m,
+          badge: Formats.labelOf(e.name),
+          issue: e.issue,
         ),
         progress: progress,
         finished: doc?.finished ?? false,
-        meta:
-            '${m.label} · ${doc == null || progress <= 0 ? 'New' : (doc.finished ? 'Finished' : '${(progress * 100).round()}%')}',
+        muted: e.protected,
+        meta: m == Formats.comics && e.issue != null ? '${e.issue} · $state' : state,
         onTap: () => _open(e),
         onLongPress: _explorer && !_picker ? () => showFileActions(context, _file(e)) : null,
       );
@@ -1242,7 +1259,7 @@ class _FolderScreenState extends ConsumerState<FolderScreen> {
       cover: image
           ? _Thumb(path: e.path, label: Formats.labelOf(e.name))
           : FormatTile(
-              label: m?.label ?? Formats.labelOf(e.name),
+              label: Formats.labelOf(e.name),
               icon: m?.icon ?? unknownIcon(e.name),
               muted: m == null || e.hidden,
             ),
@@ -1262,16 +1279,19 @@ class _FolderScreenState extends ConsumerState<FolderScreen> {
   /// Unfurl can't read; long-press for actions.
   Widget _explorerRow(_Item e) {
     final (IconData icon, TileKind kind) = fileLook(e.name);
-    final bool muted = e.format == null || e.hidden;
+    final bool muted = e.format == null || e.hidden || e.protected;
     final String rel = _deep && e.rel.isNotEmpty ? ' · ${e.rel.replaceAll('/', ' › ')}' : '';
     return ExplorerRow(
-      icon: e.hidden ? AppIcons.visibilityOff : icon,
+      icon: e.hidden ? AppIcons.visibilityOff : (e.protected ? AppIcons.lock : icon),
       tile: muted ? TileKind.muted : kind,
       name: e.name,
       muted: muted,
+      badge: e.format == null || e.hidden ? null : Formats.labelOf(e.name),
       meta: e.hidden
           ? 'Hidden · ${Files.size(e.size)}'
-          : '${Formats.labelOf(e.name)} · ${Files.size(e.size)}${e.format == null ? ' · Open in another app' : (_picker ? '' : ' · ${Files.when(e.modified)}')}$rel',
+          : e.format == null
+          ? '${Formats.labelOf(e.name)} · ${Files.size(e.size)} · Open in another app$rel'
+          : '${<String>[Files.size(e.size), if (e.protected) 'Protected (DRM)' else if (!_picker) Files.when(e.modified)].join(' · ')}$rel',
       onTap: _picker ? null : () => _open(e),
       onLongPress: _picker ? null : () => showFileActions(context, _file(e)),
     );
@@ -1293,7 +1313,10 @@ class _FolderScreenState extends ConsumerState<FolderScreen> {
         child: Row(
           spacing: 14,
           children: <Widget>[
-            RowTile(icon: m?.icon ?? unknownIcon(e.name), kind: muted ? TileKind.muted : TileKind.box),
+            RowTile(
+              icon: e.protected ? AppIcons.lock : (m?.icon ?? unknownIcon(e.name)),
+              kind: muted || e.protected ? TileKind.muted : TileKind.box,
+            ),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -1307,7 +1330,9 @@ class _FolderScreenState extends ConsumerState<FolderScreen> {
                         .weight(muted ? 500 : 600),
                   ),
                   Text(
-                    '${m?.label ?? Formats.labelOf(e.name)} · ${Files.size(e.size)} · ${Files.when(e.modified)}',
+                    muted
+                        ? '${Formats.labelOf(e.name)} · ${Files.size(e.size)} · ${Files.when(e.modified)}'
+                        : '${Files.size(e.size)} · ${e.protected ? 'Protected (DRM)' : Files.when(e.modified)}',
                     style: UnfurlType.monoLabel.copyWith(height: 1.5, color: c.onSurfaceVariant),
                   ),
                   if (_deep && rel.isNotEmpty)
@@ -1328,6 +1353,7 @@ class _FolderScreenState extends ConsumerState<FolderScreen> {
                 ],
               ),
             ),
+            if (!muted) FormatBadge(Formats.labelOf(e.name)),
           ],
         ),
       ),

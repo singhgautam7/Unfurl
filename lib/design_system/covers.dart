@@ -45,6 +45,32 @@ class ProgressTrack extends StatelessWidget {
   }
 }
 
+/// The real extension ("AZW3", not "Kindle") in 9.5 mono on the surface
+/// with an outline ring, readable on any cover colour (board 6, V3 badges).
+/// Top-left on covers, trailing on rows.
+class FormatBadge extends StatelessWidget {
+  const FormatBadge(this.label, {this.inverse = false, super.key});
+
+  final String label;
+
+  /// The comic issue badge: inverse surface, no ring.
+  final bool inverse;
+
+  @override
+  Widget build(BuildContext context) {
+    final UnfurlColors c = context.colors;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 4),
+      decoration: BoxDecoration(
+        color: inverse ? c.inverseSurface : c.surface,
+        borderRadius: Radii.badgeR,
+        border: inverse ? null : Border.all(color: c.outline),
+      ),
+      child: Text(label, style: UnfurlType.badge.copyWith(color: inverse ? c.onInverseSurface : c.onSurface)),
+    );
+  }
+}
+
 /// The face of a book: its own cover art when there is one (EPUB art, a
 /// PDF's first page), else a typographic cover in Mull's category hue. Every
 /// image is decoded at the size it is drawn.
@@ -56,6 +82,8 @@ class CoverArt extends StatelessWidget {
     this.author,
     this.width = 96,
     this.height = 136,
+    this.badge,
+    this.issue,
     super.key,
   });
 
@@ -66,8 +94,25 @@ class CoverArt extends StatelessWidget {
   final double width;
   final double height;
 
+  /// The extension badge, top-left (grids only).
+  final String? badge;
+
+  /// A comic's issue, top-right.
+  final String? issue;
+
   @override
   Widget build(BuildContext context) {
+    if (badge == null && issue == null) return _face(context);
+    return Stack(
+      children: <Widget>[
+        _face(context),
+        if (badge != null) Positioned(left: 6, top: 6, child: FormatBadge(badge!)),
+        if (issue != null) Positioned(right: 6, top: 6, child: FormatBadge(issue!, inverse: true)),
+      ],
+    );
+  }
+
+  Widget _face(BuildContext context) {
     final UnfurlColors c = context.colors;
     final bool small = width < 70;
     final BorderRadius radius = BorderRadius.circular(small ? 4 : Radii.cover);

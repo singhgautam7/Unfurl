@@ -32,12 +32,21 @@ class EmptyState extends StatelessWidget {
     this.small = false,
     this.actions = const <Widget>[],
     this.aboveNav = false,
+    this.detail,
+    this.top,
     super.key,
   });
+
+  /// Space above the icon, where a bar sits over the state (v3 error states).
+  final double? top;
 
   final IconData icon;
   final String title;
   final String message;
+
+  /// The mono detail box under the message: file name, format and cause
+  /// (board 6, V3 error states).
+  final String? detail;
   final EmptyTone tone;
 
   /// The 30dp title a folder's states use; 40 otherwise.
@@ -60,7 +69,7 @@ class EmptyState extends StatelessWidget {
       children: <Widget>[
         Expanded(
           child: SingleChildScrollView(
-            padding: EdgeInsets.fromLTRB(28, small ? 110 : 150, 28, Space.xl),
+            padding: EdgeInsets.fromLTRB(28, top ?? (small ? 110 : 150), 28, Space.xl),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               spacing: Space.lg,
@@ -73,6 +82,12 @@ class EmptyState extends StatelessWidget {
                 ),
                 Text(title, style: (small ? UnfurlType.displaySmall : UnfurlType.display).copyWith(color: c.onSurface)),
                 Text(message, style: UnfurlType.body.copyWith(color: c.onSurfaceVariant)),
+                if (detail != null)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: Space.md, vertical: 10),
+                    decoration: BoxDecoration(color: c.surfaceContainer, borderRadius: Radii.boxR),
+                    child: Text(detail!, style: UnfurlType.monoLabel.copyWith(height: 1.5, color: c.onSurfaceVariant)),
+                  ),
               ],
             ),
           ),

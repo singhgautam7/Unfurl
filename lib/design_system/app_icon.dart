@@ -139,6 +139,17 @@ abstract final class AppIcons {
   static const IconData tableChart = IconData(0xe265, fontFamily: _family); // table_chart
   static const IconData audioFile = IconData(0xeb82, fontFamily: _family); // audio_file
   static const IconData movie = IconData(0xe404, fontFamily: _family); // movie
+  // v3 (board 6).
+  static const IconData insights = IconData(0xf092, fontFamily: _family); // insights
+  static const IconData comic = IconData(0xf5dd, fontFamily: _family); // comic_bubble
+  static const IconData html = IconData(0xeb7e, fontFamily: _family); // html
+  static const IconData bedtime = IconData(0xf159, fontFamily: _family); // bedtime
+  static const IconData volumeDown = IconData(0xe04d, fontFamily: _family); // volume_down
+  static const IconData cropPortrait = IconData(0xe3c5, fontFamily: _family); // crop_portrait
+  static const IconData viewDay = IconData(0xe8ed, fontFamily: _family); // view_day
+  static const IconData remove = IconData(0xe15b, fontFamily: _family); // remove
+  static const IconData help = IconData(0xe8fd, fontFamily: _family); // help
+  static const IconData arrowOutward = IconData(0xf8ce, fontFamily: _family); // arrow_outward
 }
 
 /// A symbol at the boards' weight (350) and optical size. Every icon in the

@@ -566,6 +566,15 @@ class $EntriesTable extends Entries with TableInfo<$EntriesTable, Entry> {
     type: DriftSqlType.int,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _issueMeta = const VerificationMeta('issue');
+  @override
+  late final GeneratedColumn<String> issue = GeneratedColumn<String>(
+    'issue',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
   static const VerificationMeta _enrichedMeta = const VerificationMeta('enriched');
   @override
   late final GeneratedColumn<int> enriched = GeneratedColumn<int>(
@@ -614,6 +623,7 @@ class $EntriesTable extends Entries with TableInfo<$EntriesTable, Entry> {
     title,
     author,
     units,
+    issue,
     enriched,
     hidden,
     source,
@@ -686,6 +696,9 @@ class $EntriesTable extends Entries with TableInfo<$EntriesTable, Entry> {
     if (data.containsKey('units')) {
       context.handle(_unitsMeta, units.isAcceptableOrUnknown(data['units']!, _unitsMeta));
     }
+    if (data.containsKey('issue')) {
+      context.handle(_issueMeta, issue.isAcceptableOrUnknown(data['issue']!, _issueMeta));
+    }
     if (data.containsKey('enriched')) {
       context.handle(_enrichedMeta, enriched.isAcceptableOrUnknown(data['enriched']!, _enrichedMeta));
     }
@@ -723,6 +736,7 @@ class $EntriesTable extends Entries with TableInfo<$EntriesTable, Entry> {
       title: attachedDatabase.typeMapping.read(DriftSqlType.string, data['${effectivePrefix}title']),
       author: attachedDatabase.typeMapping.read(DriftSqlType.string, data['${effectivePrefix}author']),
       units: attachedDatabase.typeMapping.read(DriftSqlType.int, data['${effectivePrefix}units']),
+      issue: attachedDatabase.typeMapping.read(DriftSqlType.string, data['${effectivePrefix}issue']),
       enriched: attachedDatabase.typeMapping.read(DriftSqlType.int, data['${effectivePrefix}enriched'])!,
       hidden: attachedDatabase.typeMapping.read(DriftSqlType.bool, data['${effectivePrefix}hidden'])!,
       source: attachedDatabase.typeMapping.read(DriftSqlType.string, data['${effectivePrefix}source'])!,
@@ -755,10 +769,14 @@ class Entry extends DataClass implements Insertable<Entry> {
   final String? title;
   final String? author;
 
-  /// Pages (PDF) or chapters (EPUB).
+  /// Pages (PDF, comics) or chapters (EPUB).
   final int? units;
 
-  /// 0 never read, 1 metadata read, -1 unreadable.
+  /// A comic's issue or volume ("#14", "Vol. 2"), from its ComicInfo (schema 3).
+  final String? issue;
+
+  /// 0 never read, 1 metadata read, -1 unreadable, -2 protected (DRM),
+  /// -3 a variant Unfurl can't read (Topaz, KFX, RAR 5).
   final int enriched;
 
   /// "Remove from library": hidden here; the file stays on the phone.
@@ -782,6 +800,7 @@ class Entry extends DataClass implements Insertable<Entry> {
     this.title,
     this.author,
     this.units,
+    this.issue,
     required this.enriched,
     required this.hidden,
     required this.source,
@@ -814,6 +833,9 @@ class Entry extends DataClass implements Insertable<Entry> {
     if (!nullToAbsent || units != null) {
       map['units'] = Variable<int>(units);
     }
+    if (!nullToAbsent || issue != null) {
+      map['issue'] = Variable<String>(issue);
+    }
     map['enriched'] = Variable<int>(enriched);
     map['hidden'] = Variable<bool>(hidden);
     map['source'] = Variable<String>(source);
@@ -837,6 +859,7 @@ class Entry extends DataClass implements Insertable<Entry> {
       title: title == null && nullToAbsent ? const Value.absent() : Value(title),
       author: author == null && nullToAbsent ? const Value.absent() : Value(author),
       units: units == null && nullToAbsent ? const Value.absent() : Value(units),
+      issue: issue == null && nullToAbsent ? const Value.absent() : Value(issue),
       enriched: Value(enriched),
       hidden: Value(hidden),
       source: Value(source),
@@ -861,6 +884,7 @@ class Entry extends DataClass implements Insertable<Entry> {
       title: serializer.fromJson<String?>(json['title']),
       author: serializer.fromJson<String?>(json['author']),
       units: serializer.fromJson<int?>(json['units']),
+      issue: serializer.fromJson<String?>(json['issue']),
       enriched: serializer.fromJson<int>(json['enriched']),
       hidden: serializer.fromJson<bool>(json['hidden']),
       source: serializer.fromJson<String>(json['source']),
@@ -885,6 +909,7 @@ class Entry extends DataClass implements Insertable<Entry> {
       'title': serializer.toJson<String?>(title),
       'author': serializer.toJson<String?>(author),
       'units': serializer.toJson<int?>(units),
+      'issue': serializer.toJson<String?>(issue),
       'enriched': serializer.toJson<int>(enriched),
       'hidden': serializer.toJson<bool>(hidden),
       'source': serializer.toJson<String>(source),
@@ -907,6 +932,7 @@ class Entry extends DataClass implements Insertable<Entry> {
     Value<String?> title = const Value.absent(),
     Value<String?> author = const Value.absent(),
     Value<int?> units = const Value.absent(),
+    Value<String?> issue = const Value.absent(),
     int? enriched,
     bool? hidden,
     String? source,
@@ -926,6 +952,7 @@ class Entry extends DataClass implements Insertable<Entry> {
     title: title.present ? title.value : this.title,
     author: author.present ? author.value : this.author,
     units: units.present ? units.value : this.units,
+    issue: issue.present ? issue.value : this.issue,
     enriched: enriched ?? this.enriched,
     hidden: hidden ?? this.hidden,
     source: source ?? this.source,
@@ -947,6 +974,7 @@ class Entry extends DataClass implements Insertable<Entry> {
       title: data.title.present ? data.title.value : this.title,
       author: data.author.present ? data.author.value : this.author,
       units: data.units.present ? data.units.value : this.units,
+      issue: data.issue.present ? data.issue.value : this.issue,
       enriched: data.enriched.present ? data.enriched.value : this.enriched,
       hidden: data.hidden.present ? data.hidden.value : this.hidden,
       source: data.source.present ? data.source.value : this.source,
@@ -971,6 +999,7 @@ class Entry extends DataClass implements Insertable<Entry> {
           ..write('title: $title, ')
           ..write('author: $author, ')
           ..write('units: $units, ')
+          ..write('issue: $issue, ')
           ..write('enriched: $enriched, ')
           ..write('hidden: $hidden, ')
           ..write('source: $source')
@@ -995,6 +1024,7 @@ class Entry extends DataClass implements Insertable<Entry> {
     title,
     author,
     units,
+    issue,
     enriched,
     hidden,
     source,
@@ -1018,6 +1048,7 @@ class Entry extends DataClass implements Insertable<Entry> {
           other.title == this.title &&
           other.author == this.author &&
           other.units == this.units &&
+          other.issue == this.issue &&
           other.enriched == this.enriched &&
           other.hidden == this.hidden &&
           other.source == this.source);
@@ -1039,6 +1070,7 @@ class EntriesCompanion extends UpdateCompanion<Entry> {
   final Value<String?> title;
   final Value<String?> author;
   final Value<int?> units;
+  final Value<String?> issue;
   final Value<int> enriched;
   final Value<bool> hidden;
   final Value<String> source;
@@ -1058,6 +1090,7 @@ class EntriesCompanion extends UpdateCompanion<Entry> {
     this.title = const Value.absent(),
     this.author = const Value.absent(),
     this.units = const Value.absent(),
+    this.issue = const Value.absent(),
     this.enriched = const Value.absent(),
     this.hidden = const Value.absent(),
     this.source = const Value.absent(),
@@ -1078,6 +1111,7 @@ class EntriesCompanion extends UpdateCompanion<Entry> {
     this.title = const Value.absent(),
     this.author = const Value.absent(),
     this.units = const Value.absent(),
+    this.issue = const Value.absent(),
     this.enriched = const Value.absent(),
     this.hidden = const Value.absent(),
     this.source = const Value.absent(),
@@ -1104,6 +1138,7 @@ class EntriesCompanion extends UpdateCompanion<Entry> {
     Expression<String>? title,
     Expression<String>? author,
     Expression<int>? units,
+    Expression<String>? issue,
     Expression<int>? enriched,
     Expression<bool>? hidden,
     Expression<String>? source,
@@ -1124,6 +1159,7 @@ class EntriesCompanion extends UpdateCompanion<Entry> {
       if (title != null) 'title': title,
       if (author != null) 'author': author,
       if (units != null) 'units': units,
+      if (issue != null) 'issue': issue,
       if (enriched != null) 'enriched': enriched,
       if (hidden != null) 'hidden': hidden,
       if (source != null) 'source': source,
@@ -1146,6 +1182,7 @@ class EntriesCompanion extends UpdateCompanion<Entry> {
     Value<String?>? title,
     Value<String?>? author,
     Value<int?>? units,
+    Value<String?>? issue,
     Value<int>? enriched,
     Value<bool>? hidden,
     Value<String>? source,
@@ -1166,6 +1203,7 @@ class EntriesCompanion extends UpdateCompanion<Entry> {
       title: title ?? this.title,
       author: author ?? this.author,
       units: units ?? this.units,
+      issue: issue ?? this.issue,
       enriched: enriched ?? this.enriched,
       hidden: hidden ?? this.hidden,
       source: source ?? this.source,
@@ -1220,6 +1258,9 @@ class EntriesCompanion extends UpdateCompanion<Entry> {
     if (units.present) {
       map['units'] = Variable<int>(units.value);
     }
+    if (issue.present) {
+      map['issue'] = Variable<String>(issue.value);
+    }
     if (enriched.present) {
       map['enriched'] = Variable<int>(enriched.value);
     }
@@ -1250,6 +1291,7 @@ class EntriesCompanion extends UpdateCompanion<Entry> {
           ..write('title: $title, ')
           ..write('author: $author, ')
           ..write('units: $units, ')
+          ..write('issue: $issue, ')
           ..write('enriched: $enriched, ')
           ..write('hidden: $hidden, ')
           ..write('source: $source')
@@ -1422,6 +1464,15 @@ class $DocumentsTable extends Documents with TableInfo<$DocumentsTable, Document
     requiredDuringInsert: false,
     defaultValue: const Constant(0),
   );
+  static const VerificationMeta _issueMeta = const VerificationMeta('issue');
+  @override
+  late final GeneratedColumn<String> issue = GeneratedColumn<String>(
+    'issue',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
   @override
   List<GeneratedColumn> get $columns => [
     fingerprint,
@@ -1441,6 +1492,7 @@ class $DocumentsTable extends Documents with TableInfo<$DocumentsTable, Document
     readMs,
     readWords,
     size,
+    issue,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -1512,6 +1564,9 @@ class $DocumentsTable extends Documents with TableInfo<$DocumentsTable, Document
     if (data.containsKey('size')) {
       context.handle(_sizeMeta, size.isAcceptableOrUnknown(data['size']!, _sizeMeta));
     }
+    if (data.containsKey('issue')) {
+      context.handle(_issueMeta, issue.isAcceptableOrUnknown(data['issue']!, _issueMeta));
+    }
     return context;
   }
 
@@ -1538,6 +1593,7 @@ class $DocumentsTable extends Documents with TableInfo<$DocumentsTable, Document
       readMs: attachedDatabase.typeMapping.read(DriftSqlType.int, data['${effectivePrefix}read_ms'])!,
       readWords: attachedDatabase.typeMapping.read(DriftSqlType.int, data['${effectivePrefix}read_words'])!,
       size: attachedDatabase.typeMapping.read(DriftSqlType.int, data['${effectivePrefix}size'])!,
+      issue: attachedDatabase.typeMapping.read(DriftSqlType.string, data['${effectivePrefix}issue']),
     );
   }
 
@@ -1575,6 +1631,9 @@ class Document extends DataClass implements Insertable<Document> {
   final int readMs;
   final int readWords;
   final int size;
+
+  /// A comic's issue or volume (schema 3).
+  final String? issue;
   const Document({
     required this.fingerprint,
     required this.uri,
@@ -1593,6 +1652,7 @@ class Document extends DataClass implements Insertable<Document> {
     required this.readMs,
     required this.readWords,
     required this.size,
+    this.issue,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -1628,6 +1688,9 @@ class Document extends DataClass implements Insertable<Document> {
     map['read_ms'] = Variable<int>(readMs);
     map['read_words'] = Variable<int>(readWords);
     map['size'] = Variable<int>(size);
+    if (!nullToAbsent || issue != null) {
+      map['issue'] = Variable<String>(issue);
+    }
     return map;
   }
 
@@ -1650,6 +1713,7 @@ class Document extends DataClass implements Insertable<Document> {
       readMs: Value(readMs),
       readWords: Value(readWords),
       size: Value(size),
+      issue: issue == null && nullToAbsent ? const Value.absent() : Value(issue),
     );
   }
 
@@ -1673,6 +1737,7 @@ class Document extends DataClass implements Insertable<Document> {
       readMs: serializer.fromJson<int>(json['readMs']),
       readWords: serializer.fromJson<int>(json['readWords']),
       size: serializer.fromJson<int>(json['size']),
+      issue: serializer.fromJson<String?>(json['issue']),
     );
   }
   @override
@@ -1696,6 +1761,7 @@ class Document extends DataClass implements Insertable<Document> {
       'readMs': serializer.toJson<int>(readMs),
       'readWords': serializer.toJson<int>(readWords),
       'size': serializer.toJson<int>(size),
+      'issue': serializer.toJson<String?>(issue),
     };
   }
 
@@ -1717,6 +1783,7 @@ class Document extends DataClass implements Insertable<Document> {
     int? readMs,
     int? readWords,
     int? size,
+    Value<String?> issue = const Value.absent(),
   }) => Document(
     fingerprint: fingerprint ?? this.fingerprint,
     uri: uri ?? this.uri,
@@ -1735,6 +1802,7 @@ class Document extends DataClass implements Insertable<Document> {
     readMs: readMs ?? this.readMs,
     readWords: readWords ?? this.readWords,
     size: size ?? this.size,
+    issue: issue.present ? issue.value : this.issue,
   );
   Document copyWithCompanion(DocumentsCompanion data) {
     return Document(
@@ -1755,6 +1823,7 @@ class Document extends DataClass implements Insertable<Document> {
       readMs: data.readMs.present ? data.readMs.value : this.readMs,
       readWords: data.readWords.present ? data.readWords.value : this.readWords,
       size: data.size.present ? data.size.value : this.size,
+      issue: data.issue.present ? data.issue.value : this.issue,
     );
   }
 
@@ -1777,7 +1846,8 @@ class Document extends DataClass implements Insertable<Document> {
           ..write('addedAt: $addedAt, ')
           ..write('readMs: $readMs, ')
           ..write('readWords: $readWords, ')
-          ..write('size: $size')
+          ..write('size: $size, ')
+          ..write('issue: $issue')
           ..write(')'))
         .toString();
   }
@@ -1801,6 +1871,7 @@ class Document extends DataClass implements Insertable<Document> {
     readMs,
     readWords,
     size,
+    issue,
   );
   @override
   bool operator ==(Object other) =>
@@ -1822,7 +1893,8 @@ class Document extends DataClass implements Insertable<Document> {
           other.addedAt == this.addedAt &&
           other.readMs == this.readMs &&
           other.readWords == this.readWords &&
-          other.size == this.size);
+          other.size == this.size &&
+          other.issue == this.issue);
 }
 
 class DocumentsCompanion extends UpdateCompanion<Document> {
@@ -1843,6 +1915,7 @@ class DocumentsCompanion extends UpdateCompanion<Document> {
   final Value<int> readMs;
   final Value<int> readWords;
   final Value<int> size;
+  final Value<String?> issue;
   final Value<int> rowid;
   const DocumentsCompanion({
     this.fingerprint = const Value.absent(),
@@ -1862,6 +1935,7 @@ class DocumentsCompanion extends UpdateCompanion<Document> {
     this.readMs = const Value.absent(),
     this.readWords = const Value.absent(),
     this.size = const Value.absent(),
+    this.issue = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   DocumentsCompanion.insert({
@@ -1882,6 +1956,7 @@ class DocumentsCompanion extends UpdateCompanion<Document> {
     this.readMs = const Value.absent(),
     this.readWords = const Value.absent(),
     this.size = const Value.absent(),
+    this.issue = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : fingerprint = Value(fingerprint),
        uri = Value(uri),
@@ -1906,6 +1981,7 @@ class DocumentsCompanion extends UpdateCompanion<Document> {
     Expression<int>? readMs,
     Expression<int>? readWords,
     Expression<int>? size,
+    Expression<String>? issue,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -1926,6 +2002,7 @@ class DocumentsCompanion extends UpdateCompanion<Document> {
       if (readMs != null) 'read_ms': readMs,
       if (readWords != null) 'read_words': readWords,
       if (size != null) 'size': size,
+      if (issue != null) 'issue': issue,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -1948,6 +2025,7 @@ class DocumentsCompanion extends UpdateCompanion<Document> {
     Value<int>? readMs,
     Value<int>? readWords,
     Value<int>? size,
+    Value<String?>? issue,
     Value<int>? rowid,
   }) {
     return DocumentsCompanion(
@@ -1968,6 +2046,7 @@ class DocumentsCompanion extends UpdateCompanion<Document> {
       readMs: readMs ?? this.readMs,
       readWords: readWords ?? this.readWords,
       size: size ?? this.size,
+      issue: issue ?? this.issue,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -2026,6 +2105,9 @@ class DocumentsCompanion extends UpdateCompanion<Document> {
     if (size.present) {
       map['size'] = Variable<int>(size.value);
     }
+    if (issue.present) {
+      map['issue'] = Variable<String>(issue.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -2052,6 +2134,7 @@ class DocumentsCompanion extends UpdateCompanion<Document> {
           ..write('readMs: $readMs, ')
           ..write('readWords: $readWords, ')
           ..write('size: $size, ')
+          ..write('issue: $issue, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -3211,6 +3294,2292 @@ class PlacesCompanion extends UpdateCompanion<Place> {
   }
 }
 
+class $ReadingSessionsTable extends ReadingSessions with TableInfo<$ReadingSessionsTable, ReadingSession> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $ReadingSessionsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<int> id = GeneratedColumn<int>(
+    'id',
+    aliasedName,
+    false,
+    hasAutoIncrement: true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways('PRIMARY KEY AUTOINCREMENT'),
+  );
+  static const VerificationMeta _fingerprintMeta = const VerificationMeta('fingerprint');
+  @override
+  late final GeneratedColumn<String> fingerprint = GeneratedColumn<String>(
+    'fingerprint',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _formatMeta = const VerificationMeta('format');
+  @override
+  late final GeneratedColumn<String> format = GeneratedColumn<String>(
+    'format',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _modeMeta = const VerificationMeta('mode');
+  @override
+  late final GeneratedColumn<String> mode = GeneratedColumn<String>(
+    'mode',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _startedAtMeta = const VerificationMeta('startedAt');
+  @override
+  late final GeneratedColumn<DateTime> startedAt = GeneratedColumn<DateTime>(
+    'started_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _endedAtMeta = const VerificationMeta('endedAt');
+  @override
+  late final GeneratedColumn<DateTime> endedAt = GeneratedColumn<DateTime>(
+    'ended_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _dayMeta = const VerificationMeta('day');
+  @override
+  late final GeneratedColumn<int> day = GeneratedColumn<int>(
+    'day',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _hourMeta = const VerificationMeta('hour');
+  @override
+  late final GeneratedColumn<int> hour = GeneratedColumn<int>(
+    'hour',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _activeMsMeta = const VerificationMeta('activeMs');
+  @override
+  late final GeneratedColumn<int> activeMs = GeneratedColumn<int>(
+    'active_ms',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _listeningMsMeta = const VerificationMeta('listeningMs');
+  @override
+  late final GeneratedColumn<int> listeningMs = GeneratedColumn<int>(
+    'listening_ms',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _fromLocatorMeta = const VerificationMeta('fromLocator');
+  @override
+  late final GeneratedColumn<String> fromLocator = GeneratedColumn<String>(
+    'from_locator',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _toLocatorMeta = const VerificationMeta('toLocator');
+  @override
+  late final GeneratedColumn<String> toLocator = GeneratedColumn<String>(
+    'to_locator',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _wordsMeta = const VerificationMeta('words');
+  @override
+  late final GeneratedColumn<int> words = GeneratedColumn<int>(
+    'words',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _pagesMeta = const VerificationMeta('pages');
+  @override
+  late final GeneratedColumn<int> pages = GeneratedColumn<int>(
+    'pages',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _openMeta = const VerificationMeta('open');
+  @override
+  late final GeneratedColumn<bool> open = GeneratedColumn<bool>(
+    'open',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways('CHECK ("open" IN (0, 1))'),
+    defaultValue: const Constant(true),
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    id,
+    fingerprint,
+    format,
+    mode,
+    startedAt,
+    endedAt,
+    day,
+    hour,
+    activeMs,
+    listeningMs,
+    fromLocator,
+    toLocator,
+    words,
+    pages,
+    open,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'reading_sessions';
+  @override
+  VerificationContext validateIntegrity(Insertable<ReadingSession> instance, {bool isInserting = false}) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    }
+    if (data.containsKey('fingerprint')) {
+      context.handle(_fingerprintMeta, fingerprint.isAcceptableOrUnknown(data['fingerprint']!, _fingerprintMeta));
+    } else if (isInserting) {
+      context.missing(_fingerprintMeta);
+    }
+    if (data.containsKey('format')) {
+      context.handle(_formatMeta, format.isAcceptableOrUnknown(data['format']!, _formatMeta));
+    } else if (isInserting) {
+      context.missing(_formatMeta);
+    }
+    if (data.containsKey('mode')) {
+      context.handle(_modeMeta, mode.isAcceptableOrUnknown(data['mode']!, _modeMeta));
+    } else if (isInserting) {
+      context.missing(_modeMeta);
+    }
+    if (data.containsKey('started_at')) {
+      context.handle(_startedAtMeta, startedAt.isAcceptableOrUnknown(data['started_at']!, _startedAtMeta));
+    } else if (isInserting) {
+      context.missing(_startedAtMeta);
+    }
+    if (data.containsKey('ended_at')) {
+      context.handle(_endedAtMeta, endedAt.isAcceptableOrUnknown(data['ended_at']!, _endedAtMeta));
+    } else if (isInserting) {
+      context.missing(_endedAtMeta);
+    }
+    if (data.containsKey('day')) {
+      context.handle(_dayMeta, day.isAcceptableOrUnknown(data['day']!, _dayMeta));
+    } else if (isInserting) {
+      context.missing(_dayMeta);
+    }
+    if (data.containsKey('hour')) {
+      context.handle(_hourMeta, hour.isAcceptableOrUnknown(data['hour']!, _hourMeta));
+    }
+    if (data.containsKey('active_ms')) {
+      context.handle(_activeMsMeta, activeMs.isAcceptableOrUnknown(data['active_ms']!, _activeMsMeta));
+    }
+    if (data.containsKey('listening_ms')) {
+      context.handle(_listeningMsMeta, listeningMs.isAcceptableOrUnknown(data['listening_ms']!, _listeningMsMeta));
+    }
+    if (data.containsKey('from_locator')) {
+      context.handle(_fromLocatorMeta, fromLocator.isAcceptableOrUnknown(data['from_locator']!, _fromLocatorMeta));
+    }
+    if (data.containsKey('to_locator')) {
+      context.handle(_toLocatorMeta, toLocator.isAcceptableOrUnknown(data['to_locator']!, _toLocatorMeta));
+    }
+    if (data.containsKey('words')) {
+      context.handle(_wordsMeta, words.isAcceptableOrUnknown(data['words']!, _wordsMeta));
+    }
+    if (data.containsKey('pages')) {
+      context.handle(_pagesMeta, pages.isAcceptableOrUnknown(data['pages']!, _pagesMeta));
+    }
+    if (data.containsKey('open')) {
+      context.handle(_openMeta, open.isAcceptableOrUnknown(data['open']!, _openMeta));
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  ReadingSession map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return ReadingSession(
+      id: attachedDatabase.typeMapping.read(DriftSqlType.int, data['${effectivePrefix}id'])!,
+      fingerprint: attachedDatabase.typeMapping.read(DriftSqlType.string, data['${effectivePrefix}fingerprint'])!,
+      format: attachedDatabase.typeMapping.read(DriftSqlType.string, data['${effectivePrefix}format'])!,
+      mode: attachedDatabase.typeMapping.read(DriftSqlType.string, data['${effectivePrefix}mode'])!,
+      startedAt: attachedDatabase.typeMapping.read(DriftSqlType.dateTime, data['${effectivePrefix}started_at'])!,
+      endedAt: attachedDatabase.typeMapping.read(DriftSqlType.dateTime, data['${effectivePrefix}ended_at'])!,
+      day: attachedDatabase.typeMapping.read(DriftSqlType.int, data['${effectivePrefix}day'])!,
+      hour: attachedDatabase.typeMapping.read(DriftSqlType.int, data['${effectivePrefix}hour'])!,
+      activeMs: attachedDatabase.typeMapping.read(DriftSqlType.int, data['${effectivePrefix}active_ms'])!,
+      listeningMs: attachedDatabase.typeMapping.read(DriftSqlType.int, data['${effectivePrefix}listening_ms'])!,
+      fromLocator: attachedDatabase.typeMapping.read(DriftSqlType.string, data['${effectivePrefix}from_locator']),
+      toLocator: attachedDatabase.typeMapping.read(DriftSqlType.string, data['${effectivePrefix}to_locator']),
+      words: attachedDatabase.typeMapping.read(DriftSqlType.int, data['${effectivePrefix}words'])!,
+      pages: attachedDatabase.typeMapping.read(DriftSqlType.int, data['${effectivePrefix}pages'])!,
+      open: attachedDatabase.typeMapping.read(DriftSqlType.bool, data['${effectivePrefix}open'])!,
+    );
+  }
+
+  @override
+  $ReadingSessionsTable createAlias(String alias) {
+    return $ReadingSessionsTable(attachedDatabase, alias);
+  }
+}
+
+class ReadingSession extends DataClass implements Insertable<ReadingSession> {
+  final int id;
+  final String fingerprint;
+
+  /// Registry id ('epub', 'kindle', 'comics'...), for the formats breakdown.
+  final String format;
+
+  /// 'reader', 'page' (PDF, DOCX pages, slides) or 'comics'.
+  final String mode;
+  final DateTime startedAt;
+  final DateTime endedAt;
+
+  /// The local date it started, as yyyymmdd.
+  final int day;
+
+  /// The local hour it started, for time of day.
+  final int hour;
+  final int activeMs;
+  final int listeningMs;
+  final String? fromLocator;
+  final String? toLocator;
+
+  /// Forward progress only: words read (Reader mode), unique pages (Page
+  /// view, comics).
+  final int words;
+  final int pages;
+
+  /// Still running: a crash leaves it open, and the next launch folds it in.
+  final bool open;
+  const ReadingSession({
+    required this.id,
+    required this.fingerprint,
+    required this.format,
+    required this.mode,
+    required this.startedAt,
+    required this.endedAt,
+    required this.day,
+    required this.hour,
+    required this.activeMs,
+    required this.listeningMs,
+    this.fromLocator,
+    this.toLocator,
+    required this.words,
+    required this.pages,
+    required this.open,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<int>(id);
+    map['fingerprint'] = Variable<String>(fingerprint);
+    map['format'] = Variable<String>(format);
+    map['mode'] = Variable<String>(mode);
+    map['started_at'] = Variable<DateTime>(startedAt);
+    map['ended_at'] = Variable<DateTime>(endedAt);
+    map['day'] = Variable<int>(day);
+    map['hour'] = Variable<int>(hour);
+    map['active_ms'] = Variable<int>(activeMs);
+    map['listening_ms'] = Variable<int>(listeningMs);
+    if (!nullToAbsent || fromLocator != null) {
+      map['from_locator'] = Variable<String>(fromLocator);
+    }
+    if (!nullToAbsent || toLocator != null) {
+      map['to_locator'] = Variable<String>(toLocator);
+    }
+    map['words'] = Variable<int>(words);
+    map['pages'] = Variable<int>(pages);
+    map['open'] = Variable<bool>(open);
+    return map;
+  }
+
+  ReadingSessionsCompanion toCompanion(bool nullToAbsent) {
+    return ReadingSessionsCompanion(
+      id: Value(id),
+      fingerprint: Value(fingerprint),
+      format: Value(format),
+      mode: Value(mode),
+      startedAt: Value(startedAt),
+      endedAt: Value(endedAt),
+      day: Value(day),
+      hour: Value(hour),
+      activeMs: Value(activeMs),
+      listeningMs: Value(listeningMs),
+      fromLocator: fromLocator == null && nullToAbsent ? const Value.absent() : Value(fromLocator),
+      toLocator: toLocator == null && nullToAbsent ? const Value.absent() : Value(toLocator),
+      words: Value(words),
+      pages: Value(pages),
+      open: Value(open),
+    );
+  }
+
+  factory ReadingSession.fromJson(Map<String, dynamic> json, {ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return ReadingSession(
+      id: serializer.fromJson<int>(json['id']),
+      fingerprint: serializer.fromJson<String>(json['fingerprint']),
+      format: serializer.fromJson<String>(json['format']),
+      mode: serializer.fromJson<String>(json['mode']),
+      startedAt: serializer.fromJson<DateTime>(json['startedAt']),
+      endedAt: serializer.fromJson<DateTime>(json['endedAt']),
+      day: serializer.fromJson<int>(json['day']),
+      hour: serializer.fromJson<int>(json['hour']),
+      activeMs: serializer.fromJson<int>(json['activeMs']),
+      listeningMs: serializer.fromJson<int>(json['listeningMs']),
+      fromLocator: serializer.fromJson<String?>(json['fromLocator']),
+      toLocator: serializer.fromJson<String?>(json['toLocator']),
+      words: serializer.fromJson<int>(json['words']),
+      pages: serializer.fromJson<int>(json['pages']),
+      open: serializer.fromJson<bool>(json['open']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<int>(id),
+      'fingerprint': serializer.toJson<String>(fingerprint),
+      'format': serializer.toJson<String>(format),
+      'mode': serializer.toJson<String>(mode),
+      'startedAt': serializer.toJson<DateTime>(startedAt),
+      'endedAt': serializer.toJson<DateTime>(endedAt),
+      'day': serializer.toJson<int>(day),
+      'hour': serializer.toJson<int>(hour),
+      'activeMs': serializer.toJson<int>(activeMs),
+      'listeningMs': serializer.toJson<int>(listeningMs),
+      'fromLocator': serializer.toJson<String?>(fromLocator),
+      'toLocator': serializer.toJson<String?>(toLocator),
+      'words': serializer.toJson<int>(words),
+      'pages': serializer.toJson<int>(pages),
+      'open': serializer.toJson<bool>(open),
+    };
+  }
+
+  ReadingSession copyWith({
+    int? id,
+    String? fingerprint,
+    String? format,
+    String? mode,
+    DateTime? startedAt,
+    DateTime? endedAt,
+    int? day,
+    int? hour,
+    int? activeMs,
+    int? listeningMs,
+    Value<String?> fromLocator = const Value.absent(),
+    Value<String?> toLocator = const Value.absent(),
+    int? words,
+    int? pages,
+    bool? open,
+  }) => ReadingSession(
+    id: id ?? this.id,
+    fingerprint: fingerprint ?? this.fingerprint,
+    format: format ?? this.format,
+    mode: mode ?? this.mode,
+    startedAt: startedAt ?? this.startedAt,
+    endedAt: endedAt ?? this.endedAt,
+    day: day ?? this.day,
+    hour: hour ?? this.hour,
+    activeMs: activeMs ?? this.activeMs,
+    listeningMs: listeningMs ?? this.listeningMs,
+    fromLocator: fromLocator.present ? fromLocator.value : this.fromLocator,
+    toLocator: toLocator.present ? toLocator.value : this.toLocator,
+    words: words ?? this.words,
+    pages: pages ?? this.pages,
+    open: open ?? this.open,
+  );
+  ReadingSession copyWithCompanion(ReadingSessionsCompanion data) {
+    return ReadingSession(
+      id: data.id.present ? data.id.value : this.id,
+      fingerprint: data.fingerprint.present ? data.fingerprint.value : this.fingerprint,
+      format: data.format.present ? data.format.value : this.format,
+      mode: data.mode.present ? data.mode.value : this.mode,
+      startedAt: data.startedAt.present ? data.startedAt.value : this.startedAt,
+      endedAt: data.endedAt.present ? data.endedAt.value : this.endedAt,
+      day: data.day.present ? data.day.value : this.day,
+      hour: data.hour.present ? data.hour.value : this.hour,
+      activeMs: data.activeMs.present ? data.activeMs.value : this.activeMs,
+      listeningMs: data.listeningMs.present ? data.listeningMs.value : this.listeningMs,
+      fromLocator: data.fromLocator.present ? data.fromLocator.value : this.fromLocator,
+      toLocator: data.toLocator.present ? data.toLocator.value : this.toLocator,
+      words: data.words.present ? data.words.value : this.words,
+      pages: data.pages.present ? data.pages.value : this.pages,
+      open: data.open.present ? data.open.value : this.open,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('ReadingSession(')
+          ..write('id: $id, ')
+          ..write('fingerprint: $fingerprint, ')
+          ..write('format: $format, ')
+          ..write('mode: $mode, ')
+          ..write('startedAt: $startedAt, ')
+          ..write('endedAt: $endedAt, ')
+          ..write('day: $day, ')
+          ..write('hour: $hour, ')
+          ..write('activeMs: $activeMs, ')
+          ..write('listeningMs: $listeningMs, ')
+          ..write('fromLocator: $fromLocator, ')
+          ..write('toLocator: $toLocator, ')
+          ..write('words: $words, ')
+          ..write('pages: $pages, ')
+          ..write('open: $open')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    id,
+    fingerprint,
+    format,
+    mode,
+    startedAt,
+    endedAt,
+    day,
+    hour,
+    activeMs,
+    listeningMs,
+    fromLocator,
+    toLocator,
+    words,
+    pages,
+    open,
+  );
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is ReadingSession &&
+          other.id == this.id &&
+          other.fingerprint == this.fingerprint &&
+          other.format == this.format &&
+          other.mode == this.mode &&
+          other.startedAt == this.startedAt &&
+          other.endedAt == this.endedAt &&
+          other.day == this.day &&
+          other.hour == this.hour &&
+          other.activeMs == this.activeMs &&
+          other.listeningMs == this.listeningMs &&
+          other.fromLocator == this.fromLocator &&
+          other.toLocator == this.toLocator &&
+          other.words == this.words &&
+          other.pages == this.pages &&
+          other.open == this.open);
+}
+
+class ReadingSessionsCompanion extends UpdateCompanion<ReadingSession> {
+  final Value<int> id;
+  final Value<String> fingerprint;
+  final Value<String> format;
+  final Value<String> mode;
+  final Value<DateTime> startedAt;
+  final Value<DateTime> endedAt;
+  final Value<int> day;
+  final Value<int> hour;
+  final Value<int> activeMs;
+  final Value<int> listeningMs;
+  final Value<String?> fromLocator;
+  final Value<String?> toLocator;
+  final Value<int> words;
+  final Value<int> pages;
+  final Value<bool> open;
+  const ReadingSessionsCompanion({
+    this.id = const Value.absent(),
+    this.fingerprint = const Value.absent(),
+    this.format = const Value.absent(),
+    this.mode = const Value.absent(),
+    this.startedAt = const Value.absent(),
+    this.endedAt = const Value.absent(),
+    this.day = const Value.absent(),
+    this.hour = const Value.absent(),
+    this.activeMs = const Value.absent(),
+    this.listeningMs = const Value.absent(),
+    this.fromLocator = const Value.absent(),
+    this.toLocator = const Value.absent(),
+    this.words = const Value.absent(),
+    this.pages = const Value.absent(),
+    this.open = const Value.absent(),
+  });
+  ReadingSessionsCompanion.insert({
+    this.id = const Value.absent(),
+    required String fingerprint,
+    required String format,
+    required String mode,
+    required DateTime startedAt,
+    required DateTime endedAt,
+    required int day,
+    this.hour = const Value.absent(),
+    this.activeMs = const Value.absent(),
+    this.listeningMs = const Value.absent(),
+    this.fromLocator = const Value.absent(),
+    this.toLocator = const Value.absent(),
+    this.words = const Value.absent(),
+    this.pages = const Value.absent(),
+    this.open = const Value.absent(),
+  }) : fingerprint = Value(fingerprint),
+       format = Value(format),
+       mode = Value(mode),
+       startedAt = Value(startedAt),
+       endedAt = Value(endedAt),
+       day = Value(day);
+  static Insertable<ReadingSession> custom({
+    Expression<int>? id,
+    Expression<String>? fingerprint,
+    Expression<String>? format,
+    Expression<String>? mode,
+    Expression<DateTime>? startedAt,
+    Expression<DateTime>? endedAt,
+    Expression<int>? day,
+    Expression<int>? hour,
+    Expression<int>? activeMs,
+    Expression<int>? listeningMs,
+    Expression<String>? fromLocator,
+    Expression<String>? toLocator,
+    Expression<int>? words,
+    Expression<int>? pages,
+    Expression<bool>? open,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (fingerprint != null) 'fingerprint': fingerprint,
+      if (format != null) 'format': format,
+      if (mode != null) 'mode': mode,
+      if (startedAt != null) 'started_at': startedAt,
+      if (endedAt != null) 'ended_at': endedAt,
+      if (day != null) 'day': day,
+      if (hour != null) 'hour': hour,
+      if (activeMs != null) 'active_ms': activeMs,
+      if (listeningMs != null) 'listening_ms': listeningMs,
+      if (fromLocator != null) 'from_locator': fromLocator,
+      if (toLocator != null) 'to_locator': toLocator,
+      if (words != null) 'words': words,
+      if (pages != null) 'pages': pages,
+      if (open != null) 'open': open,
+    });
+  }
+
+  ReadingSessionsCompanion copyWith({
+    Value<int>? id,
+    Value<String>? fingerprint,
+    Value<String>? format,
+    Value<String>? mode,
+    Value<DateTime>? startedAt,
+    Value<DateTime>? endedAt,
+    Value<int>? day,
+    Value<int>? hour,
+    Value<int>? activeMs,
+    Value<int>? listeningMs,
+    Value<String?>? fromLocator,
+    Value<String?>? toLocator,
+    Value<int>? words,
+    Value<int>? pages,
+    Value<bool>? open,
+  }) {
+    return ReadingSessionsCompanion(
+      id: id ?? this.id,
+      fingerprint: fingerprint ?? this.fingerprint,
+      format: format ?? this.format,
+      mode: mode ?? this.mode,
+      startedAt: startedAt ?? this.startedAt,
+      endedAt: endedAt ?? this.endedAt,
+      day: day ?? this.day,
+      hour: hour ?? this.hour,
+      activeMs: activeMs ?? this.activeMs,
+      listeningMs: listeningMs ?? this.listeningMs,
+      fromLocator: fromLocator ?? this.fromLocator,
+      toLocator: toLocator ?? this.toLocator,
+      words: words ?? this.words,
+      pages: pages ?? this.pages,
+      open: open ?? this.open,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<int>(id.value);
+    }
+    if (fingerprint.present) {
+      map['fingerprint'] = Variable<String>(fingerprint.value);
+    }
+    if (format.present) {
+      map['format'] = Variable<String>(format.value);
+    }
+    if (mode.present) {
+      map['mode'] = Variable<String>(mode.value);
+    }
+    if (startedAt.present) {
+      map['started_at'] = Variable<DateTime>(startedAt.value);
+    }
+    if (endedAt.present) {
+      map['ended_at'] = Variable<DateTime>(endedAt.value);
+    }
+    if (day.present) {
+      map['day'] = Variable<int>(day.value);
+    }
+    if (hour.present) {
+      map['hour'] = Variable<int>(hour.value);
+    }
+    if (activeMs.present) {
+      map['active_ms'] = Variable<int>(activeMs.value);
+    }
+    if (listeningMs.present) {
+      map['listening_ms'] = Variable<int>(listeningMs.value);
+    }
+    if (fromLocator.present) {
+      map['from_locator'] = Variable<String>(fromLocator.value);
+    }
+    if (toLocator.present) {
+      map['to_locator'] = Variable<String>(toLocator.value);
+    }
+    if (words.present) {
+      map['words'] = Variable<int>(words.value);
+    }
+    if (pages.present) {
+      map['pages'] = Variable<int>(pages.value);
+    }
+    if (open.present) {
+      map['open'] = Variable<bool>(open.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('ReadingSessionsCompanion(')
+          ..write('id: $id, ')
+          ..write('fingerprint: $fingerprint, ')
+          ..write('format: $format, ')
+          ..write('mode: $mode, ')
+          ..write('startedAt: $startedAt, ')
+          ..write('endedAt: $endedAt, ')
+          ..write('day: $day, ')
+          ..write('hour: $hour, ')
+          ..write('activeMs: $activeMs, ')
+          ..write('listeningMs: $listeningMs, ')
+          ..write('fromLocator: $fromLocator, ')
+          ..write('toLocator: $toLocator, ')
+          ..write('words: $words, ')
+          ..write('pages: $pages, ')
+          ..write('open: $open')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $DailyStatsTable extends DailyStats with TableInfo<$DailyStatsTable, DailyStat> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $DailyStatsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _dayMeta = const VerificationMeta('day');
+  @override
+  late final GeneratedColumn<int> day = GeneratedColumn<int>(
+    'day',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _readingMsMeta = const VerificationMeta('readingMs');
+  @override
+  late final GeneratedColumn<int> readingMs = GeneratedColumn<int>(
+    'reading_ms',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _listeningMsMeta = const VerificationMeta('listeningMs');
+  @override
+  late final GeneratedColumn<int> listeningMs = GeneratedColumn<int>(
+    'listening_ms',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _wordsMeta = const VerificationMeta('words');
+  @override
+  late final GeneratedColumn<int> words = GeneratedColumn<int>(
+    'words',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _pagesMeta = const VerificationMeta('pages');
+  @override
+  late final GeneratedColumn<int> pages = GeneratedColumn<int>(
+    'pages',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _sessionsMeta = const VerificationMeta('sessions');
+  @override
+  late final GeneratedColumn<int> sessions = GeneratedColumn<int>(
+    'sessions',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _readerMsMeta = const VerificationMeta('readerMs');
+  @override
+  late final GeneratedColumn<int> readerMs = GeneratedColumn<int>(
+    'reader_ms',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _readerWordsMeta = const VerificationMeta('readerWords');
+  @override
+  late final GeneratedColumn<int> readerWords = GeneratedColumn<int>(
+    'reader_words',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _pageMsMeta = const VerificationMeta('pageMs');
+  @override
+  late final GeneratedColumn<int> pageMs = GeneratedColumn<int>(
+    'page_ms',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _pagePagesMeta = const VerificationMeta('pagePages');
+  @override
+  late final GeneratedColumn<int> pagePages = GeneratedColumn<int>(
+    'page_pages',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _longestMsMeta = const VerificationMeta('longestMs');
+  @override
+  late final GeneratedColumn<int> longestMs = GeneratedColumn<int>(
+    'longest_ms',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _longestFpMeta = const VerificationMeta('longestFp');
+  @override
+  late final GeneratedColumn<String> longestFp = GeneratedColumn<String>(
+    'longest_fp',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _formatMsMeta = const VerificationMeta('formatMs');
+  @override
+  late final GeneratedColumn<String> formatMs = GeneratedColumn<String>(
+    'format_ms',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant('{}'),
+  );
+  static const VerificationMeta _hourMsMeta = const VerificationMeta('hourMs');
+  @override
+  late final GeneratedColumn<String> hourMs = GeneratedColumn<String>(
+    'hour_ms',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(''),
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    day,
+    readingMs,
+    listeningMs,
+    words,
+    pages,
+    sessions,
+    readerMs,
+    readerWords,
+    pageMs,
+    pagePages,
+    longestMs,
+    longestFp,
+    formatMs,
+    hourMs,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'daily_stats';
+  @override
+  VerificationContext validateIntegrity(Insertable<DailyStat> instance, {bool isInserting = false}) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('day')) {
+      context.handle(_dayMeta, day.isAcceptableOrUnknown(data['day']!, _dayMeta));
+    }
+    if (data.containsKey('reading_ms')) {
+      context.handle(_readingMsMeta, readingMs.isAcceptableOrUnknown(data['reading_ms']!, _readingMsMeta));
+    }
+    if (data.containsKey('listening_ms')) {
+      context.handle(_listeningMsMeta, listeningMs.isAcceptableOrUnknown(data['listening_ms']!, _listeningMsMeta));
+    }
+    if (data.containsKey('words')) {
+      context.handle(_wordsMeta, words.isAcceptableOrUnknown(data['words']!, _wordsMeta));
+    }
+    if (data.containsKey('pages')) {
+      context.handle(_pagesMeta, pages.isAcceptableOrUnknown(data['pages']!, _pagesMeta));
+    }
+    if (data.containsKey('sessions')) {
+      context.handle(_sessionsMeta, sessions.isAcceptableOrUnknown(data['sessions']!, _sessionsMeta));
+    }
+    if (data.containsKey('reader_ms')) {
+      context.handle(_readerMsMeta, readerMs.isAcceptableOrUnknown(data['reader_ms']!, _readerMsMeta));
+    }
+    if (data.containsKey('reader_words')) {
+      context.handle(_readerWordsMeta, readerWords.isAcceptableOrUnknown(data['reader_words']!, _readerWordsMeta));
+    }
+    if (data.containsKey('page_ms')) {
+      context.handle(_pageMsMeta, pageMs.isAcceptableOrUnknown(data['page_ms']!, _pageMsMeta));
+    }
+    if (data.containsKey('page_pages')) {
+      context.handle(_pagePagesMeta, pagePages.isAcceptableOrUnknown(data['page_pages']!, _pagePagesMeta));
+    }
+    if (data.containsKey('longest_ms')) {
+      context.handle(_longestMsMeta, longestMs.isAcceptableOrUnknown(data['longest_ms']!, _longestMsMeta));
+    }
+    if (data.containsKey('longest_fp')) {
+      context.handle(_longestFpMeta, longestFp.isAcceptableOrUnknown(data['longest_fp']!, _longestFpMeta));
+    }
+    if (data.containsKey('format_ms')) {
+      context.handle(_formatMsMeta, formatMs.isAcceptableOrUnknown(data['format_ms']!, _formatMsMeta));
+    }
+    if (data.containsKey('hour_ms')) {
+      context.handle(_hourMsMeta, hourMs.isAcceptableOrUnknown(data['hour_ms']!, _hourMsMeta));
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {day};
+  @override
+  DailyStat map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return DailyStat(
+      day: attachedDatabase.typeMapping.read(DriftSqlType.int, data['${effectivePrefix}day'])!,
+      readingMs: attachedDatabase.typeMapping.read(DriftSqlType.int, data['${effectivePrefix}reading_ms'])!,
+      listeningMs: attachedDatabase.typeMapping.read(DriftSqlType.int, data['${effectivePrefix}listening_ms'])!,
+      words: attachedDatabase.typeMapping.read(DriftSqlType.int, data['${effectivePrefix}words'])!,
+      pages: attachedDatabase.typeMapping.read(DriftSqlType.int, data['${effectivePrefix}pages'])!,
+      sessions: attachedDatabase.typeMapping.read(DriftSqlType.int, data['${effectivePrefix}sessions'])!,
+      readerMs: attachedDatabase.typeMapping.read(DriftSqlType.int, data['${effectivePrefix}reader_ms'])!,
+      readerWords: attachedDatabase.typeMapping.read(DriftSqlType.int, data['${effectivePrefix}reader_words'])!,
+      pageMs: attachedDatabase.typeMapping.read(DriftSqlType.int, data['${effectivePrefix}page_ms'])!,
+      pagePages: attachedDatabase.typeMapping.read(DriftSqlType.int, data['${effectivePrefix}page_pages'])!,
+      longestMs: attachedDatabase.typeMapping.read(DriftSqlType.int, data['${effectivePrefix}longest_ms'])!,
+      longestFp: attachedDatabase.typeMapping.read(DriftSqlType.string, data['${effectivePrefix}longest_fp']),
+      formatMs: attachedDatabase.typeMapping.read(DriftSqlType.string, data['${effectivePrefix}format_ms'])!,
+      hourMs: attachedDatabase.typeMapping.read(DriftSqlType.string, data['${effectivePrefix}hour_ms'])!,
+    );
+  }
+
+  @override
+  $DailyStatsTable createAlias(String alias) {
+    return $DailyStatsTable(attachedDatabase, alias);
+  }
+}
+
+class DailyStat extends DataClass implements Insertable<DailyStat> {
+  final int day;
+  final int readingMs;
+  final int listeningMs;
+  final int words;
+  final int pages;
+  final int sessions;
+
+  /// Time and progress per mode, for reading speed.
+  final int readerMs;
+  final int readerWords;
+  final int pageMs;
+  final int pagePages;
+
+  /// The day's longest session and its book.
+  final int longestMs;
+  final String? longestFp;
+
+  /// Reading ms per format id, as JSON.
+  final String formatMs;
+
+  /// Reading ms per local hour, 24 comma-separated numbers.
+  final String hourMs;
+  const DailyStat({
+    required this.day,
+    required this.readingMs,
+    required this.listeningMs,
+    required this.words,
+    required this.pages,
+    required this.sessions,
+    required this.readerMs,
+    required this.readerWords,
+    required this.pageMs,
+    required this.pagePages,
+    required this.longestMs,
+    this.longestFp,
+    required this.formatMs,
+    required this.hourMs,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['day'] = Variable<int>(day);
+    map['reading_ms'] = Variable<int>(readingMs);
+    map['listening_ms'] = Variable<int>(listeningMs);
+    map['words'] = Variable<int>(words);
+    map['pages'] = Variable<int>(pages);
+    map['sessions'] = Variable<int>(sessions);
+    map['reader_ms'] = Variable<int>(readerMs);
+    map['reader_words'] = Variable<int>(readerWords);
+    map['page_ms'] = Variable<int>(pageMs);
+    map['page_pages'] = Variable<int>(pagePages);
+    map['longest_ms'] = Variable<int>(longestMs);
+    if (!nullToAbsent || longestFp != null) {
+      map['longest_fp'] = Variable<String>(longestFp);
+    }
+    map['format_ms'] = Variable<String>(formatMs);
+    map['hour_ms'] = Variable<String>(hourMs);
+    return map;
+  }
+
+  DailyStatsCompanion toCompanion(bool nullToAbsent) {
+    return DailyStatsCompanion(
+      day: Value(day),
+      readingMs: Value(readingMs),
+      listeningMs: Value(listeningMs),
+      words: Value(words),
+      pages: Value(pages),
+      sessions: Value(sessions),
+      readerMs: Value(readerMs),
+      readerWords: Value(readerWords),
+      pageMs: Value(pageMs),
+      pagePages: Value(pagePages),
+      longestMs: Value(longestMs),
+      longestFp: longestFp == null && nullToAbsent ? const Value.absent() : Value(longestFp),
+      formatMs: Value(formatMs),
+      hourMs: Value(hourMs),
+    );
+  }
+
+  factory DailyStat.fromJson(Map<String, dynamic> json, {ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return DailyStat(
+      day: serializer.fromJson<int>(json['day']),
+      readingMs: serializer.fromJson<int>(json['readingMs']),
+      listeningMs: serializer.fromJson<int>(json['listeningMs']),
+      words: serializer.fromJson<int>(json['words']),
+      pages: serializer.fromJson<int>(json['pages']),
+      sessions: serializer.fromJson<int>(json['sessions']),
+      readerMs: serializer.fromJson<int>(json['readerMs']),
+      readerWords: serializer.fromJson<int>(json['readerWords']),
+      pageMs: serializer.fromJson<int>(json['pageMs']),
+      pagePages: serializer.fromJson<int>(json['pagePages']),
+      longestMs: serializer.fromJson<int>(json['longestMs']),
+      longestFp: serializer.fromJson<String?>(json['longestFp']),
+      formatMs: serializer.fromJson<String>(json['formatMs']),
+      hourMs: serializer.fromJson<String>(json['hourMs']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'day': serializer.toJson<int>(day),
+      'readingMs': serializer.toJson<int>(readingMs),
+      'listeningMs': serializer.toJson<int>(listeningMs),
+      'words': serializer.toJson<int>(words),
+      'pages': serializer.toJson<int>(pages),
+      'sessions': serializer.toJson<int>(sessions),
+      'readerMs': serializer.toJson<int>(readerMs),
+      'readerWords': serializer.toJson<int>(readerWords),
+      'pageMs': serializer.toJson<int>(pageMs),
+      'pagePages': serializer.toJson<int>(pagePages),
+      'longestMs': serializer.toJson<int>(longestMs),
+      'longestFp': serializer.toJson<String?>(longestFp),
+      'formatMs': serializer.toJson<String>(formatMs),
+      'hourMs': serializer.toJson<String>(hourMs),
+    };
+  }
+
+  DailyStat copyWith({
+    int? day,
+    int? readingMs,
+    int? listeningMs,
+    int? words,
+    int? pages,
+    int? sessions,
+    int? readerMs,
+    int? readerWords,
+    int? pageMs,
+    int? pagePages,
+    int? longestMs,
+    Value<String?> longestFp = const Value.absent(),
+    String? formatMs,
+    String? hourMs,
+  }) => DailyStat(
+    day: day ?? this.day,
+    readingMs: readingMs ?? this.readingMs,
+    listeningMs: listeningMs ?? this.listeningMs,
+    words: words ?? this.words,
+    pages: pages ?? this.pages,
+    sessions: sessions ?? this.sessions,
+    readerMs: readerMs ?? this.readerMs,
+    readerWords: readerWords ?? this.readerWords,
+    pageMs: pageMs ?? this.pageMs,
+    pagePages: pagePages ?? this.pagePages,
+    longestMs: longestMs ?? this.longestMs,
+    longestFp: longestFp.present ? longestFp.value : this.longestFp,
+    formatMs: formatMs ?? this.formatMs,
+    hourMs: hourMs ?? this.hourMs,
+  );
+  DailyStat copyWithCompanion(DailyStatsCompanion data) {
+    return DailyStat(
+      day: data.day.present ? data.day.value : this.day,
+      readingMs: data.readingMs.present ? data.readingMs.value : this.readingMs,
+      listeningMs: data.listeningMs.present ? data.listeningMs.value : this.listeningMs,
+      words: data.words.present ? data.words.value : this.words,
+      pages: data.pages.present ? data.pages.value : this.pages,
+      sessions: data.sessions.present ? data.sessions.value : this.sessions,
+      readerMs: data.readerMs.present ? data.readerMs.value : this.readerMs,
+      readerWords: data.readerWords.present ? data.readerWords.value : this.readerWords,
+      pageMs: data.pageMs.present ? data.pageMs.value : this.pageMs,
+      pagePages: data.pagePages.present ? data.pagePages.value : this.pagePages,
+      longestMs: data.longestMs.present ? data.longestMs.value : this.longestMs,
+      longestFp: data.longestFp.present ? data.longestFp.value : this.longestFp,
+      formatMs: data.formatMs.present ? data.formatMs.value : this.formatMs,
+      hourMs: data.hourMs.present ? data.hourMs.value : this.hourMs,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('DailyStat(')
+          ..write('day: $day, ')
+          ..write('readingMs: $readingMs, ')
+          ..write('listeningMs: $listeningMs, ')
+          ..write('words: $words, ')
+          ..write('pages: $pages, ')
+          ..write('sessions: $sessions, ')
+          ..write('readerMs: $readerMs, ')
+          ..write('readerWords: $readerWords, ')
+          ..write('pageMs: $pageMs, ')
+          ..write('pagePages: $pagePages, ')
+          ..write('longestMs: $longestMs, ')
+          ..write('longestFp: $longestFp, ')
+          ..write('formatMs: $formatMs, ')
+          ..write('hourMs: $hourMs')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    day,
+    readingMs,
+    listeningMs,
+    words,
+    pages,
+    sessions,
+    readerMs,
+    readerWords,
+    pageMs,
+    pagePages,
+    longestMs,
+    longestFp,
+    formatMs,
+    hourMs,
+  );
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is DailyStat &&
+          other.day == this.day &&
+          other.readingMs == this.readingMs &&
+          other.listeningMs == this.listeningMs &&
+          other.words == this.words &&
+          other.pages == this.pages &&
+          other.sessions == this.sessions &&
+          other.readerMs == this.readerMs &&
+          other.readerWords == this.readerWords &&
+          other.pageMs == this.pageMs &&
+          other.pagePages == this.pagePages &&
+          other.longestMs == this.longestMs &&
+          other.longestFp == this.longestFp &&
+          other.formatMs == this.formatMs &&
+          other.hourMs == this.hourMs);
+}
+
+class DailyStatsCompanion extends UpdateCompanion<DailyStat> {
+  final Value<int> day;
+  final Value<int> readingMs;
+  final Value<int> listeningMs;
+  final Value<int> words;
+  final Value<int> pages;
+  final Value<int> sessions;
+  final Value<int> readerMs;
+  final Value<int> readerWords;
+  final Value<int> pageMs;
+  final Value<int> pagePages;
+  final Value<int> longestMs;
+  final Value<String?> longestFp;
+  final Value<String> formatMs;
+  final Value<String> hourMs;
+  const DailyStatsCompanion({
+    this.day = const Value.absent(),
+    this.readingMs = const Value.absent(),
+    this.listeningMs = const Value.absent(),
+    this.words = const Value.absent(),
+    this.pages = const Value.absent(),
+    this.sessions = const Value.absent(),
+    this.readerMs = const Value.absent(),
+    this.readerWords = const Value.absent(),
+    this.pageMs = const Value.absent(),
+    this.pagePages = const Value.absent(),
+    this.longestMs = const Value.absent(),
+    this.longestFp = const Value.absent(),
+    this.formatMs = const Value.absent(),
+    this.hourMs = const Value.absent(),
+  });
+  DailyStatsCompanion.insert({
+    this.day = const Value.absent(),
+    this.readingMs = const Value.absent(),
+    this.listeningMs = const Value.absent(),
+    this.words = const Value.absent(),
+    this.pages = const Value.absent(),
+    this.sessions = const Value.absent(),
+    this.readerMs = const Value.absent(),
+    this.readerWords = const Value.absent(),
+    this.pageMs = const Value.absent(),
+    this.pagePages = const Value.absent(),
+    this.longestMs = const Value.absent(),
+    this.longestFp = const Value.absent(),
+    this.formatMs = const Value.absent(),
+    this.hourMs = const Value.absent(),
+  });
+  static Insertable<DailyStat> custom({
+    Expression<int>? day,
+    Expression<int>? readingMs,
+    Expression<int>? listeningMs,
+    Expression<int>? words,
+    Expression<int>? pages,
+    Expression<int>? sessions,
+    Expression<int>? readerMs,
+    Expression<int>? readerWords,
+    Expression<int>? pageMs,
+    Expression<int>? pagePages,
+    Expression<int>? longestMs,
+    Expression<String>? longestFp,
+    Expression<String>? formatMs,
+    Expression<String>? hourMs,
+  }) {
+    return RawValuesInsertable({
+      if (day != null) 'day': day,
+      if (readingMs != null) 'reading_ms': readingMs,
+      if (listeningMs != null) 'listening_ms': listeningMs,
+      if (words != null) 'words': words,
+      if (pages != null) 'pages': pages,
+      if (sessions != null) 'sessions': sessions,
+      if (readerMs != null) 'reader_ms': readerMs,
+      if (readerWords != null) 'reader_words': readerWords,
+      if (pageMs != null) 'page_ms': pageMs,
+      if (pagePages != null) 'page_pages': pagePages,
+      if (longestMs != null) 'longest_ms': longestMs,
+      if (longestFp != null) 'longest_fp': longestFp,
+      if (formatMs != null) 'format_ms': formatMs,
+      if (hourMs != null) 'hour_ms': hourMs,
+    });
+  }
+
+  DailyStatsCompanion copyWith({
+    Value<int>? day,
+    Value<int>? readingMs,
+    Value<int>? listeningMs,
+    Value<int>? words,
+    Value<int>? pages,
+    Value<int>? sessions,
+    Value<int>? readerMs,
+    Value<int>? readerWords,
+    Value<int>? pageMs,
+    Value<int>? pagePages,
+    Value<int>? longestMs,
+    Value<String?>? longestFp,
+    Value<String>? formatMs,
+    Value<String>? hourMs,
+  }) {
+    return DailyStatsCompanion(
+      day: day ?? this.day,
+      readingMs: readingMs ?? this.readingMs,
+      listeningMs: listeningMs ?? this.listeningMs,
+      words: words ?? this.words,
+      pages: pages ?? this.pages,
+      sessions: sessions ?? this.sessions,
+      readerMs: readerMs ?? this.readerMs,
+      readerWords: readerWords ?? this.readerWords,
+      pageMs: pageMs ?? this.pageMs,
+      pagePages: pagePages ?? this.pagePages,
+      longestMs: longestMs ?? this.longestMs,
+      longestFp: longestFp ?? this.longestFp,
+      formatMs: formatMs ?? this.formatMs,
+      hourMs: hourMs ?? this.hourMs,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (day.present) {
+      map['day'] = Variable<int>(day.value);
+    }
+    if (readingMs.present) {
+      map['reading_ms'] = Variable<int>(readingMs.value);
+    }
+    if (listeningMs.present) {
+      map['listening_ms'] = Variable<int>(listeningMs.value);
+    }
+    if (words.present) {
+      map['words'] = Variable<int>(words.value);
+    }
+    if (pages.present) {
+      map['pages'] = Variable<int>(pages.value);
+    }
+    if (sessions.present) {
+      map['sessions'] = Variable<int>(sessions.value);
+    }
+    if (readerMs.present) {
+      map['reader_ms'] = Variable<int>(readerMs.value);
+    }
+    if (readerWords.present) {
+      map['reader_words'] = Variable<int>(readerWords.value);
+    }
+    if (pageMs.present) {
+      map['page_ms'] = Variable<int>(pageMs.value);
+    }
+    if (pagePages.present) {
+      map['page_pages'] = Variable<int>(pagePages.value);
+    }
+    if (longestMs.present) {
+      map['longest_ms'] = Variable<int>(longestMs.value);
+    }
+    if (longestFp.present) {
+      map['longest_fp'] = Variable<String>(longestFp.value);
+    }
+    if (formatMs.present) {
+      map['format_ms'] = Variable<String>(formatMs.value);
+    }
+    if (hourMs.present) {
+      map['hour_ms'] = Variable<String>(hourMs.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('DailyStatsCompanion(')
+          ..write('day: $day, ')
+          ..write('readingMs: $readingMs, ')
+          ..write('listeningMs: $listeningMs, ')
+          ..write('words: $words, ')
+          ..write('pages: $pages, ')
+          ..write('sessions: $sessions, ')
+          ..write('readerMs: $readerMs, ')
+          ..write('readerWords: $readerWords, ')
+          ..write('pageMs: $pageMs, ')
+          ..write('pagePages: $pagePages, ')
+          ..write('longestMs: $longestMs, ')
+          ..write('longestFp: $longestFp, ')
+          ..write('formatMs: $formatMs, ')
+          ..write('hourMs: $hourMs')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $BookStatsTable extends BookStats with TableInfo<$BookStatsTable, BookStat> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $BookStatsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _fingerprintMeta = const VerificationMeta('fingerprint');
+  @override
+  late final GeneratedColumn<String> fingerprint = GeneratedColumn<String>(
+    'fingerprint',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _readingMsMeta = const VerificationMeta('readingMs');
+  @override
+  late final GeneratedColumn<int> readingMs = GeneratedColumn<int>(
+    'reading_ms',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _listeningMsMeta = const VerificationMeta('listeningMs');
+  @override
+  late final GeneratedColumn<int> listeningMs = GeneratedColumn<int>(
+    'listening_ms',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _sessionsMeta = const VerificationMeta('sessions');
+  @override
+  late final GeneratedColumn<int> sessions = GeneratedColumn<int>(
+    'sessions',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _wordsMeta = const VerificationMeta('words');
+  @override
+  late final GeneratedColumn<int> words = GeneratedColumn<int>(
+    'words',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _pagesMeta = const VerificationMeta('pages');
+  @override
+  late final GeneratedColumn<int> pages = GeneratedColumn<int>(
+    'pages',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _readerMsMeta = const VerificationMeta('readerMs');
+  @override
+  late final GeneratedColumn<int> readerMs = GeneratedColumn<int>(
+    'reader_ms',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _readerWordsMeta = const VerificationMeta('readerWords');
+  @override
+  late final GeneratedColumn<int> readerWords = GeneratedColumn<int>(
+    'reader_words',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _pageMsMeta = const VerificationMeta('pageMs');
+  @override
+  late final GeneratedColumn<int> pageMs = GeneratedColumn<int>(
+    'page_ms',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _pagePagesMeta = const VerificationMeta('pagePages');
+  @override
+  late final GeneratedColumn<int> pagePages = GeneratedColumn<int>(
+    'page_pages',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _longestMsMeta = const VerificationMeta('longestMs');
+  @override
+  late final GeneratedColumn<int> longestMs = GeneratedColumn<int>(
+    'longest_ms',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _medianPageMsMeta = const VerificationMeta('medianPageMs');
+  @override
+  late final GeneratedColumn<int> medianPageMs = GeneratedColumn<int>(
+    'median_page_ms',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _firstReadMeta = const VerificationMeta('firstRead');
+  @override
+  late final GeneratedColumn<DateTime> firstRead = GeneratedColumn<DateTime>(
+    'first_read',
+    aliasedName,
+    true,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _lastReadMeta = const VerificationMeta('lastRead');
+  @override
+  late final GeneratedColumn<DateTime> lastRead = GeneratedColumn<DateTime>(
+    'last_read',
+    aliasedName,
+    true,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _finishedAtMeta = const VerificationMeta('finishedAt');
+  @override
+  late final GeneratedColumn<DateTime> finishedAt = GeneratedColumn<DateTime>(
+    'finished_at',
+    aliasedName,
+    true,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: false,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    fingerprint,
+    readingMs,
+    listeningMs,
+    sessions,
+    words,
+    pages,
+    readerMs,
+    readerWords,
+    pageMs,
+    pagePages,
+    longestMs,
+    medianPageMs,
+    firstRead,
+    lastRead,
+    finishedAt,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'book_stats';
+  @override
+  VerificationContext validateIntegrity(Insertable<BookStat> instance, {bool isInserting = false}) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('fingerprint')) {
+      context.handle(_fingerprintMeta, fingerprint.isAcceptableOrUnknown(data['fingerprint']!, _fingerprintMeta));
+    } else if (isInserting) {
+      context.missing(_fingerprintMeta);
+    }
+    if (data.containsKey('reading_ms')) {
+      context.handle(_readingMsMeta, readingMs.isAcceptableOrUnknown(data['reading_ms']!, _readingMsMeta));
+    }
+    if (data.containsKey('listening_ms')) {
+      context.handle(_listeningMsMeta, listeningMs.isAcceptableOrUnknown(data['listening_ms']!, _listeningMsMeta));
+    }
+    if (data.containsKey('sessions')) {
+      context.handle(_sessionsMeta, sessions.isAcceptableOrUnknown(data['sessions']!, _sessionsMeta));
+    }
+    if (data.containsKey('words')) {
+      context.handle(_wordsMeta, words.isAcceptableOrUnknown(data['words']!, _wordsMeta));
+    }
+    if (data.containsKey('pages')) {
+      context.handle(_pagesMeta, pages.isAcceptableOrUnknown(data['pages']!, _pagesMeta));
+    }
+    if (data.containsKey('reader_ms')) {
+      context.handle(_readerMsMeta, readerMs.isAcceptableOrUnknown(data['reader_ms']!, _readerMsMeta));
+    }
+    if (data.containsKey('reader_words')) {
+      context.handle(_readerWordsMeta, readerWords.isAcceptableOrUnknown(data['reader_words']!, _readerWordsMeta));
+    }
+    if (data.containsKey('page_ms')) {
+      context.handle(_pageMsMeta, pageMs.isAcceptableOrUnknown(data['page_ms']!, _pageMsMeta));
+    }
+    if (data.containsKey('page_pages')) {
+      context.handle(_pagePagesMeta, pagePages.isAcceptableOrUnknown(data['page_pages']!, _pagePagesMeta));
+    }
+    if (data.containsKey('longest_ms')) {
+      context.handle(_longestMsMeta, longestMs.isAcceptableOrUnknown(data['longest_ms']!, _longestMsMeta));
+    }
+    if (data.containsKey('median_page_ms')) {
+      context.handle(_medianPageMsMeta, medianPageMs.isAcceptableOrUnknown(data['median_page_ms']!, _medianPageMsMeta));
+    }
+    if (data.containsKey('first_read')) {
+      context.handle(_firstReadMeta, firstRead.isAcceptableOrUnknown(data['first_read']!, _firstReadMeta));
+    }
+    if (data.containsKey('last_read')) {
+      context.handle(_lastReadMeta, lastRead.isAcceptableOrUnknown(data['last_read']!, _lastReadMeta));
+    }
+    if (data.containsKey('finished_at')) {
+      context.handle(_finishedAtMeta, finishedAt.isAcceptableOrUnknown(data['finished_at']!, _finishedAtMeta));
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {fingerprint};
+  @override
+  BookStat map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return BookStat(
+      fingerprint: attachedDatabase.typeMapping.read(DriftSqlType.string, data['${effectivePrefix}fingerprint'])!,
+      readingMs: attachedDatabase.typeMapping.read(DriftSqlType.int, data['${effectivePrefix}reading_ms'])!,
+      listeningMs: attachedDatabase.typeMapping.read(DriftSqlType.int, data['${effectivePrefix}listening_ms'])!,
+      sessions: attachedDatabase.typeMapping.read(DriftSqlType.int, data['${effectivePrefix}sessions'])!,
+      words: attachedDatabase.typeMapping.read(DriftSqlType.int, data['${effectivePrefix}words'])!,
+      pages: attachedDatabase.typeMapping.read(DriftSqlType.int, data['${effectivePrefix}pages'])!,
+      readerMs: attachedDatabase.typeMapping.read(DriftSqlType.int, data['${effectivePrefix}reader_ms'])!,
+      readerWords: attachedDatabase.typeMapping.read(DriftSqlType.int, data['${effectivePrefix}reader_words'])!,
+      pageMs: attachedDatabase.typeMapping.read(DriftSqlType.int, data['${effectivePrefix}page_ms'])!,
+      pagePages: attachedDatabase.typeMapping.read(DriftSqlType.int, data['${effectivePrefix}page_pages'])!,
+      longestMs: attachedDatabase.typeMapping.read(DriftSqlType.int, data['${effectivePrefix}longest_ms'])!,
+      medianPageMs: attachedDatabase.typeMapping.read(DriftSqlType.int, data['${effectivePrefix}median_page_ms'])!,
+      firstRead: attachedDatabase.typeMapping.read(DriftSqlType.dateTime, data['${effectivePrefix}first_read']),
+      lastRead: attachedDatabase.typeMapping.read(DriftSqlType.dateTime, data['${effectivePrefix}last_read']),
+      finishedAt: attachedDatabase.typeMapping.read(DriftSqlType.dateTime, data['${effectivePrefix}finished_at']),
+    );
+  }
+
+  @override
+  $BookStatsTable createAlias(String alias) {
+    return $BookStatsTable(attachedDatabase, alias);
+  }
+}
+
+class BookStat extends DataClass implements Insertable<BookStat> {
+  final String fingerprint;
+  final int readingMs;
+  final int listeningMs;
+  final int sessions;
+  final int words;
+  final int pages;
+  final int readerMs;
+  final int readerWords;
+  final int pageMs;
+  final int pagePages;
+  final int longestMs;
+
+  /// A running median of time per page or screen, for the idle threshold.
+  final int medianPageMs;
+  final DateTime? firstRead;
+  final DateTime? lastRead;
+  final DateTime? finishedAt;
+  const BookStat({
+    required this.fingerprint,
+    required this.readingMs,
+    required this.listeningMs,
+    required this.sessions,
+    required this.words,
+    required this.pages,
+    required this.readerMs,
+    required this.readerWords,
+    required this.pageMs,
+    required this.pagePages,
+    required this.longestMs,
+    required this.medianPageMs,
+    this.firstRead,
+    this.lastRead,
+    this.finishedAt,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['fingerprint'] = Variable<String>(fingerprint);
+    map['reading_ms'] = Variable<int>(readingMs);
+    map['listening_ms'] = Variable<int>(listeningMs);
+    map['sessions'] = Variable<int>(sessions);
+    map['words'] = Variable<int>(words);
+    map['pages'] = Variable<int>(pages);
+    map['reader_ms'] = Variable<int>(readerMs);
+    map['reader_words'] = Variable<int>(readerWords);
+    map['page_ms'] = Variable<int>(pageMs);
+    map['page_pages'] = Variable<int>(pagePages);
+    map['longest_ms'] = Variable<int>(longestMs);
+    map['median_page_ms'] = Variable<int>(medianPageMs);
+    if (!nullToAbsent || firstRead != null) {
+      map['first_read'] = Variable<DateTime>(firstRead);
+    }
+    if (!nullToAbsent || lastRead != null) {
+      map['last_read'] = Variable<DateTime>(lastRead);
+    }
+    if (!nullToAbsent || finishedAt != null) {
+      map['finished_at'] = Variable<DateTime>(finishedAt);
+    }
+    return map;
+  }
+
+  BookStatsCompanion toCompanion(bool nullToAbsent) {
+    return BookStatsCompanion(
+      fingerprint: Value(fingerprint),
+      readingMs: Value(readingMs),
+      listeningMs: Value(listeningMs),
+      sessions: Value(sessions),
+      words: Value(words),
+      pages: Value(pages),
+      readerMs: Value(readerMs),
+      readerWords: Value(readerWords),
+      pageMs: Value(pageMs),
+      pagePages: Value(pagePages),
+      longestMs: Value(longestMs),
+      medianPageMs: Value(medianPageMs),
+      firstRead: firstRead == null && nullToAbsent ? const Value.absent() : Value(firstRead),
+      lastRead: lastRead == null && nullToAbsent ? const Value.absent() : Value(lastRead),
+      finishedAt: finishedAt == null && nullToAbsent ? const Value.absent() : Value(finishedAt),
+    );
+  }
+
+  factory BookStat.fromJson(Map<String, dynamic> json, {ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return BookStat(
+      fingerprint: serializer.fromJson<String>(json['fingerprint']),
+      readingMs: serializer.fromJson<int>(json['readingMs']),
+      listeningMs: serializer.fromJson<int>(json['listeningMs']),
+      sessions: serializer.fromJson<int>(json['sessions']),
+      words: serializer.fromJson<int>(json['words']),
+      pages: serializer.fromJson<int>(json['pages']),
+      readerMs: serializer.fromJson<int>(json['readerMs']),
+      readerWords: serializer.fromJson<int>(json['readerWords']),
+      pageMs: serializer.fromJson<int>(json['pageMs']),
+      pagePages: serializer.fromJson<int>(json['pagePages']),
+      longestMs: serializer.fromJson<int>(json['longestMs']),
+      medianPageMs: serializer.fromJson<int>(json['medianPageMs']),
+      firstRead: serializer.fromJson<DateTime?>(json['firstRead']),
+      lastRead: serializer.fromJson<DateTime?>(json['lastRead']),
+      finishedAt: serializer.fromJson<DateTime?>(json['finishedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'fingerprint': serializer.toJson<String>(fingerprint),
+      'readingMs': serializer.toJson<int>(readingMs),
+      'listeningMs': serializer.toJson<int>(listeningMs),
+      'sessions': serializer.toJson<int>(sessions),
+      'words': serializer.toJson<int>(words),
+      'pages': serializer.toJson<int>(pages),
+      'readerMs': serializer.toJson<int>(readerMs),
+      'readerWords': serializer.toJson<int>(readerWords),
+      'pageMs': serializer.toJson<int>(pageMs),
+      'pagePages': serializer.toJson<int>(pagePages),
+      'longestMs': serializer.toJson<int>(longestMs),
+      'medianPageMs': serializer.toJson<int>(medianPageMs),
+      'firstRead': serializer.toJson<DateTime?>(firstRead),
+      'lastRead': serializer.toJson<DateTime?>(lastRead),
+      'finishedAt': serializer.toJson<DateTime?>(finishedAt),
+    };
+  }
+
+  BookStat copyWith({
+    String? fingerprint,
+    int? readingMs,
+    int? listeningMs,
+    int? sessions,
+    int? words,
+    int? pages,
+    int? readerMs,
+    int? readerWords,
+    int? pageMs,
+    int? pagePages,
+    int? longestMs,
+    int? medianPageMs,
+    Value<DateTime?> firstRead = const Value.absent(),
+    Value<DateTime?> lastRead = const Value.absent(),
+    Value<DateTime?> finishedAt = const Value.absent(),
+  }) => BookStat(
+    fingerprint: fingerprint ?? this.fingerprint,
+    readingMs: readingMs ?? this.readingMs,
+    listeningMs: listeningMs ?? this.listeningMs,
+    sessions: sessions ?? this.sessions,
+    words: words ?? this.words,
+    pages: pages ?? this.pages,
+    readerMs: readerMs ?? this.readerMs,
+    readerWords: readerWords ?? this.readerWords,
+    pageMs: pageMs ?? this.pageMs,
+    pagePages: pagePages ?? this.pagePages,
+    longestMs: longestMs ?? this.longestMs,
+    medianPageMs: medianPageMs ?? this.medianPageMs,
+    firstRead: firstRead.present ? firstRead.value : this.firstRead,
+    lastRead: lastRead.present ? lastRead.value : this.lastRead,
+    finishedAt: finishedAt.present ? finishedAt.value : this.finishedAt,
+  );
+  BookStat copyWithCompanion(BookStatsCompanion data) {
+    return BookStat(
+      fingerprint: data.fingerprint.present ? data.fingerprint.value : this.fingerprint,
+      readingMs: data.readingMs.present ? data.readingMs.value : this.readingMs,
+      listeningMs: data.listeningMs.present ? data.listeningMs.value : this.listeningMs,
+      sessions: data.sessions.present ? data.sessions.value : this.sessions,
+      words: data.words.present ? data.words.value : this.words,
+      pages: data.pages.present ? data.pages.value : this.pages,
+      readerMs: data.readerMs.present ? data.readerMs.value : this.readerMs,
+      readerWords: data.readerWords.present ? data.readerWords.value : this.readerWords,
+      pageMs: data.pageMs.present ? data.pageMs.value : this.pageMs,
+      pagePages: data.pagePages.present ? data.pagePages.value : this.pagePages,
+      longestMs: data.longestMs.present ? data.longestMs.value : this.longestMs,
+      medianPageMs: data.medianPageMs.present ? data.medianPageMs.value : this.medianPageMs,
+      firstRead: data.firstRead.present ? data.firstRead.value : this.firstRead,
+      lastRead: data.lastRead.present ? data.lastRead.value : this.lastRead,
+      finishedAt: data.finishedAt.present ? data.finishedAt.value : this.finishedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('BookStat(')
+          ..write('fingerprint: $fingerprint, ')
+          ..write('readingMs: $readingMs, ')
+          ..write('listeningMs: $listeningMs, ')
+          ..write('sessions: $sessions, ')
+          ..write('words: $words, ')
+          ..write('pages: $pages, ')
+          ..write('readerMs: $readerMs, ')
+          ..write('readerWords: $readerWords, ')
+          ..write('pageMs: $pageMs, ')
+          ..write('pagePages: $pagePages, ')
+          ..write('longestMs: $longestMs, ')
+          ..write('medianPageMs: $medianPageMs, ')
+          ..write('firstRead: $firstRead, ')
+          ..write('lastRead: $lastRead, ')
+          ..write('finishedAt: $finishedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    fingerprint,
+    readingMs,
+    listeningMs,
+    sessions,
+    words,
+    pages,
+    readerMs,
+    readerWords,
+    pageMs,
+    pagePages,
+    longestMs,
+    medianPageMs,
+    firstRead,
+    lastRead,
+    finishedAt,
+  );
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is BookStat &&
+          other.fingerprint == this.fingerprint &&
+          other.readingMs == this.readingMs &&
+          other.listeningMs == this.listeningMs &&
+          other.sessions == this.sessions &&
+          other.words == this.words &&
+          other.pages == this.pages &&
+          other.readerMs == this.readerMs &&
+          other.readerWords == this.readerWords &&
+          other.pageMs == this.pageMs &&
+          other.pagePages == this.pagePages &&
+          other.longestMs == this.longestMs &&
+          other.medianPageMs == this.medianPageMs &&
+          other.firstRead == this.firstRead &&
+          other.lastRead == this.lastRead &&
+          other.finishedAt == this.finishedAt);
+}
+
+class BookStatsCompanion extends UpdateCompanion<BookStat> {
+  final Value<String> fingerprint;
+  final Value<int> readingMs;
+  final Value<int> listeningMs;
+  final Value<int> sessions;
+  final Value<int> words;
+  final Value<int> pages;
+  final Value<int> readerMs;
+  final Value<int> readerWords;
+  final Value<int> pageMs;
+  final Value<int> pagePages;
+  final Value<int> longestMs;
+  final Value<int> medianPageMs;
+  final Value<DateTime?> firstRead;
+  final Value<DateTime?> lastRead;
+  final Value<DateTime?> finishedAt;
+  final Value<int> rowid;
+  const BookStatsCompanion({
+    this.fingerprint = const Value.absent(),
+    this.readingMs = const Value.absent(),
+    this.listeningMs = const Value.absent(),
+    this.sessions = const Value.absent(),
+    this.words = const Value.absent(),
+    this.pages = const Value.absent(),
+    this.readerMs = const Value.absent(),
+    this.readerWords = const Value.absent(),
+    this.pageMs = const Value.absent(),
+    this.pagePages = const Value.absent(),
+    this.longestMs = const Value.absent(),
+    this.medianPageMs = const Value.absent(),
+    this.firstRead = const Value.absent(),
+    this.lastRead = const Value.absent(),
+    this.finishedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  BookStatsCompanion.insert({
+    required String fingerprint,
+    this.readingMs = const Value.absent(),
+    this.listeningMs = const Value.absent(),
+    this.sessions = const Value.absent(),
+    this.words = const Value.absent(),
+    this.pages = const Value.absent(),
+    this.readerMs = const Value.absent(),
+    this.readerWords = const Value.absent(),
+    this.pageMs = const Value.absent(),
+    this.pagePages = const Value.absent(),
+    this.longestMs = const Value.absent(),
+    this.medianPageMs = const Value.absent(),
+    this.firstRead = const Value.absent(),
+    this.lastRead = const Value.absent(),
+    this.finishedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  }) : fingerprint = Value(fingerprint);
+  static Insertable<BookStat> custom({
+    Expression<String>? fingerprint,
+    Expression<int>? readingMs,
+    Expression<int>? listeningMs,
+    Expression<int>? sessions,
+    Expression<int>? words,
+    Expression<int>? pages,
+    Expression<int>? readerMs,
+    Expression<int>? readerWords,
+    Expression<int>? pageMs,
+    Expression<int>? pagePages,
+    Expression<int>? longestMs,
+    Expression<int>? medianPageMs,
+    Expression<DateTime>? firstRead,
+    Expression<DateTime>? lastRead,
+    Expression<DateTime>? finishedAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (fingerprint != null) 'fingerprint': fingerprint,
+      if (readingMs != null) 'reading_ms': readingMs,
+      if (listeningMs != null) 'listening_ms': listeningMs,
+      if (sessions != null) 'sessions': sessions,
+      if (words != null) 'words': words,
+      if (pages != null) 'pages': pages,
+      if (readerMs != null) 'reader_ms': readerMs,
+      if (readerWords != null) 'reader_words': readerWords,
+      if (pageMs != null) 'page_ms': pageMs,
+      if (pagePages != null) 'page_pages': pagePages,
+      if (longestMs != null) 'longest_ms': longestMs,
+      if (medianPageMs != null) 'median_page_ms': medianPageMs,
+      if (firstRead != null) 'first_read': firstRead,
+      if (lastRead != null) 'last_read': lastRead,
+      if (finishedAt != null) 'finished_at': finishedAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  BookStatsCompanion copyWith({
+    Value<String>? fingerprint,
+    Value<int>? readingMs,
+    Value<int>? listeningMs,
+    Value<int>? sessions,
+    Value<int>? words,
+    Value<int>? pages,
+    Value<int>? readerMs,
+    Value<int>? readerWords,
+    Value<int>? pageMs,
+    Value<int>? pagePages,
+    Value<int>? longestMs,
+    Value<int>? medianPageMs,
+    Value<DateTime?>? firstRead,
+    Value<DateTime?>? lastRead,
+    Value<DateTime?>? finishedAt,
+    Value<int>? rowid,
+  }) {
+    return BookStatsCompanion(
+      fingerprint: fingerprint ?? this.fingerprint,
+      readingMs: readingMs ?? this.readingMs,
+      listeningMs: listeningMs ?? this.listeningMs,
+      sessions: sessions ?? this.sessions,
+      words: words ?? this.words,
+      pages: pages ?? this.pages,
+      readerMs: readerMs ?? this.readerMs,
+      readerWords: readerWords ?? this.readerWords,
+      pageMs: pageMs ?? this.pageMs,
+      pagePages: pagePages ?? this.pagePages,
+      longestMs: longestMs ?? this.longestMs,
+      medianPageMs: medianPageMs ?? this.medianPageMs,
+      firstRead: firstRead ?? this.firstRead,
+      lastRead: lastRead ?? this.lastRead,
+      finishedAt: finishedAt ?? this.finishedAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (fingerprint.present) {
+      map['fingerprint'] = Variable<String>(fingerprint.value);
+    }
+    if (readingMs.present) {
+      map['reading_ms'] = Variable<int>(readingMs.value);
+    }
+    if (listeningMs.present) {
+      map['listening_ms'] = Variable<int>(listeningMs.value);
+    }
+    if (sessions.present) {
+      map['sessions'] = Variable<int>(sessions.value);
+    }
+    if (words.present) {
+      map['words'] = Variable<int>(words.value);
+    }
+    if (pages.present) {
+      map['pages'] = Variable<int>(pages.value);
+    }
+    if (readerMs.present) {
+      map['reader_ms'] = Variable<int>(readerMs.value);
+    }
+    if (readerWords.present) {
+      map['reader_words'] = Variable<int>(readerWords.value);
+    }
+    if (pageMs.present) {
+      map['page_ms'] = Variable<int>(pageMs.value);
+    }
+    if (pagePages.present) {
+      map['page_pages'] = Variable<int>(pagePages.value);
+    }
+    if (longestMs.present) {
+      map['longest_ms'] = Variable<int>(longestMs.value);
+    }
+    if (medianPageMs.present) {
+      map['median_page_ms'] = Variable<int>(medianPageMs.value);
+    }
+    if (firstRead.present) {
+      map['first_read'] = Variable<DateTime>(firstRead.value);
+    }
+    if (lastRead.present) {
+      map['last_read'] = Variable<DateTime>(lastRead.value);
+    }
+    if (finishedAt.present) {
+      map['finished_at'] = Variable<DateTime>(finishedAt.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('BookStatsCompanion(')
+          ..write('fingerprint: $fingerprint, ')
+          ..write('readingMs: $readingMs, ')
+          ..write('listeningMs: $listeningMs, ')
+          ..write('sessions: $sessions, ')
+          ..write('words: $words, ')
+          ..write('pages: $pages, ')
+          ..write('readerMs: $readerMs, ')
+          ..write('readerWords: $readerWords, ')
+          ..write('pageMs: $pageMs, ')
+          ..write('pagePages: $pagePages, ')
+          ..write('longestMs: $longestMs, ')
+          ..write('medianPageMs: $medianPageMs, ')
+          ..write('firstRead: $firstRead, ')
+          ..write('lastRead: $lastRead, ')
+          ..write('finishedAt: $finishedAt, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $BookDaysTable extends BookDays with TableInfo<$BookDaysTable, BookDay> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $BookDaysTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _fingerprintMeta = const VerificationMeta('fingerprint');
+  @override
+  late final GeneratedColumn<String> fingerprint = GeneratedColumn<String>(
+    'fingerprint',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _dayMeta = const VerificationMeta('day');
+  @override
+  late final GeneratedColumn<int> day = GeneratedColumn<int>(
+    'day',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _msMeta = const VerificationMeta('ms');
+  @override
+  late final GeneratedColumn<int> ms = GeneratedColumn<int>(
+    'ms',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  @override
+  List<GeneratedColumn> get $columns => [fingerprint, day, ms];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'book_days';
+  @override
+  VerificationContext validateIntegrity(Insertable<BookDay> instance, {bool isInserting = false}) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('fingerprint')) {
+      context.handle(_fingerprintMeta, fingerprint.isAcceptableOrUnknown(data['fingerprint']!, _fingerprintMeta));
+    } else if (isInserting) {
+      context.missing(_fingerprintMeta);
+    }
+    if (data.containsKey('day')) {
+      context.handle(_dayMeta, day.isAcceptableOrUnknown(data['day']!, _dayMeta));
+    } else if (isInserting) {
+      context.missing(_dayMeta);
+    }
+    if (data.containsKey('ms')) {
+      context.handle(_msMeta, ms.isAcceptableOrUnknown(data['ms']!, _msMeta));
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {fingerprint, day};
+  @override
+  BookDay map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return BookDay(
+      fingerprint: attachedDatabase.typeMapping.read(DriftSqlType.string, data['${effectivePrefix}fingerprint'])!,
+      day: attachedDatabase.typeMapping.read(DriftSqlType.int, data['${effectivePrefix}day'])!,
+      ms: attachedDatabase.typeMapping.read(DriftSqlType.int, data['${effectivePrefix}ms'])!,
+    );
+  }
+
+  @override
+  $BookDaysTable createAlias(String alias) {
+    return $BookDaysTable(attachedDatabase, alias);
+  }
+}
+
+class BookDay extends DataClass implements Insertable<BookDay> {
+  final String fingerprint;
+  final int day;
+  final int ms;
+  const BookDay({required this.fingerprint, required this.day, required this.ms});
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['fingerprint'] = Variable<String>(fingerprint);
+    map['day'] = Variable<int>(day);
+    map['ms'] = Variable<int>(ms);
+    return map;
+  }
+
+  BookDaysCompanion toCompanion(bool nullToAbsent) {
+    return BookDaysCompanion(fingerprint: Value(fingerprint), day: Value(day), ms: Value(ms));
+  }
+
+  factory BookDay.fromJson(Map<String, dynamic> json, {ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return BookDay(
+      fingerprint: serializer.fromJson<String>(json['fingerprint']),
+      day: serializer.fromJson<int>(json['day']),
+      ms: serializer.fromJson<int>(json['ms']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'fingerprint': serializer.toJson<String>(fingerprint),
+      'day': serializer.toJson<int>(day),
+      'ms': serializer.toJson<int>(ms),
+    };
+  }
+
+  BookDay copyWith({String? fingerprint, int? day, int? ms}) =>
+      BookDay(fingerprint: fingerprint ?? this.fingerprint, day: day ?? this.day, ms: ms ?? this.ms);
+  BookDay copyWithCompanion(BookDaysCompanion data) {
+    return BookDay(
+      fingerprint: data.fingerprint.present ? data.fingerprint.value : this.fingerprint,
+      day: data.day.present ? data.day.value : this.day,
+      ms: data.ms.present ? data.ms.value : this.ms,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('BookDay(')
+          ..write('fingerprint: $fingerprint, ')
+          ..write('day: $day, ')
+          ..write('ms: $ms')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(fingerprint, day, ms);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is BookDay && other.fingerprint == this.fingerprint && other.day == this.day && other.ms == this.ms);
+}
+
+class BookDaysCompanion extends UpdateCompanion<BookDay> {
+  final Value<String> fingerprint;
+  final Value<int> day;
+  final Value<int> ms;
+  final Value<int> rowid;
+  const BookDaysCompanion({
+    this.fingerprint = const Value.absent(),
+    this.day = const Value.absent(),
+    this.ms = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  BookDaysCompanion.insert({
+    required String fingerprint,
+    required int day,
+    this.ms = const Value.absent(),
+    this.rowid = const Value.absent(),
+  }) : fingerprint = Value(fingerprint),
+       day = Value(day);
+  static Insertable<BookDay> custom({
+    Expression<String>? fingerprint,
+    Expression<int>? day,
+    Expression<int>? ms,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (fingerprint != null) 'fingerprint': fingerprint,
+      if (day != null) 'day': day,
+      if (ms != null) 'ms': ms,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  BookDaysCompanion copyWith({Value<String>? fingerprint, Value<int>? day, Value<int>? ms, Value<int>? rowid}) {
+    return BookDaysCompanion(
+      fingerprint: fingerprint ?? this.fingerprint,
+      day: day ?? this.day,
+      ms: ms ?? this.ms,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (fingerprint.present) {
+      map['fingerprint'] = Variable<String>(fingerprint.value);
+    }
+    if (day.present) {
+      map['day'] = Variable<int>(day.value);
+    }
+    if (ms.present) {
+      map['ms'] = Variable<int>(ms.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('BookDaysCompanion(')
+          ..write('fingerprint: $fingerprint, ')
+          ..write('day: $day, ')
+          ..write('ms: $ms, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$AppDatabase extends GeneratedDatabase {
   _$AppDatabase(QueryExecutor e) : super(e);
   $AppDatabaseManager get managers => $AppDatabaseManager(this);
@@ -3220,6 +5589,10 @@ abstract class _$AppDatabase extends GeneratedDatabase {
   late final $AnnotationsTable annotations = $AnnotationsTable(this);
   late final $RecentsTable recents = $RecentsTable(this);
   late final $PlacesTable places = $PlacesTable(this);
+  late final $ReadingSessionsTable readingSessions = $ReadingSessionsTable(this);
+  late final $DailyStatsTable dailyStats = $DailyStatsTable(this);
+  late final $BookStatsTable bookStats = $BookStatsTable(this);
+  late final $BookDaysTable bookDays = $BookDaysTable(this);
   late final Index entriesParent = Index(
     'entries_parent',
     'CREATE INDEX entries_parent ON entries (folder_id, parent)',
@@ -3230,6 +5603,9 @@ abstract class _$AppDatabase extends GeneratedDatabase {
     'annotations_doc',
     'CREATE INDEX annotations_doc ON annotations (fingerprint)',
   );
+  late final Index sessionsDoc = Index('sessions_doc', 'CREATE INDEX sessions_doc ON reading_sessions (fingerprint)');
+  late final Index sessionsOpen = Index('sessions_open', 'CREATE INDEX sessions_open ON reading_sessions (open)');
+  late final Index bookStatsTime = Index('book_stats_time', 'CREATE INDEX book_stats_time ON book_stats (reading_ms)');
   @override
   Iterable<TableInfo<Table, Object?>> get allTables => allSchemaEntities.whereType<TableInfo<Table, Object?>>();
   @override
@@ -3240,10 +5616,17 @@ abstract class _$AppDatabase extends GeneratedDatabase {
     annotations,
     recents,
     places,
+    readingSessions,
+    dailyStats,
+    bookStats,
+    bookDays,
     entriesParent,
     entriesExt,
     entriesFp,
     annotationsDoc,
+    sessionsDoc,
+    sessionsOpen,
+    bookStatsTime,
   ];
   @override
   StreamQueryUpdateRules get streamUpdateRules => const StreamQueryUpdateRules([
@@ -3534,6 +5917,7 @@ typedef $$EntriesTableCreateCompanionBuilder = EntriesCompanion Function({
   Value<String?> title,
   Value<String?> author,
   Value<int?> units,
+  Value<String?> issue,
   Value<int> enriched,
   Value<bool> hidden,
   Value<String> source,
@@ -3554,6 +5938,7 @@ typedef $$EntriesTableUpdateCompanionBuilder = EntriesCompanion Function({
   Value<String?> title,
   Value<String?> author,
   Value<int?> units,
+  Value<String?> issue,
   Value<int> enriched,
   Value<bool> hidden,
   Value<String> source,
@@ -3615,6 +6000,9 @@ class $$EntriesTableFilterComposer extends Composer<_$AppDatabase, $EntriesTable
       $composableBuilder(column: $table.author, builder: (column) => ColumnFilters(column));
 
   ColumnFilters<int> get units => $composableBuilder(column: $table.units, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get issue =>
+      $composableBuilder(column: $table.issue, builder: (column) => ColumnFilters(column));
 
   ColumnFilters<int> get enriched =>
       $composableBuilder(column: $table.enriched, builder: (column) => ColumnFilters(column));
@@ -3693,6 +6081,9 @@ class $$EntriesTableOrderingComposer extends Composer<_$AppDatabase, $EntriesTab
   ColumnOrderings<int> get units =>
       $composableBuilder(column: $table.units, builder: (column) => ColumnOrderings(column));
 
+  ColumnOrderings<String> get issue =>
+      $composableBuilder(column: $table.issue, builder: (column) => ColumnOrderings(column));
+
   ColumnOrderings<int> get enriched =>
       $composableBuilder(column: $table.enriched, builder: (column) => ColumnOrderings(column));
 
@@ -3757,6 +6148,8 @@ class $$EntriesTableAnnotationComposer extends Composer<_$AppDatabase, $EntriesT
   GeneratedColumn<String> get author => $composableBuilder(column: $table.author, builder: (column) => column);
 
   GeneratedColumn<int> get units => $composableBuilder(column: $table.units, builder: (column) => column);
+
+  GeneratedColumn<String> get issue => $composableBuilder(column: $table.issue, builder: (column) => column);
 
   GeneratedColumn<int> get enriched => $composableBuilder(column: $table.enriched, builder: (column) => column);
 
@@ -3823,6 +6216,7 @@ class $$EntriesTableTableManager
                 Value<String?> title = const Value.absent(),
                 Value<String?> author = const Value.absent(),
                 Value<int?> units = const Value.absent(),
+                Value<String?> issue = const Value.absent(),
                 Value<int> enriched = const Value.absent(),
                 Value<bool> hidden = const Value.absent(),
                 Value<String> source = const Value.absent(),
@@ -3842,6 +6236,7 @@ class $$EntriesTableTableManager
                 title: title,
                 author: author,
                 units: units,
+                issue: issue,
                 enriched: enriched,
                 hidden: hidden,
                 source: source,
@@ -3863,6 +6258,7 @@ class $$EntriesTableTableManager
                 Value<String?> title = const Value.absent(),
                 Value<String?> author = const Value.absent(),
                 Value<int?> units = const Value.absent(),
+                Value<String?> issue = const Value.absent(),
                 Value<int> enriched = const Value.absent(),
                 Value<bool> hidden = const Value.absent(),
                 Value<String> source = const Value.absent(),
@@ -3882,6 +6278,7 @@ class $$EntriesTableTableManager
                 title: title,
                 author: author,
                 units: units,
+                issue: issue,
                 enriched: enriched,
                 hidden: hidden,
                 source: source,
@@ -3961,6 +6358,7 @@ typedef $$DocumentsTableCreateCompanionBuilder = DocumentsCompanion Function({
   Value<int> readMs,
   Value<int> readWords,
   Value<int> size,
+  Value<String?> issue,
   Value<int> rowid,
 });
 typedef $$DocumentsTableUpdateCompanionBuilder = DocumentsCompanion Function({
@@ -3981,6 +6379,7 @@ typedef $$DocumentsTableUpdateCompanionBuilder = DocumentsCompanion Function({
   Value<int> readMs,
   Value<int> readWords,
   Value<int> size,
+  Value<String?> issue,
   Value<int> rowid,
 });
 
@@ -4037,6 +6436,9 @@ class $$DocumentsTableFilterComposer extends Composer<_$AppDatabase, $DocumentsT
       $composableBuilder(column: $table.readWords, builder: (column) => ColumnFilters(column));
 
   ColumnFilters<int> get size => $composableBuilder(column: $table.size, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get issue =>
+      $composableBuilder(column: $table.issue, builder: (column) => ColumnFilters(column));
 }
 
 class $$DocumentsTableOrderingComposer extends Composer<_$AppDatabase, $DocumentsTable> {
@@ -4097,6 +6499,9 @@ class $$DocumentsTableOrderingComposer extends Composer<_$AppDatabase, $Document
 
   ColumnOrderings<int> get size =>
       $composableBuilder(column: $table.size, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get issue =>
+      $composableBuilder(column: $table.issue, builder: (column) => ColumnOrderings(column));
 }
 
 class $$DocumentsTableAnnotationComposer extends Composer<_$AppDatabase, $DocumentsTable> {
@@ -4141,6 +6546,8 @@ class $$DocumentsTableAnnotationComposer extends Composer<_$AppDatabase, $Docume
   GeneratedColumn<int> get readWords => $composableBuilder(column: $table.readWords, builder: (column) => column);
 
   GeneratedColumn<int> get size => $composableBuilder(column: $table.size, builder: (column) => column);
+
+  GeneratedColumn<String> get issue => $composableBuilder(column: $table.issue, builder: (column) => column);
 }
 
 class $$DocumentsTableTableManager
@@ -4185,6 +6592,7 @@ class $$DocumentsTableTableManager
                 Value<int> readMs = const Value.absent(),
                 Value<int> readWords = const Value.absent(),
                 Value<int> size = const Value.absent(),
+                Value<String?> issue = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => DocumentsCompanion(
                 fingerprint: fingerprint,
@@ -4204,6 +6612,7 @@ class $$DocumentsTableTableManager
                 readMs: readMs,
                 readWords: readWords,
                 size: size,
+                issue: issue,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -4225,6 +6634,7 @@ class $$DocumentsTableTableManager
                 Value<int> readMs = const Value.absent(),
                 Value<int> readWords = const Value.absent(),
                 Value<int> size = const Value.absent(),
+                Value<String?> issue = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => DocumentsCompanion.insert(
                 fingerprint: fingerprint,
@@ -4244,6 +6654,7 @@ class $$DocumentsTableTableManager
                 readMs: readMs,
                 readWords: readWords,
                 size: size,
+                issue: issue,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
@@ -4825,6 +7236,1010 @@ typedef $$PlacesTableProcessedTableManager =
       Place,
       PrefetchHooks Function()
     >;
+typedef $$ReadingSessionsTableCreateCompanionBuilder = ReadingSessionsCompanion Function({
+  Value<int> id,
+  required String fingerprint,
+  required String format,
+  required String mode,
+  required DateTime startedAt,
+  required DateTime endedAt,
+  required int day,
+  Value<int> hour,
+  Value<int> activeMs,
+  Value<int> listeningMs,
+  Value<String?> fromLocator,
+  Value<String?> toLocator,
+  Value<int> words,
+  Value<int> pages,
+  Value<bool> open,
+});
+typedef $$ReadingSessionsTableUpdateCompanionBuilder = ReadingSessionsCompanion Function({
+  Value<int> id,
+  Value<String> fingerprint,
+  Value<String> format,
+  Value<String> mode,
+  Value<DateTime> startedAt,
+  Value<DateTime> endedAt,
+  Value<int> day,
+  Value<int> hour,
+  Value<int> activeMs,
+  Value<int> listeningMs,
+  Value<String?> fromLocator,
+  Value<String?> toLocator,
+  Value<int> words,
+  Value<int> pages,
+  Value<bool> open,
+});
+
+class $$ReadingSessionsTableFilterComposer extends Composer<_$AppDatabase, $ReadingSessionsTable> {
+  $$ReadingSessionsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<int> get id => $composableBuilder(column: $table.id, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get fingerprint =>
+      $composableBuilder(column: $table.fingerprint, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get format =>
+      $composableBuilder(column: $table.format, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get mode => $composableBuilder(column: $table.mode, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<DateTime> get startedAt =>
+      $composableBuilder(column: $table.startedAt, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<DateTime> get endedAt =>
+      $composableBuilder(column: $table.endedAt, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get day => $composableBuilder(column: $table.day, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get hour => $composableBuilder(column: $table.hour, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get activeMs =>
+      $composableBuilder(column: $table.activeMs, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get listeningMs =>
+      $composableBuilder(column: $table.listeningMs, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get fromLocator =>
+      $composableBuilder(column: $table.fromLocator, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get toLocator =>
+      $composableBuilder(column: $table.toLocator, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get words => $composableBuilder(column: $table.words, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get pages => $composableBuilder(column: $table.pages, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<bool> get open => $composableBuilder(column: $table.open, builder: (column) => ColumnFilters(column));
+}
+
+class $$ReadingSessionsTableOrderingComposer extends Composer<_$AppDatabase, $ReadingSessionsTable> {
+  $$ReadingSessionsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<int> get id => $composableBuilder(column: $table.id, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get fingerprint =>
+      $composableBuilder(column: $table.fingerprint, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get format =>
+      $composableBuilder(column: $table.format, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get mode =>
+      $composableBuilder(column: $table.mode, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<DateTime> get startedAt =>
+      $composableBuilder(column: $table.startedAt, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<DateTime> get endedAt =>
+      $composableBuilder(column: $table.endedAt, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get day => $composableBuilder(column: $table.day, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get hour =>
+      $composableBuilder(column: $table.hour, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get activeMs =>
+      $composableBuilder(column: $table.activeMs, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get listeningMs =>
+      $composableBuilder(column: $table.listeningMs, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get fromLocator =>
+      $composableBuilder(column: $table.fromLocator, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get toLocator =>
+      $composableBuilder(column: $table.toLocator, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get words =>
+      $composableBuilder(column: $table.words, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get pages =>
+      $composableBuilder(column: $table.pages, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<bool> get open =>
+      $composableBuilder(column: $table.open, builder: (column) => ColumnOrderings(column));
+}
+
+class $$ReadingSessionsTableAnnotationComposer extends Composer<_$AppDatabase, $ReadingSessionsTable> {
+  $$ReadingSessionsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<int> get id => $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get fingerprint =>
+      $composableBuilder(column: $table.fingerprint, builder: (column) => column);
+
+  GeneratedColumn<String> get format => $composableBuilder(column: $table.format, builder: (column) => column);
+
+  GeneratedColumn<String> get mode => $composableBuilder(column: $table.mode, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get startedAt => $composableBuilder(column: $table.startedAt, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get endedAt => $composableBuilder(column: $table.endedAt, builder: (column) => column);
+
+  GeneratedColumn<int> get day => $composableBuilder(column: $table.day, builder: (column) => column);
+
+  GeneratedColumn<int> get hour => $composableBuilder(column: $table.hour, builder: (column) => column);
+
+  GeneratedColumn<int> get activeMs => $composableBuilder(column: $table.activeMs, builder: (column) => column);
+
+  GeneratedColumn<int> get listeningMs => $composableBuilder(column: $table.listeningMs, builder: (column) => column);
+
+  GeneratedColumn<String> get fromLocator =>
+      $composableBuilder(column: $table.fromLocator, builder: (column) => column);
+
+  GeneratedColumn<String> get toLocator => $composableBuilder(column: $table.toLocator, builder: (column) => column);
+
+  GeneratedColumn<int> get words => $composableBuilder(column: $table.words, builder: (column) => column);
+
+  GeneratedColumn<int> get pages => $composableBuilder(column: $table.pages, builder: (column) => column);
+
+  GeneratedColumn<bool> get open => $composableBuilder(column: $table.open, builder: (column) => column);
+}
+
+class $$ReadingSessionsTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $ReadingSessionsTable,
+          ReadingSession,
+          $$ReadingSessionsTableFilterComposer,
+          $$ReadingSessionsTableOrderingComposer,
+          $$ReadingSessionsTableAnnotationComposer,
+          $$ReadingSessionsTableCreateCompanionBuilder,
+          $$ReadingSessionsTableUpdateCompanionBuilder,
+          (ReadingSession, BaseReferences<_$AppDatabase, $ReadingSessionsTable, ReadingSession>),
+          ReadingSession,
+          PrefetchHooks Function()
+        > {
+  $$ReadingSessionsTableTableManager(_$AppDatabase db, $ReadingSessionsTable table)
+    : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () => $$ReadingSessionsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () => $$ReadingSessionsTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () => $$ReadingSessionsTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<int> id = const Value.absent(),
+                Value<String> fingerprint = const Value.absent(),
+                Value<String> format = const Value.absent(),
+                Value<String> mode = const Value.absent(),
+                Value<DateTime> startedAt = const Value.absent(),
+                Value<DateTime> endedAt = const Value.absent(),
+                Value<int> day = const Value.absent(),
+                Value<int> hour = const Value.absent(),
+                Value<int> activeMs = const Value.absent(),
+                Value<int> listeningMs = const Value.absent(),
+                Value<String?> fromLocator = const Value.absent(),
+                Value<String?> toLocator = const Value.absent(),
+                Value<int> words = const Value.absent(),
+                Value<int> pages = const Value.absent(),
+                Value<bool> open = const Value.absent(),
+              }) => ReadingSessionsCompanion(
+                id: id,
+                fingerprint: fingerprint,
+                format: format,
+                mode: mode,
+                startedAt: startedAt,
+                endedAt: endedAt,
+                day: day,
+                hour: hour,
+                activeMs: activeMs,
+                listeningMs: listeningMs,
+                fromLocator: fromLocator,
+                toLocator: toLocator,
+                words: words,
+                pages: pages,
+                open: open,
+              ),
+          createCompanionCallback:
+              ({
+                Value<int> id = const Value.absent(),
+                required String fingerprint,
+                required String format,
+                required String mode,
+                required DateTime startedAt,
+                required DateTime endedAt,
+                required int day,
+                Value<int> hour = const Value.absent(),
+                Value<int> activeMs = const Value.absent(),
+                Value<int> listeningMs = const Value.absent(),
+                Value<String?> fromLocator = const Value.absent(),
+                Value<String?> toLocator = const Value.absent(),
+                Value<int> words = const Value.absent(),
+                Value<int> pages = const Value.absent(),
+                Value<bool> open = const Value.absent(),
+              }) => ReadingSessionsCompanion.insert(
+                id: id,
+                fingerprint: fingerprint,
+                format: format,
+                mode: mode,
+                startedAt: startedAt,
+                endedAt: endedAt,
+                day: day,
+                hour: hour,
+                activeMs: activeMs,
+                listeningMs: listeningMs,
+                fromLocator: fromLocator,
+                toLocator: toLocator,
+                words: words,
+                pages: pages,
+                open: open,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map(
+                (e) => (
+                  e.readTable<$ReadingSessionsTable, ReadingSession>(table),
+                  BaseReferences<_$AppDatabase, $ReadingSessionsTable, ReadingSession>(db, table, e),
+                ),
+              )
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$ReadingSessionsTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $ReadingSessionsTable,
+      ReadingSession,
+      $$ReadingSessionsTableFilterComposer,
+      $$ReadingSessionsTableOrderingComposer,
+      $$ReadingSessionsTableAnnotationComposer,
+      $$ReadingSessionsTableCreateCompanionBuilder,
+      $$ReadingSessionsTableUpdateCompanionBuilder,
+      (ReadingSession, BaseReferences<_$AppDatabase, $ReadingSessionsTable, ReadingSession>),
+      ReadingSession,
+      PrefetchHooks Function()
+    >;
+typedef $$DailyStatsTableCreateCompanionBuilder = DailyStatsCompanion Function({
+  Value<int> day,
+  Value<int> readingMs,
+  Value<int> listeningMs,
+  Value<int> words,
+  Value<int> pages,
+  Value<int> sessions,
+  Value<int> readerMs,
+  Value<int> readerWords,
+  Value<int> pageMs,
+  Value<int> pagePages,
+  Value<int> longestMs,
+  Value<String?> longestFp,
+  Value<String> formatMs,
+  Value<String> hourMs,
+});
+typedef $$DailyStatsTableUpdateCompanionBuilder = DailyStatsCompanion Function({
+  Value<int> day,
+  Value<int> readingMs,
+  Value<int> listeningMs,
+  Value<int> words,
+  Value<int> pages,
+  Value<int> sessions,
+  Value<int> readerMs,
+  Value<int> readerWords,
+  Value<int> pageMs,
+  Value<int> pagePages,
+  Value<int> longestMs,
+  Value<String?> longestFp,
+  Value<String> formatMs,
+  Value<String> hourMs,
+});
+
+class $$DailyStatsTableFilterComposer extends Composer<_$AppDatabase, $DailyStatsTable> {
+  $$DailyStatsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<int> get day => $composableBuilder(column: $table.day, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get readingMs =>
+      $composableBuilder(column: $table.readingMs, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get listeningMs =>
+      $composableBuilder(column: $table.listeningMs, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get words => $composableBuilder(column: $table.words, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get pages => $composableBuilder(column: $table.pages, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get sessions =>
+      $composableBuilder(column: $table.sessions, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get readerMs =>
+      $composableBuilder(column: $table.readerMs, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get readerWords =>
+      $composableBuilder(column: $table.readerWords, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get pageMs =>
+      $composableBuilder(column: $table.pageMs, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get pagePages =>
+      $composableBuilder(column: $table.pagePages, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get longestMs =>
+      $composableBuilder(column: $table.longestMs, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get longestFp =>
+      $composableBuilder(column: $table.longestFp, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get formatMs =>
+      $composableBuilder(column: $table.formatMs, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get hourMs =>
+      $composableBuilder(column: $table.hourMs, builder: (column) => ColumnFilters(column));
+}
+
+class $$DailyStatsTableOrderingComposer extends Composer<_$AppDatabase, $DailyStatsTable> {
+  $$DailyStatsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<int> get day => $composableBuilder(column: $table.day, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get readingMs =>
+      $composableBuilder(column: $table.readingMs, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get listeningMs =>
+      $composableBuilder(column: $table.listeningMs, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get words =>
+      $composableBuilder(column: $table.words, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get pages =>
+      $composableBuilder(column: $table.pages, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get sessions =>
+      $composableBuilder(column: $table.sessions, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get readerMs =>
+      $composableBuilder(column: $table.readerMs, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get readerWords =>
+      $composableBuilder(column: $table.readerWords, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get pageMs =>
+      $composableBuilder(column: $table.pageMs, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get pagePages =>
+      $composableBuilder(column: $table.pagePages, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get longestMs =>
+      $composableBuilder(column: $table.longestMs, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get longestFp =>
+      $composableBuilder(column: $table.longestFp, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get formatMs =>
+      $composableBuilder(column: $table.formatMs, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get hourMs =>
+      $composableBuilder(column: $table.hourMs, builder: (column) => ColumnOrderings(column));
+}
+
+class $$DailyStatsTableAnnotationComposer extends Composer<_$AppDatabase, $DailyStatsTable> {
+  $$DailyStatsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<int> get day => $composableBuilder(column: $table.day, builder: (column) => column);
+
+  GeneratedColumn<int> get readingMs => $composableBuilder(column: $table.readingMs, builder: (column) => column);
+
+  GeneratedColumn<int> get listeningMs => $composableBuilder(column: $table.listeningMs, builder: (column) => column);
+
+  GeneratedColumn<int> get words => $composableBuilder(column: $table.words, builder: (column) => column);
+
+  GeneratedColumn<int> get pages => $composableBuilder(column: $table.pages, builder: (column) => column);
+
+  GeneratedColumn<int> get sessions => $composableBuilder(column: $table.sessions, builder: (column) => column);
+
+  GeneratedColumn<int> get readerMs => $composableBuilder(column: $table.readerMs, builder: (column) => column);
+
+  GeneratedColumn<int> get readerWords => $composableBuilder(column: $table.readerWords, builder: (column) => column);
+
+  GeneratedColumn<int> get pageMs => $composableBuilder(column: $table.pageMs, builder: (column) => column);
+
+  GeneratedColumn<int> get pagePages => $composableBuilder(column: $table.pagePages, builder: (column) => column);
+
+  GeneratedColumn<int> get longestMs => $composableBuilder(column: $table.longestMs, builder: (column) => column);
+
+  GeneratedColumn<String> get longestFp => $composableBuilder(column: $table.longestFp, builder: (column) => column);
+
+  GeneratedColumn<String> get formatMs => $composableBuilder(column: $table.formatMs, builder: (column) => column);
+
+  GeneratedColumn<String> get hourMs => $composableBuilder(column: $table.hourMs, builder: (column) => column);
+}
+
+class $$DailyStatsTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $DailyStatsTable,
+          DailyStat,
+          $$DailyStatsTableFilterComposer,
+          $$DailyStatsTableOrderingComposer,
+          $$DailyStatsTableAnnotationComposer,
+          $$DailyStatsTableCreateCompanionBuilder,
+          $$DailyStatsTableUpdateCompanionBuilder,
+          (DailyStat, BaseReferences<_$AppDatabase, $DailyStatsTable, DailyStat>),
+          DailyStat,
+          PrefetchHooks Function()
+        > {
+  $$DailyStatsTableTableManager(_$AppDatabase db, $DailyStatsTable table)
+    : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () => $$DailyStatsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () => $$DailyStatsTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () => $$DailyStatsTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<int> day = const Value.absent(),
+                Value<int> readingMs = const Value.absent(),
+                Value<int> listeningMs = const Value.absent(),
+                Value<int> words = const Value.absent(),
+                Value<int> pages = const Value.absent(),
+                Value<int> sessions = const Value.absent(),
+                Value<int> readerMs = const Value.absent(),
+                Value<int> readerWords = const Value.absent(),
+                Value<int> pageMs = const Value.absent(),
+                Value<int> pagePages = const Value.absent(),
+                Value<int> longestMs = const Value.absent(),
+                Value<String?> longestFp = const Value.absent(),
+                Value<String> formatMs = const Value.absent(),
+                Value<String> hourMs = const Value.absent(),
+              }) => DailyStatsCompanion(
+                day: day,
+                readingMs: readingMs,
+                listeningMs: listeningMs,
+                words: words,
+                pages: pages,
+                sessions: sessions,
+                readerMs: readerMs,
+                readerWords: readerWords,
+                pageMs: pageMs,
+                pagePages: pagePages,
+                longestMs: longestMs,
+                longestFp: longestFp,
+                formatMs: formatMs,
+                hourMs: hourMs,
+              ),
+          createCompanionCallback:
+              ({
+                Value<int> day = const Value.absent(),
+                Value<int> readingMs = const Value.absent(),
+                Value<int> listeningMs = const Value.absent(),
+                Value<int> words = const Value.absent(),
+                Value<int> pages = const Value.absent(),
+                Value<int> sessions = const Value.absent(),
+                Value<int> readerMs = const Value.absent(),
+                Value<int> readerWords = const Value.absent(),
+                Value<int> pageMs = const Value.absent(),
+                Value<int> pagePages = const Value.absent(),
+                Value<int> longestMs = const Value.absent(),
+                Value<String?> longestFp = const Value.absent(),
+                Value<String> formatMs = const Value.absent(),
+                Value<String> hourMs = const Value.absent(),
+              }) => DailyStatsCompanion.insert(
+                day: day,
+                readingMs: readingMs,
+                listeningMs: listeningMs,
+                words: words,
+                pages: pages,
+                sessions: sessions,
+                readerMs: readerMs,
+                readerWords: readerWords,
+                pageMs: pageMs,
+                pagePages: pagePages,
+                longestMs: longestMs,
+                longestFp: longestFp,
+                formatMs: formatMs,
+                hourMs: hourMs,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map(
+                (e) => (
+                  e.readTable<$DailyStatsTable, DailyStat>(table),
+                  BaseReferences<_$AppDatabase, $DailyStatsTable, DailyStat>(db, table, e),
+                ),
+              )
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$DailyStatsTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $DailyStatsTable,
+      DailyStat,
+      $$DailyStatsTableFilterComposer,
+      $$DailyStatsTableOrderingComposer,
+      $$DailyStatsTableAnnotationComposer,
+      $$DailyStatsTableCreateCompanionBuilder,
+      $$DailyStatsTableUpdateCompanionBuilder,
+      (DailyStat, BaseReferences<_$AppDatabase, $DailyStatsTable, DailyStat>),
+      DailyStat,
+      PrefetchHooks Function()
+    >;
+typedef $$BookStatsTableCreateCompanionBuilder = BookStatsCompanion Function({
+  required String fingerprint,
+  Value<int> readingMs,
+  Value<int> listeningMs,
+  Value<int> sessions,
+  Value<int> words,
+  Value<int> pages,
+  Value<int> readerMs,
+  Value<int> readerWords,
+  Value<int> pageMs,
+  Value<int> pagePages,
+  Value<int> longestMs,
+  Value<int> medianPageMs,
+  Value<DateTime?> firstRead,
+  Value<DateTime?> lastRead,
+  Value<DateTime?> finishedAt,
+  Value<int> rowid,
+});
+typedef $$BookStatsTableUpdateCompanionBuilder = BookStatsCompanion Function({
+  Value<String> fingerprint,
+  Value<int> readingMs,
+  Value<int> listeningMs,
+  Value<int> sessions,
+  Value<int> words,
+  Value<int> pages,
+  Value<int> readerMs,
+  Value<int> readerWords,
+  Value<int> pageMs,
+  Value<int> pagePages,
+  Value<int> longestMs,
+  Value<int> medianPageMs,
+  Value<DateTime?> firstRead,
+  Value<DateTime?> lastRead,
+  Value<DateTime?> finishedAt,
+  Value<int> rowid,
+});
+
+class $$BookStatsTableFilterComposer extends Composer<_$AppDatabase, $BookStatsTable> {
+  $$BookStatsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get fingerprint =>
+      $composableBuilder(column: $table.fingerprint, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get readingMs =>
+      $composableBuilder(column: $table.readingMs, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get listeningMs =>
+      $composableBuilder(column: $table.listeningMs, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get sessions =>
+      $composableBuilder(column: $table.sessions, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get words => $composableBuilder(column: $table.words, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get pages => $composableBuilder(column: $table.pages, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get readerMs =>
+      $composableBuilder(column: $table.readerMs, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get readerWords =>
+      $composableBuilder(column: $table.readerWords, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get pageMs =>
+      $composableBuilder(column: $table.pageMs, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get pagePages =>
+      $composableBuilder(column: $table.pagePages, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get longestMs =>
+      $composableBuilder(column: $table.longestMs, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get medianPageMs =>
+      $composableBuilder(column: $table.medianPageMs, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<DateTime> get firstRead =>
+      $composableBuilder(column: $table.firstRead, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<DateTime> get lastRead =>
+      $composableBuilder(column: $table.lastRead, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<DateTime> get finishedAt =>
+      $composableBuilder(column: $table.finishedAt, builder: (column) => ColumnFilters(column));
+}
+
+class $$BookStatsTableOrderingComposer extends Composer<_$AppDatabase, $BookStatsTable> {
+  $$BookStatsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get fingerprint =>
+      $composableBuilder(column: $table.fingerprint, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get readingMs =>
+      $composableBuilder(column: $table.readingMs, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get listeningMs =>
+      $composableBuilder(column: $table.listeningMs, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get sessions =>
+      $composableBuilder(column: $table.sessions, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get words =>
+      $composableBuilder(column: $table.words, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get pages =>
+      $composableBuilder(column: $table.pages, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get readerMs =>
+      $composableBuilder(column: $table.readerMs, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get readerWords =>
+      $composableBuilder(column: $table.readerWords, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get pageMs =>
+      $composableBuilder(column: $table.pageMs, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get pagePages =>
+      $composableBuilder(column: $table.pagePages, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get longestMs =>
+      $composableBuilder(column: $table.longestMs, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get medianPageMs =>
+      $composableBuilder(column: $table.medianPageMs, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<DateTime> get firstRead =>
+      $composableBuilder(column: $table.firstRead, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<DateTime> get lastRead =>
+      $composableBuilder(column: $table.lastRead, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<DateTime> get finishedAt =>
+      $composableBuilder(column: $table.finishedAt, builder: (column) => ColumnOrderings(column));
+}
+
+class $$BookStatsTableAnnotationComposer extends Composer<_$AppDatabase, $BookStatsTable> {
+  $$BookStatsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get fingerprint =>
+      $composableBuilder(column: $table.fingerprint, builder: (column) => column);
+
+  GeneratedColumn<int> get readingMs => $composableBuilder(column: $table.readingMs, builder: (column) => column);
+
+  GeneratedColumn<int> get listeningMs => $composableBuilder(column: $table.listeningMs, builder: (column) => column);
+
+  GeneratedColumn<int> get sessions => $composableBuilder(column: $table.sessions, builder: (column) => column);
+
+  GeneratedColumn<int> get words => $composableBuilder(column: $table.words, builder: (column) => column);
+
+  GeneratedColumn<int> get pages => $composableBuilder(column: $table.pages, builder: (column) => column);
+
+  GeneratedColumn<int> get readerMs => $composableBuilder(column: $table.readerMs, builder: (column) => column);
+
+  GeneratedColumn<int> get readerWords => $composableBuilder(column: $table.readerWords, builder: (column) => column);
+
+  GeneratedColumn<int> get pageMs => $composableBuilder(column: $table.pageMs, builder: (column) => column);
+
+  GeneratedColumn<int> get pagePages => $composableBuilder(column: $table.pagePages, builder: (column) => column);
+
+  GeneratedColumn<int> get longestMs => $composableBuilder(column: $table.longestMs, builder: (column) => column);
+
+  GeneratedColumn<int> get medianPageMs => $composableBuilder(column: $table.medianPageMs, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get firstRead => $composableBuilder(column: $table.firstRead, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get lastRead => $composableBuilder(column: $table.lastRead, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get finishedAt =>
+      $composableBuilder(column: $table.finishedAt, builder: (column) => column);
+}
+
+class $$BookStatsTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $BookStatsTable,
+          BookStat,
+          $$BookStatsTableFilterComposer,
+          $$BookStatsTableOrderingComposer,
+          $$BookStatsTableAnnotationComposer,
+          $$BookStatsTableCreateCompanionBuilder,
+          $$BookStatsTableUpdateCompanionBuilder,
+          (BookStat, BaseReferences<_$AppDatabase, $BookStatsTable, BookStat>),
+          BookStat,
+          PrefetchHooks Function()
+        > {
+  $$BookStatsTableTableManager(_$AppDatabase db, $BookStatsTable table)
+    : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () => $$BookStatsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () => $$BookStatsTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () => $$BookStatsTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<String> fingerprint = const Value.absent(),
+                Value<int> readingMs = const Value.absent(),
+                Value<int> listeningMs = const Value.absent(),
+                Value<int> sessions = const Value.absent(),
+                Value<int> words = const Value.absent(),
+                Value<int> pages = const Value.absent(),
+                Value<int> readerMs = const Value.absent(),
+                Value<int> readerWords = const Value.absent(),
+                Value<int> pageMs = const Value.absent(),
+                Value<int> pagePages = const Value.absent(),
+                Value<int> longestMs = const Value.absent(),
+                Value<int> medianPageMs = const Value.absent(),
+                Value<DateTime?> firstRead = const Value.absent(),
+                Value<DateTime?> lastRead = const Value.absent(),
+                Value<DateTime?> finishedAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => BookStatsCompanion(
+                fingerprint: fingerprint,
+                readingMs: readingMs,
+                listeningMs: listeningMs,
+                sessions: sessions,
+                words: words,
+                pages: pages,
+                readerMs: readerMs,
+                readerWords: readerWords,
+                pageMs: pageMs,
+                pagePages: pagePages,
+                longestMs: longestMs,
+                medianPageMs: medianPageMs,
+                firstRead: firstRead,
+                lastRead: lastRead,
+                finishedAt: finishedAt,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String fingerprint,
+                Value<int> readingMs = const Value.absent(),
+                Value<int> listeningMs = const Value.absent(),
+                Value<int> sessions = const Value.absent(),
+                Value<int> words = const Value.absent(),
+                Value<int> pages = const Value.absent(),
+                Value<int> readerMs = const Value.absent(),
+                Value<int> readerWords = const Value.absent(),
+                Value<int> pageMs = const Value.absent(),
+                Value<int> pagePages = const Value.absent(),
+                Value<int> longestMs = const Value.absent(),
+                Value<int> medianPageMs = const Value.absent(),
+                Value<DateTime?> firstRead = const Value.absent(),
+                Value<DateTime?> lastRead = const Value.absent(),
+                Value<DateTime?> finishedAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => BookStatsCompanion.insert(
+                fingerprint: fingerprint,
+                readingMs: readingMs,
+                listeningMs: listeningMs,
+                sessions: sessions,
+                words: words,
+                pages: pages,
+                readerMs: readerMs,
+                readerWords: readerWords,
+                pageMs: pageMs,
+                pagePages: pagePages,
+                longestMs: longestMs,
+                medianPageMs: medianPageMs,
+                firstRead: firstRead,
+                lastRead: lastRead,
+                finishedAt: finishedAt,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map(
+                (e) => (
+                  e.readTable<$BookStatsTable, BookStat>(table),
+                  BaseReferences<_$AppDatabase, $BookStatsTable, BookStat>(db, table, e),
+                ),
+              )
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$BookStatsTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $BookStatsTable,
+      BookStat,
+      $$BookStatsTableFilterComposer,
+      $$BookStatsTableOrderingComposer,
+      $$BookStatsTableAnnotationComposer,
+      $$BookStatsTableCreateCompanionBuilder,
+      $$BookStatsTableUpdateCompanionBuilder,
+      (BookStat, BaseReferences<_$AppDatabase, $BookStatsTable, BookStat>),
+      BookStat,
+      PrefetchHooks Function()
+    >;
+typedef $$BookDaysTableCreateCompanionBuilder = BookDaysCompanion Function({
+  required String fingerprint,
+  required int day,
+  Value<int> ms,
+  Value<int> rowid,
+});
+typedef $$BookDaysTableUpdateCompanionBuilder = BookDaysCompanion Function({
+  Value<String> fingerprint,
+  Value<int> day,
+  Value<int> ms,
+  Value<int> rowid,
+});
+
+class $$BookDaysTableFilterComposer extends Composer<_$AppDatabase, $BookDaysTable> {
+  $$BookDaysTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get fingerprint =>
+      $composableBuilder(column: $table.fingerprint, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get day => $composableBuilder(column: $table.day, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get ms => $composableBuilder(column: $table.ms, builder: (column) => ColumnFilters(column));
+}
+
+class $$BookDaysTableOrderingComposer extends Composer<_$AppDatabase, $BookDaysTable> {
+  $$BookDaysTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get fingerprint =>
+      $composableBuilder(column: $table.fingerprint, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get day => $composableBuilder(column: $table.day, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get ms => $composableBuilder(column: $table.ms, builder: (column) => ColumnOrderings(column));
+}
+
+class $$BookDaysTableAnnotationComposer extends Composer<_$AppDatabase, $BookDaysTable> {
+  $$BookDaysTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get fingerprint =>
+      $composableBuilder(column: $table.fingerprint, builder: (column) => column);
+
+  GeneratedColumn<int> get day => $composableBuilder(column: $table.day, builder: (column) => column);
+
+  GeneratedColumn<int> get ms => $composableBuilder(column: $table.ms, builder: (column) => column);
+}
+
+class $$BookDaysTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $BookDaysTable,
+          BookDay,
+          $$BookDaysTableFilterComposer,
+          $$BookDaysTableOrderingComposer,
+          $$BookDaysTableAnnotationComposer,
+          $$BookDaysTableCreateCompanionBuilder,
+          $$BookDaysTableUpdateCompanionBuilder,
+          (BookDay, BaseReferences<_$AppDatabase, $BookDaysTable, BookDay>),
+          BookDay,
+          PrefetchHooks Function()
+        > {
+  $$BookDaysTableTableManager(_$AppDatabase db, $BookDaysTable table)
+    : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () => $$BookDaysTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () => $$BookDaysTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () => $$BookDaysTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback: ({
+            Value<String> fingerprint = const Value.absent(),
+            Value<int> day = const Value.absent(),
+            Value<int> ms = const Value.absent(),
+            Value<int> rowid = const Value.absent(),
+          }) => BookDaysCompanion(fingerprint: fingerprint, day: day, ms: ms, rowid: rowid),
+          createCompanionCallback: ({
+            required String fingerprint,
+            required int day,
+            Value<int> ms = const Value.absent(),
+            Value<int> rowid = const Value.absent(),
+          }) => BookDaysCompanion.insert(fingerprint: fingerprint, day: day, ms: ms, rowid: rowid),
+          withReferenceMapper: (p0) => p0
+              .map(
+                (e) => (
+                  e.readTable<$BookDaysTable, BookDay>(table),
+                  BaseReferences<_$AppDatabase, $BookDaysTable, BookDay>(db, table, e),
+                ),
+              )
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$BookDaysTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $BookDaysTable,
+      BookDay,
+      $$BookDaysTableFilterComposer,
+      $$BookDaysTableOrderingComposer,
+      $$BookDaysTableAnnotationComposer,
+      $$BookDaysTableCreateCompanionBuilder,
+      $$BookDaysTableUpdateCompanionBuilder,
+      (BookDay, BaseReferences<_$AppDatabase, $BookDaysTable, BookDay>),
+      BookDay,
+      PrefetchHooks Function()
+    >;
 
 class $AppDatabaseManager {
   final _$AppDatabase _db;
@@ -4835,4 +8250,9 @@ class $AppDatabaseManager {
   $$AnnotationsTableTableManager get annotations => $$AnnotationsTableTableManager(_db, _db.annotations);
   $$RecentsTableTableManager get recents => $$RecentsTableTableManager(_db, _db.recents);
   $$PlacesTableTableManager get places => $$PlacesTableTableManager(_db, _db.places);
+  $$ReadingSessionsTableTableManager get readingSessions =>
+      $$ReadingSessionsTableTableManager(_db, _db.readingSessions);
+  $$DailyStatsTableTableManager get dailyStats => $$DailyStatsTableTableManager(_db, _db.dailyStats);
+  $$BookStatsTableTableManager get bookStats => $$BookStatsTableTableManager(_db, _db.bookStats);
+  $$BookDaysTableTableManager get bookDays => $$BookDaysTableTableManager(_db, _db.bookDays);
 }

@@ -7,7 +7,7 @@ import '../../core/theme/tokens.dart';
 import '../../core/theme/typography.dart';
 import '../../design_system/app_icon.dart';
 import '../../design_system/buttons.dart';
-import '../../design_system/covers.dart' show DashedOutline;
+import '../../design_system/covers.dart' show DashedOutline, FormatBadge;
 
 /// Board 5's components for the Files tab: rows, the privacy card, quick
 /// access cards, skeletons, the loading row and the picker bar.
@@ -86,6 +86,7 @@ class ExplorerRow extends StatelessWidget {
     this.statusOn = false,
     this.switchValue,
     this.onSwitch,
+    this.badge,
     this.trailing,
     this.trailingAccent = false,
     this.trailingFilled = false,
@@ -113,6 +114,9 @@ class ExplorerRow extends StatelessWidget {
   final bool statusOn;
   final bool? switchValue;
   final ValueChanged<bool>? onSwitch;
+
+  /// The real extension, trailing (board 6, V3 badges).
+  final String? badge;
   final IconData? trailing;
   final bool trailingAccent;
   final bool trailingFilled;
@@ -178,6 +182,7 @@ class ExplorerRow extends StatelessWidget {
                 ],
               ),
             ),
+            if (badge != null) FormatBadge(badge!),
             if (status != null)
               Text(
                 status!,

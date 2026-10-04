@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:drift/drift.dart' hide isNull;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:unfurl/core/db/database.dart';
@@ -48,6 +49,73 @@ void main() {
     await db.into(db.places).insert(PlacesCompanion.insert(path: '/storage/emulated/0/Download', name: 'Download'));
     expect((await db.select(db.places).get()).single.pinned, isFalse);
     expect(await db.searchEntries('pride'), <int>[e.id]);
+    await db.close();
+  });
+
+  test('schema 1 to 3: annotations and positions survive; v3 columns and tables work', () async {
+    final AppDatabase db = AppDatabase(v1WithData());
+    expect(db.schemaVersion, 3);
+    final Annotation a = (await db.select(db.annotations).get()).single;
+    expect((a.quote, a.note), ('truth', 'a note'));
+    final Document d = (await db.select(db.documents).get()).single;
+    expect((d.position, d.progress, d.issue), ('{"s":3}', 0.4, null));
+    expect((await db.select(db.entries).get()).single.issue, isNull);
+    // The aggregates Insights reads, and their indexes.
+    await db.into(db.dailyStats).insert(DailyStatsCompanion.insert(day: const Value<int>(20261004)));
+    await db.into(db.bookStats).insert(BookStatsCompanion.insert(fingerprint: 'fp1'));
+    await db.into(db.bookDays).insert(BookDaysCompanion.insert(fingerprint: 'fp1', day: 20261004));
+    expect((await db.select(db.dailyStats).get()).single.hourMs, '');
+    final List<QueryRow> idx = await db.customSelect("SELECT name FROM sqlite_master WHERE type = 'index'").get();
+    expect(
+      idx.map((QueryRow r) => r.read<String>('name')),
+      containsAll(<String>['sessions_doc', 'sessions_open', 'book_stats_time']),
+    );
+    await db.close();
+  });
+
+  test('schema 2 to 3: the device row rescans for the new formats; data survives', () async {
+    final AppDatabase db = AppDatabase(
+      NativeDatabase.memory(
+        setup: (raw) {
+          if (raw.userVersion != 0) return;
+          for (final String stmt in File('test/core/fixtures/schema_v1.sql').readAsStringSync().split(';\n')) {
+            final String sql = stmt.trim().replaceAll(RegExp(r';$'), '');
+            if (sql.isNotEmpty && !sql.startsWith("CREATE TABLE 'entries_fts_")) raw.execute(sql);
+          }
+          // What schema 2's migration added.
+          raw
+            ..execute("ALTER TABLE folders ADD COLUMN source TEXT NOT NULL DEFAULT 'saf_folder'")
+            ..execute("ALTER TABLE entries ADD COLUMN source TEXT NOT NULL DEFAULT 'saf_folder'")
+            ..execute(
+              'CREATE TABLE places (path TEXT NOT NULL PRIMARY KEY, name TEXT NOT NULL, '
+              'pinned INTEGER NOT NULL DEFAULT 0 CHECK (pinned IN (0, 1)), visited_at INTEGER NULL)',
+            )
+            ..execute(
+              "INSERT INTO folders (uri, name, path, added_at, source) VALUES ('device://all', 'This device', 'gen:41', 1, 'device')",
+            )
+            ..execute(
+              "INSERT INTO annotations (fingerprint, kind, color, locator, quote, created_at) VALUES ('fp9', 'bookmark', NULL, '{}', 'q', 1)",
+            )
+            ..userVersion = 2;
+        },
+      ),
+    );
+    final Folder device = (await db.select(db.folders).get()).single;
+    expect((device.source, device.path), ('device', ''));
+    expect((await db.select(db.annotations).get()).single.quote, 'q');
+    await db
+        .into(db.readingSessions)
+        .insert(
+          ReadingSessionsCompanion.insert(
+            fingerprint: 'fp9',
+            format: 'epub',
+            mode: 'reader',
+            startedAt: DateTime.utc(2026, 10, 4),
+            endedAt: DateTime.utc(2026, 10, 4, 0, 5),
+            day: 20261004,
+          ),
+        );
+    expect((await db.select(db.readingSessions).get()).single.open, isTrue);
     await db.close();
   });
 }

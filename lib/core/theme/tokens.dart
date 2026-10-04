@@ -45,6 +45,10 @@ abstract final class Radii {
   static const double page = 2;
   static const double full = 999;
 
+  /// The mono detail box on an error state, a format badge's 4 (v3).
+  static const double box = 12;
+  static const double badge = 4;
+
   static const BorderRadius chipR = BorderRadius.all(Radius.circular(chip));
   static const BorderRadius thumbR = BorderRadius.all(Radius.circular(thumb));
   static const BorderRadius cardR = BorderRadius.all(Radius.circular(card));
@@ -53,6 +57,8 @@ abstract final class Radii {
   static const BorderRadius pageR = BorderRadius.all(Radius.circular(page));
   static const BorderRadius sheetR = BorderRadius.vertical(top: Radius.circular(sheet));
   static const BorderRadius fullR = BorderRadius.all(Radius.circular(full));
+  static const BorderRadius boxR = BorderRadius.all(Radius.circular(box));
+  static const BorderRadius badgeR = BorderRadius.all(Radius.circular(badge));
 }
 
 /// Material Symbols Rounded at weight 350, 24dp, 48dp tap target.

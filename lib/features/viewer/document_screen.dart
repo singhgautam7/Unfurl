@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/material.dart';
@@ -19,7 +20,9 @@ import '../../design_system/app_icon.dart';
 import '../../design_system/buttons.dart';
 import '../../design_system/covers.dart';
 import '../../design_system/states.dart';
+import '../../formats/format_problem.dart';
 import '../../formats/format_registry.dart';
+import '../comics/comics_screen.dart';
 import '../office/image_screen.dart';
 import '../office/office_screens.dart';
 import '../office/sheet_screen.dart';
@@ -72,6 +75,7 @@ enum _Failure { missing, unsupported }
 class _DocumentScreenState extends ConsumerState<DocumentScreen> {
   OpenedDoc? _doc;
   _Failure? _failure;
+  FormatProblem? _problem;
 
   @override
   void initState() {
@@ -81,12 +85,20 @@ class _DocumentScreenState extends ConsumerState<DocumentScreen> {
 
   Future<void> _open() async {
     final DocRef asked = widget.request.ref;
-    final FormatModule? format = Formats.ofRef(asked);
-    if (format == null) return setState(() => _failure = _Failure.unsupported);
+    final FormatModule? byName = Formats.ofRef(asked);
+    if (byName == null) return setState(() => _failure = _Failure.unsupported);
+    FormatModule format = byName;
     final DocRef? ref = await Platform.stat(asked.uri);
     final String? fp = ref == null ? null : await Files.fingerprint(ref.uri);
     if (!mounted) return;
     if (ref == null || fp == null) return setState(() => _failure = _Failure.missing);
+    // The first bytes decide where the extension misleads (board 6, V3).
+    try {
+      final Uint8List head = await Files.withFd<Uint8List>(ref.uri, (Fd fd) async => fd.read(0, 512)) ?? Uint8List(0);
+      format = Formats.sniff(head, byName) ?? byName;
+    } on FormatProblem catch (p) {
+      return setState(() => _problem = p);
+    }
     final Document record = await ref.let((DocRef r) => this.ref.read(libraryProvider).touch(fp, r));
     await this.ref.read(libraryProvider).addRecent(ref, fp);
     await this.ref.read(settingsProvider.notifier).setOpenedFile();
@@ -108,11 +120,12 @@ class _DocumentScreenState extends ConsumerState<DocumentScreen> {
   Widget build(BuildContext context) => AnimatedSwitcher(
     duration: Motion.of(context, Motion.fast),
     switchInCurve: Motion.decelerate,
-    child: KeyedSubtree(key: ValueKey<Object>(_failure ?? _doc?.fingerprint ?? 'opening'), child: _body()),
+    child: KeyedSubtree(key: ValueKey<Object>(_problem ?? _failure ?? _doc?.fingerprint ?? 'opening'), child: _body()),
   );
 
   Widget _body() {
     final OpenedDoc? doc = _doc;
+    if (_problem != null) return problemState(context, widget.request.ref, _problem!);
     if (_failure != null) return _FailureView(failure: _failure!, ref: widget.request.ref);
     if (doc == null) return OpeningCard(ref: widget.request.ref);
     return switch (doc.format.view) {
@@ -122,6 +135,7 @@ class _DocumentScreenState extends ConsumerState<DocumentScreen> {
       ViewKind.grid => SheetScreen(doc: doc),
       ViewKind.image => ImageScreen(doc: doc),
       ViewKind.reader => ReaderScreen(doc: doc),
+      ViewKind.comics => ComicsScreen(doc: doc),
     };
   }
 }
@@ -206,10 +220,7 @@ class OpeningCard extends StatelessWidget {
                         children: <Widget>[
                           Text(ref.name, style: UnfurlType.title.copyWith(color: c.onSurface)),
                           Text(
-                            <String>[
-                              m?.label ?? ref.extension.toUpperCase(),
-                              if (ref.size > 0) Files.size(ref.size),
-                            ].join(' · '),
+                            <String>[Formats.labelOf(ref.name), if (ref.size > 0) Files.size(ref.size)].join(' · '),
                             style: UnfurlType.monoLabel.copyWith(height: 1.6, color: c.onSurfaceVariant),
                           ),
                         ],
@@ -365,3 +376,92 @@ Widget corruptState(BuildContext context, DocRef ref) => DocStateScaffold(
     ],
   ),
 );
+
+/// Board 6, V3: a file Unfurl recognises but can't read. DRM and a damaged
+/// archive in the danger tone, an unsupported variant neutral; the file name,
+/// format and cause in the mono box. [onOpenReadable] offers what could be read.
+Widget problemState(BuildContext context, DocRef ref, FormatProblem p, {VoidCallback? onOpenReadable}) {
+  final String ext = Formats.labelOf(ref.name);
+  final FormatModule? m = Formats.ofRef(ref);
+  final bool comic = m == Formats.comics;
+  final (int, int)? readable = p.readable;
+  final (IconData icon, EmptyTone tone, String title, String message, String detail) = switch (p.kind) {
+    ProblemKind.drm => (
+      AppIcons.lock,
+      EmptyTone.danger,
+      'This book is protected (DRM) and can’t be opened',
+      'The store locked this file to its own app. Unfurl doesn’t remove DRM. Open it in the app you bought it from, or download a DRM-free copy if the store offers one.',
+      '${ref.name} · $ext · ${p.detail}',
+    ),
+    ProblemKind.damaged when readable != null => (
+      AppIcons.brokenImage,
+      EmptyTone.danger,
+      'This archive is damaged',
+      'Unfurl could read ${readable.$1}${readable.$2 > readable.$1 ? ' of ${readable.$2}' : ''} pages. The file may not have finished downloading. Try copying or downloading it again.',
+      '${ref.name} · $ext · ${readable.$2 > readable.$1 ? 'pages ${readable.$1 + 1}–${readable.$2} unreadable' : 'the end of the file is missing'}',
+    ),
+    ProblemKind.damaged => (
+      AppIcons.brokenImage,
+      EmptyTone.danger,
+      comic ? 'This archive is damaged' : 'This file can’t be opened',
+      'It looks damaged or incomplete. If it came from a download, try getting it again.',
+      '${ref.name} · $ext · ${p.detail}',
+    ),
+    ProblemKind.unsupported => (
+      AppIcons.help,
+      EmptyTone.neutral,
+      comic ? 'This comic archive type isn’t supported' : 'This Kindle file type isn’t supported',
+      switch (p.detail) {
+        'Topaz (AZW1)' => 'Unfurl opens MOBI, PRC, AZW and AZW3 (KF8). This file uses Topaz, an older Kindle format made from scanned pages.',
+        'KFX' => 'Unfurl opens MOBI, PRC, AZW and AZW3 (KF8). This file uses KFX, a newer Kindle format.',
+        'RAR 5 archive' =>
+          'Unfurl opens CBZ, CB7, CBT and CBR made with RAR 4 or older. This comic was packed with RAR 5.',
+        _ =>
+          comic
+              ? 'Unfurl opens CBZ, CBR, CB7 and CBT comics. This file’s archive couldn’t be read.'
+              : 'Unfurl opens MOBI, PRC, AZW and AZW3 (KF8). This file uses a variant it can’t read.',
+      },
+      '${ref.name} · ${p.detail}',
+    ),
+  };
+  return Scaffold(
+    body: SafeArea(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Padding(
+            padding: const EdgeInsets.fromLTRB(Space.xs, Space.xs, 0, 0),
+            child: AppIconButton(
+              icon: AppIcons.close,
+              filled: false,
+              semanticLabel: 'Close',
+              onPressed: () => Navigator.of(context).maybePop(),
+            ),
+          ),
+          Expanded(
+            child: EmptyState(
+              icon: icon,
+              tone: tone,
+              small: true,
+              top: Space.xl,
+              title: title,
+              message: message,
+              detail: detail,
+              actions: <Widget>[
+                if (onOpenReadable != null && readable != null)
+                  AppButton(label: 'Open ${readable.$1} pages', onPressed: onOpenReadable)
+                else
+                  AppButton(
+                    label: 'Open in another app',
+                    icon: AppIcons.openInNew,
+                    onPressed: () => Platform.openWith(ref.uri, ref.mime),
+                  ),
+                AppButton(label: 'Close', type: AppButtonType.text, onPressed: () => Navigator.of(context).maybePop()),
+              ],
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
+}

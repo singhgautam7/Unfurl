@@ -20,6 +20,7 @@ class MainActivity : FlutterActivity() {
     private lateinit var storage: Storage
     private lateinit var speech: Speech
     private lateinit var explorer: Explorer
+    private lateinit var comics: Comics
     private var pending: MethodChannel.Result? = null
     private var pendingIntent: Map<String, Any?>? = null
     private var volumeKeys = false
@@ -39,6 +40,7 @@ class MainActivity : FlutterActivity() {
         channel.setMethodCallHandler(::handle)
         Scanner(this).register(messenger)
         explorer = Explorer(this).also { it.register(messenger) }
+        comics = Comics(this)
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -49,6 +51,7 @@ class MainActivity : FlutterActivity() {
 
     override fun onDestroy() {
         if (::speech.isInitialized) speech.shutdown()
+        if (::comics.isInitialized) comics.shutdown()
         super.onDestroy()
     }
 
@@ -63,6 +66,7 @@ class MainActivity : FlutterActivity() {
     }
 
     private fun handle(call: MethodCall, result: MethodChannel.Result) {
+        if (call.method.startsWith("comic") && comics.handle(call, result)) return
         try {
             when (call.method) {
                 "pickFile" -> {

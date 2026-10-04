@@ -22,6 +22,15 @@ class BookItem {
   bool get finished => doc?.finished ?? false;
   bool get unread => !finished && progress <= 0;
   String? get fingerprint => entry.fingerprint ?? doc?.fingerprint;
+
+  /// A comic's issue or volume.
+  String? get issue => doc?.issue ?? entry.issue;
+
+  /// The index found DRM (`Entries.enriched` -2).
+  bool get protected => entry.enriched == -2;
+
+  /// A comic read but without ComicInfo: the tile says "No metadata".
+  bool get noMetadata => format == Formats.comics && entry.enriched == 1 && entry.title == null;
   FormatModule get format => Formats.of(entry.name, entry.mime) ?? Formats.pdf;
 
   /// "Books › Austen": the folder, then the subfolders down to the file. A
@@ -89,7 +98,15 @@ class Library {
   /// Called after each folder scan finishes, for metadata and covers.
   VoidCallback? onScanned;
 
-  static const List<String> bookExts = <String>['pdf', 'epub'];
+  /// Every format the Library lists (PDF, EPUB, Kindle, FB2, HTML, comics).
+  static final List<String> bookExts = Formats.bookExtensions;
+
+  /// What "Find books across this device" looks for: books, minus HTML, which
+  /// would pull in every saved web page and app help file on the phone.
+  static final List<String> deviceExts = <String>[
+    for (final String e in bookExts)
+      if (!Formats.html.extensions.contains(e)) e,
+  ];
 
   // ---------------------------------------------------------------- folders
 
@@ -297,7 +314,7 @@ class Library {
     // Batches are written in arrival order; the end of the walk waits for
     // the last write before pruning what wasn't seen.
     Future<void> writes = Future<void>.value();
-    _running[folderId] = Platform.scan(f.uri).listen(
+    _running[folderId] = Platform.scan(f.uri, exts: deviceExts).listen(
       (List<ScannedEntry> batch) {
         found += batch.length;
         _setScan(folderId, ScanState(folderId: folderId, found: found, expected: previous));
@@ -309,7 +326,9 @@ class Library {
             for (final ScannedEntry s in batch) {
               final Entry? old = known[s.docId];
               final int dot = s.name.lastIndexOf('.');
-              final String ext = s.isDir || dot < 0 ? '' : s.name.substring(dot + 1).toLowerCase();
+              final String ext = s.isDir || dot < 0
+                  ? ''
+                  : (s.name.toLowerCase().endsWith('.fb2.zip') ? 'fbz' : s.name.substring(dot + 1).toLowerCase());
               if (old == null) {
                 b.insert(
                   db.entries,
@@ -450,7 +469,7 @@ class Library {
   }
 
   /// Library's books: those in added folders, or with "Find books across
-  /// this device" every PDF and EPUB on the phone.
+  /// this device" every book on the phone.
   Stream<List<BookItem>> watchBooks({bool device = false}) {
     final JoinedSelectStatement<HasResultSet, dynamic> q =
         db.select(db.entries).join(<Join<HasResultSet, dynamic>>[
@@ -529,7 +548,14 @@ class Library {
 
   /// Called on open: records the document (keyed by fingerprint), its last
   /// known location, and ties every index row with that fingerprint to it.
-  Future<Document> touch(String fingerprint, DocRef ref, {String? title, String? author, int? units}) async {
+  Future<Document> touch(
+    String fingerprint,
+    DocRef ref, {
+    String? title,
+    String? author,
+    int? units,
+    String? issue,
+  }) async {
     final FormatModule? m = Formats.ofRef(ref);
     final Document? d = await document(fingerprint);
     // A book the library already read keeps its own title and author.
@@ -541,6 +567,7 @@ class Library {
               .getSingleOrNull();
       title = e?.title;
       author ??= e?.author;
+      issue ??= e?.issue;
     }
     final DateTime now = DateTime.now();
     if (d == null) {
@@ -555,6 +582,7 @@ class Library {
               title: Value<String?>(title),
               author: Value<String?>(author),
               units: Value<int?>(units),
+              issue: Value<String?>(issue),
               openedAt: Value<DateTime?>(now),
               addedAt: now,
               size: Value<int>(ref.size),
@@ -569,6 +597,7 @@ class Library {
           title: title == null ? const Value<String?>.absent() : Value<String?>(title),
           author: author == null ? const Value<String?>.absent() : Value<String?>(author),
           units: units == null ? const Value<int?>.absent() : Value<int?>(units),
+          issue: issue == null ? const Value<String?>.absent() : Value<String?>(issue),
         ),
       );
     }

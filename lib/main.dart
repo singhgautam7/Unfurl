@@ -45,6 +45,14 @@ void _registerLicences() {
       ('Atkinson Hyperlegible Next', 'assets/fonts/atkinson/OFL.txt'),
       ('OpenDyslexic', 'assets/fonts/opendyslexic/OFL.txt'),
       ('Material Symbols', 'assets/fonts/material_symbols/LICENSE'),
+      // Comic archives, read on the Kotlin side (v3).
+      ('Apache Commons Compress', 'assets/licenses/APACHE-2.0.txt'),
+      ('Apache Commons IO, Lang and Codec', 'assets/licenses/APACHE-2.0.txt'),
+      ('Apache Commons notices', 'assets/licenses/APACHE-NOTICES.txt'),
+      ('XZ for Java', 'assets/licenses/XZ-0BSD.txt'),
+      ('junrar', 'assets/licenses/UNRAR.txt'),
+      ('SLF4J', 'assets/licenses/SLF4J-MIT.txt'),
+      ('foliate-js', 'assets/licenses/FOLIATE-MIT.txt'),
     ]) {
       yield LicenseEntryWithLineBreaks(<String>[name], await rootBundle.loadString(path));
     }

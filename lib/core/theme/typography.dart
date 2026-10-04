@@ -70,6 +70,9 @@ abstract final class UnfurlType {
   /// ALL-CAPS section headers: 600 11 · letter-spacing .08em.
   static TextStyle get sectionHeader => _mono(11, 600, letterSpacing: 0.88);
 
+  /// A format badge on a cover or row: 600 9.5 · .04em (v3).
+  static TextStyle get badge => _mono(9.5, 600, letterSpacing: 0.38).copyWith(height: 1);
+
   static TextTheme textTheme(Color onSurface, Color onSurfaceVariant) => TextTheme(
     displayLarge: display.copyWith(color: onSurface),
     headlineSmall: screenTitle.copyWith(color: onSurface),

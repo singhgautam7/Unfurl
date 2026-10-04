@@ -107,6 +107,7 @@ String opensIn(FormatModule? m) {
     ViewKind.slides => 'Slides and Reader mode',
     ViewKind.grid => 'Sheet view',
     ViewKind.image => 'Image viewer',
+    ViewKind.comics => 'Comics viewer',
   };
 }
 
@@ -118,10 +119,12 @@ String typeName(String name) {
   return switch (m.group) {
     FormatGroup.pdf => 'PDF document',
     FormatGroup.epub => 'EPUB book',
+    FormatGroup.kindle => '$label Kindle book',
+    FormatGroup.fb2 => '$label book',
+    FormatGroup.comics => '$label comic',
     FormatGroup.documents => '$label document',
     FormatGroup.sheets => '$label spreadsheet',
     FormatGroup.slides => '$label presentation',
-    FormatGroup.text => '$label text',
     FormatGroup.images => '$label image',
   };
 }

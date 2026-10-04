@@ -647,9 +647,12 @@ class _LicencesScreenState extends State<LicencesScreen> {
     if (t.contains('sil open font license')) return 'OFL 1.1';
     if (t.contains('apache license')) return 'Apache 2.0';
     if (t.contains('mit license') || t.contains('permission is hereby granted, free of charge')) return 'MIT';
+    if (t.contains('bsd zero clause')) return '0BSD';
+    if (t.contains('unrar')) return 'UnRAR';
     if (t.contains('bsd') || t.contains('redistribution and use in source and binary forms')) return 'BSD-3-Clause';
     if (t.contains('mozilla public license')) return 'MPL 2.0';
     if (t.contains('zlib')) return 'Zlib';
+    if (t.contains('this product includes software developed at')) return 'Apache 2.0';
     return 'See text';
   }
 

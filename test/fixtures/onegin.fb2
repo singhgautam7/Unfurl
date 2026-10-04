@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="windows-1251"?>
+<FictionBook xmlns="http://www.gribuser.ru/xml/fictionbook/2.0" xmlns:l="http://www.w3.org/1999/xlink">
+<description><title-info><author><first-name>Александр</first-name><last-name>Пушкин</last-name></author>
+<book-title>Евгений Онегин</book-title><coverpage><image l:href="#cover.png"/></coverpage><lang>ru</lang></title-info></description>
+<body><title><p>Евгений Онегин</p></title>
+<epigraph><p>P?tri de vanit? il avait encore plus de cette esp?ce d'orgueil...</p><text-author>Tir? d'une lettre particuli?re</text-author></epigraph>
+<section id="ch1"><title><p>Глава первая</p></title>
+<poem><stanza><v>Мой дядя самых честных правил,</v><v>Когда не в шутку занемог,</v><v>Он уважать себя заставил</v><v>И лучше выдумать не мог.<a l:href="#n1" type="note">1</a></v></stanza></poem>
+<p>Так думал молодой <emphasis>повеса</emphasis>, летя в пыли на почтовых.</p></section>
+<section id="ch2"><title><p>Глава вторая</p></title><p>Деревня, где скучал Евгений, была прелестный уголок.</p><empty-line/><p><strong>Конец.</strong></p></section>
+</body>
+<body name="notes"><section id="n1"><title><p>1</p></title><p>Примечание автора.</p></section></body>
+<binary id="cover.png" content-type="image/png">iVBORw0KGgoAAAANSUhEUgAAAHgAAAC0CAIAAADQLH9KAAABbUlEQVR42u3dMQ2EQBBAUeQg62QggOa6k0GNAKA9AfigIbQIABpClll4ky9g86ptJlMs86QEFQhAgxZo0KAp3AVdRp1c3rl96iH02DfR2oUe/r+AgQYNGjRo0KBBgwYNGjRo0KBBgwYNGjRo0KBBgwYNGjRo0KBBgwYNGjRo0KBBgwYNGjRo0G+HtlqRAvoJy0KgQYMGDRq0X0cm0HVXBQw0aNCgQYMGDRo0aNCgQYMGDRo0aNCgQYMGDRo0aNCgQYMGDRo0aNCgQYMGDRo0aNCgQYMGDRq0629RloXkcCRogQbt5qxJtqL8ab86HWjQoAUaNGjQoEELNGjQoEGDFmjQoEGDBi3QoEGDBg1aoEGDBg0atECDBg0aNGiBBg0aNGjQAg0aNGjQoAUaNGjQoEELNGjQoEGDFmjQoEGDBi3QoEGDBg1aoEGDBg0atECDBg0aNGiBBg0aNGjQuhjauKLsFKpAgwYt0KAFOkArFs3p/6Pisy0AAAAASUVORK5CYII=</binary>
+</FictionBook>

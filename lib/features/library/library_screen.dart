@@ -31,7 +31,9 @@ import '../reader/sheets.dart';
 import '../settings/settings_controller.dart';
 import '../files/files_screen.dart' show addFolder;
 
-enum _Filter { all, pdf, epub, unread, finished }
+/// Unread and Finished: v2's chips, in the sort menu since the v3 chip row
+/// holds format families (board 6, V3 chips).
+enum _Status { all, unread, finished }
 
 /// Board 2, A2 and A3: every PDF and EPUB in every folder, subfolders too.
 class LibraryScreen extends ConsumerStatefulWidget {
@@ -42,7 +44,9 @@ class LibraryScreen extends ConsumerStatefulWidget {
 }
 
 class _LibraryScreenState extends ConsumerState<LibraryScreen> {
-  _Filter _filter = _Filter.all;
+  /// Null: All.
+  FormatGroup? _family;
+  _Status _status = _Status.all;
   String _query = '';
   Set<int>? _matches;
 
@@ -53,13 +57,13 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
     if (mounted && q.trim() == _query) setState(() => _matches = ids);
   }
 
-  bool _keep(BookItem b) => switch (_filter) {
-    _Filter.all => true,
-    _Filter.pdf => b.format == Formats.pdf,
-    _Filter.epub => b.format == Formats.epub,
-    _Filter.unread => b.unread,
-    _Filter.finished => b.finished,
-  };
+  bool _keep(BookItem b) =>
+      (_family == null || b.format.group == _family) &&
+      switch (_status) {
+        _Status.all => true,
+        _Status.unread => b.unread,
+        _Status.finished => b.finished,
+      };
 
   @override
   Widget build(BuildContext context) {
@@ -73,17 +77,15 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
       _query.isNotEmpty ? 'title' : s.librarySort,
     );
     final int unread = all.where((BookItem b) => b.unread).length;
-    final Map<_Filter, int> chipCounts = <_Filter, int>{
-      _Filter.all: all.length,
-      _Filter.pdf: all.where((BookItem b) => b.format == Formats.pdf).length,
-      _Filter.epub: all.where((BookItem b) => b.format == Formats.epub).length,
-      _Filter.unread: unread,
-      _Filter.finished: all.where((BookItem b) => b.finished).length,
-    };
+    final Map<FormatGroup, int> families = <FormatGroup, int>{};
+    for (final BookItem b in all) {
+      families[b.format.group] = (families[b.format.group] ?? 0) + 1;
+    }
     // "Find books across this device" lists every folder's books, so the
     // folder row would list every folder: it steps away (board 5, X7).
     final bool device = s.findOnDevice && ref.watch(filesAccessProvider.select((FilesAccess a) => a.granted));
-    final bool showFolders = !device && _filter == _Filter.all && _query.isEmpty && folders.isNotEmpty;
+    final bool filtered0 = _family == null && _status == _Status.all;
+    final bool showFolders = !device && filtered0 && _query.isEmpty && folders.isNotEmpty;
     final String sortLabel = switch (s.librarySort) {
       'title' => 'Title',
       'progress' => 'Progress',
@@ -121,7 +123,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                         icon: AppIcons.library,
                         title: 'No books yet',
                         aboveNav: true,
-                        message: 'Add a folder and every PDF and EPUB inside it, subfolders included, shows up here. Unfurl only reads it.',
+                        message: 'Add a folder and every book inside it, subfolders included, shows up here. Unfurl only reads it.',
                         actions: <Widget>[
                           AppButton(
                             label: 'Add folder',
@@ -141,25 +143,29 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                               ),
                             ),
                           ),
-                          SliverToBoxAdapter(
-                            child: ChipRow(
-                              children: <Widget>[
-                                for (final _Filter f in _Filter.values)
+                          // Families present, in the spec's order; none with
+                          // only one (board 6, V3 chips).
+                          if (families.length > 1)
+                            SliverToBoxAdapter(
+                              child: ChipRow(
+                                children: <Widget>[
                                   PillChip(
-                                    label: switch (f) {
-                                      _Filter.all => 'All',
-                                      _Filter.pdf => 'PDF',
-                                      _Filter.epub => 'EPUB',
-                                      _Filter.unread => 'Unread',
-                                      _Filter.finished => 'Finished',
-                                    },
-                                    selected: _filter == f,
-                                    count: _query.isEmpty ? chipCounts[f] : filtered.length,
-                                    onTap: () => setState(() => _filter = f),
+                                    label: 'All',
+                                    selected: _family == null,
+                                    count: _family == null ? (_query.isEmpty ? all.length : filtered.length) : null,
+                                    onTap: () => setState(() => _family = null),
                                   ),
-                              ],
+                                  for (final FormatGroup g in FormatGroup.values)
+                                    if (families.containsKey(g))
+                                      PillChip(
+                                        label: g.label,
+                                        selected: _family == g,
+                                        count: _family == g ? (_query.isEmpty ? families[g] : filtered.length) : null,
+                                        onTap: () => setState(() => _family = _family == g ? null : g),
+                                      ),
+                                ],
+                              ),
                             ),
-                          ),
                           // The folder row: only on All with no search; it
                           // leaves by size and fade, and the grid glides up.
                           SliverToBoxAdapter(
@@ -184,8 +190,12 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                                   Flexible(
                                     child: Text(
                                       _query.isNotEmpty
-                                          ? '${filtered.length} ${filtered.length == 1 ? 'result' : 'results'} for “$_query”${_filter == _Filter.all ? '' : ' in ${_filter.name.toUpperCase()}'}'
-                                          : '${filtered.length} ${filtered.length == 1 ? 'book' : 'books'}${device ? ' on this device' : ''}${_filter == _Filter.all ? ' · $unread unread' : ''}',
+                                          ? '${filtered.length} ${filtered.length == 1 ? 'result' : 'results'} for “$_query”${_family == null ? '' : ' in ${_family!.label}'}'
+                                          : '${filtered.length} ${filtered.length == 1 ? 'book' : 'books'}${device ? ' on this device' : ''}${switch (_status) {
+                                              _Status.all => filtered0 ? ' · $unread unread' : '',
+                                              _Status.unread => ' · unread',
+                                              _Status.finished => ' · finished',
+                                            }}',
                                       style: UnfurlType.monoLabel.copyWith(color: c.onSurfaceVariant),
                                     ),
                                   ),
@@ -205,9 +215,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                                 child: Text(
                                   _query.isNotEmpty
                                       ? 'Nothing matches “$_query”.'
-                                      : (all.isEmpty
-                                            ? 'No PDFs or EPUBs found in your folders yet.'
-                                            : 'No books here.'),
+                                      : (all.isEmpty ? 'No books found in your folders yet.' : 'No books here.'),
                                   style: UnfurlType.body.copyWith(color: c.onSurfaceVariant),
                                 ),
                               ),
@@ -307,6 +315,25 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
           selected: s.librarySort == 'progress',
         ),
         const AppMenuEntry<String>.divider(),
+        AppMenuEntry<String>(
+          value: 'show:all',
+          label: 'Show: All',
+          icon: AppIcons.library,
+          selected: _status == _Status.all,
+        ),
+        AppMenuEntry<String>(
+          value: 'show:unread',
+          label: 'Show: Unread',
+          icon: AppIcons.bookmark,
+          selected: _status == _Status.unread,
+        ),
+        AppMenuEntry<String>(
+          value: 'show:finished',
+          label: 'Show: Finished',
+          icon: AppIcons.checkCircle,
+          selected: _status == _Status.finished,
+        ),
+        const AppMenuEntry<String>.divider(),
         AppMenuEntry<String>(value: 'grid', label: 'View: Grid', icon: AppIcons.gridView, selected: s.libraryGrid),
         AppMenuEntry<String>(value: 'list', label: 'View: List', icon: AppIcons.viewList, selected: !s.libraryGrid),
         const AppMenuEntry<String>.divider(),
@@ -321,6 +348,8 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
     if (!mounted || v == null) return;
     final SettingsController ctl = ref.read(settingsProvider.notifier);
     switch (v) {
+      case 'show:all' || 'show:unread' || 'show:finished':
+        setState(() => _status = _Status.values.byName(v.substring(5)));
       case 'grid' || 'list':
         await ctl.setLibraryGrid(grid: v == 'grid');
       case 'add':
@@ -446,17 +475,35 @@ class _BookTile extends ConsumerWidget {
     final String tag = 'lib:${book.entry.id}';
     return CoverTile(
       heroTag: tag,
-      cover: CoverArt(title: book.title, author: book.author, fingerprint: book.fingerprint, format: book.format),
+      cover: CoverArt(
+        title: book.noMetadata ? book.entry.name : book.title,
+        author: book.author,
+        fingerprint: book.fingerprint,
+        format: book.format,
+        badge: Formats.labelOf(book.entry.name),
+        issue: book.issue,
+      ),
       progress: book.progress,
       finished: book.finished,
-      meta: book.format == Formats.pdf && book.progress > 0 && !book.finished
-          ? 'PDF · ${(book.progress * 100).round()}%'
-          : null,
+      muted: book.protected,
+      meta: _tileMeta(book),
       path: book.path,
       onTap: () => openBook(context, book, heroTag: tag),
       onLongPress: () => showBookSheet(context, ref, book),
     );
   }
+}
+
+/// "#14 · 30%", "No metadata", "Protected (DRM)", "PDF · 41%"; null for
+/// the tile's own New / 41% / Finished.
+String? _tileMeta(BookItem book) {
+  if (book.protected) return 'Protected (DRM)';
+  if (book.noMetadata) return 'No metadata';
+  final String pct = '${(book.progress * 100).round()}%';
+  if (book.format == Formats.comics && book.issue != null) {
+    return book.progress > 0 && !book.finished ? '${book.issue} · $pct' : book.issue;
+  }
+  return book.format == Formats.pdf && book.progress > 0 && !book.finished ? 'PDF · $pct' : null;
 }
 
 class _BookRow extends ConsumerWidget {
@@ -517,16 +564,14 @@ class _BookRow extends ConsumerWidget {
                       spacing: Space.sm,
                       children: <Widget>[
                         Expanded(child: ProgressTrack(value: book.progress)),
-                        Text(
-                          '${book.format.label} · $state',
-                          style: UnfurlType.monoLabel.copyWith(color: c.onSurfaceVariant),
-                        ),
+                        Text(_tileMeta(book) ?? state, style: UnfurlType.monoLabel.copyWith(color: c.onSurfaceVariant)),
                       ],
                     ),
                   ),
                 ],
               ),
             ),
+            FormatBadge(Formats.labelOf(book.entry.name)),
           ],
         ),
       ),
@@ -608,7 +653,7 @@ class _SearchCard extends ConsumerWidget {
                         ),
                       ),
                     Text(
-                      '${book.format.label} · ${book.doc?.where?.toLowerCase() ?? (book.unread ? 'not started' : '${(book.progress * 100).round()}%')}',
+                      '${Formats.labelOf(book.entry.name)} · ${book.doc?.where?.toLowerCase() ?? (book.unread ? 'not started' : '${(book.progress * 100).round()}%')}',
                       style: UnfurlType.monoLabel.copyWith(height: 1.6, color: c.onSurfaceVariant),
                     ),
                   ],
@@ -669,7 +714,7 @@ Future<void> showBookSheet(BuildContext context, WidgetRef ref, BookItem book) {
                     if (book.author != null)
                       Text(book.author!, style: UnfurlType.note.copyWith(height: 1.4, color: c.onSurfaceVariant)),
                     Text(
-                      '${book.format.label} · $state${book.doc?.where == null ? '' : ' · ${book.doc!.where}'}',
+                      '${Formats.labelOf(book.entry.name)} · $state${book.doc?.where == null ? '' : ' · ${book.doc!.where}'}',
                       style: UnfurlType.monoLabel.copyWith(height: 1.4, color: c.onSurfaceVariant),
                     ),
                   ],
@@ -696,7 +741,7 @@ Future<void> showBookSheet(BuildContext context, WidgetRef ref, BookItem book) {
             author: book.author,
             facts: <(String, String)>[
               ('Location', '${book.path} › ${book.entry.name}'),
-              ('Size', '${Files.size(book.entry.size)} · ${book.format.label}'),
+              ('Size', '${Files.size(book.entry.size)} · ${Formats.labelOf(book.entry.name)}'),
               if (book.entry.units != null) (book.format == Formats.pdf ? 'Pages' : 'Chapters', '${book.entry.units}'),
               ('Progress', state),
               ('Modified', Files.when(book.entry.modified)),

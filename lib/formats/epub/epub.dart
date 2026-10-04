@@ -5,6 +5,7 @@ import 'package:archive/archive.dart';
 import 'package:path/path.dart' as p;
 import 'package:xml/xml.dart';
 
+import '../format_problem.dart';
 import '../html_blocks.dart';
 import '../reading_document.dart';
 
@@ -27,6 +28,7 @@ class Epub {
 
   factory Epub.open(Uint8List bytes) {
     final Archive zip = ZipDecoder().decodeBytes(bytes);
+    _checkDrm(zip);
     final XmlDocument container = XmlDocument.parse(_text(zip, 'META-INF/container.xml')!);
     final String opfPath = container.descendantElements
         .firstWhere((XmlElement e) => e.localName == 'rootfile')
@@ -37,6 +39,23 @@ class Epub {
   final Archive _zip;
   final String _opfPath;
   final XmlDocument _opf;
+
+  /// Font obfuscation (IDPF and Adobe) only scrambles embedded fonts and the
+  /// book still reads; any other encryption, an Adobe rights file or a
+  /// Readium LCP licence means DRM. Detected, never removed.
+  static void _checkDrm(Archive zip) {
+    if (zip.findFile('META-INF/license.lcpl') != null) throw const FormatProblem(ProblemKind.drm, 'Readium LCP');
+    if (zip.findFile('META-INF/rights.xml') != null) throw const FormatProblem(ProblemKind.drm, 'Adobe DRM');
+    final String? enc = _text(zip, 'META-INF/encryption.xml');
+    if (enc == null) return;
+    const Set<String> obfuscation = <String>{'http://www.idpf.org/2008/embedding', 'http://ns.adobe.com/pdf/enc#RC'};
+    final Iterable<String?> algorithms = XmlDocument.parse(enc).descendantElements
+        .where((XmlElement e) => e.localName == 'EncryptionMethod')
+        .map((XmlElement e) => e.getAttribute('Algorithm'));
+    if (algorithms.any((String? a) => !obfuscation.contains(a))) {
+      throw const FormatProblem(ProblemKind.drm, 'Encrypted');
+    }
+  }
 
   static String? _text(Archive zip, String path) {
     final ArchiveFile? f = zip.findFile(path) ?? zip.findFile(Uri.decodeFull(path));

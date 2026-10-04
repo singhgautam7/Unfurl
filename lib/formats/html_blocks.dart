@@ -1,19 +1,24 @@
 import 'package:xml/xml.dart';
 
 import 'reading_document.dart';
+import 'tag_soup.dart';
 
 /// Turns (X)HTML into reader blocks: headings, paragraphs, quotes, list
 /// items, code, images, tables and rules, with bold, italic, mono, links and
 /// small text inline. Publisher CSS is dropped on purpose: the reader's own
 /// typography and theme always win.
 class HtmlBlocks {
-  HtmlBlocks({required this.resolveImage, this.resolveLink});
+  HtmlBlocks({required this.resolveImage, this.resolveLink, this.aliases = const <String, String>{}});
 
   /// Maps an `src` to a resource key, or null to drop the image.
   final String? Function(String src) resolveImage;
 
   /// Maps an internal `href` to a key in [ReadingDocument.anchors].
   final String Function(String href)? resolveLink;
+
+  /// Other vocabularies read as HTML: FB2's `emphasis` as `em`, `title` as
+  /// `h2` and so on.
+  final Map<String, String> aliases;
 
   final List<Block> _blocks = <Block>[];
   List<Inline> _runs = <Inline>[];
@@ -23,17 +28,14 @@ class HtmlBlocks {
     try {
       return XmlDocument.parse(html, entityMapping: const XmlDefaultEntityMapping.html5());
     } on XmlException {
-      // Markdown output and sloppy XHTML: wrap it and drop what XML refuses.
-      final String cleaned = html
-          .replaceAll(RegExp(r'<!DOCTYPE[^>]*>', caseSensitive: false), '')
-          .replaceAllMapped(
-            RegExp(r'<(br|hr|img|input|meta|link)([^>]*?)(?<!/)>', caseSensitive: false),
-            (Match m) => '<${m[1]}${m[2]} />',
-          )
-          .replaceAll(RegExp(r'&(?![a-zA-Z]+;|#\d+;|#x[0-9a-fA-F]+;)'), '&amp;');
-      return XmlDocument.parse('<root>$cleaned</root>', entityMapping: const XmlDefaultEntityMapping.html5());
+      // Markdown output, sloppy XHTML, old MOBI markup: repair the tree.
+      return TagSoup.parse(html);
     }
   }
+
+  /// An attribute by local name, whatever its prefix (`l:href`, `xlink:href`).
+  static String? attr(XmlElement e, String local) =>
+      e.attributes.where((XmlAttribute a) => a.name.local == local).firstOrNull?.value;
 
   List<Block> convert(XmlNode root) {
     final XmlElement? body = root.descendants
@@ -84,7 +86,7 @@ class HtmlBlocks {
         continue;
       }
       if (child is! XmlElement) continue;
-      final String tag = child.localName.toLowerCase();
+      final String tag = aliases[child.localName] ?? child.localName.toLowerCase();
       final String? id = child.getAttribute('id');
       if (id != null) _pendingAnchor ??= id;
       switch (tag) {
@@ -94,10 +96,7 @@ class HtmlBlocks {
           _runs.add(Inline('\n', bold: marks.bold, italic: marks.italic));
         case 'img' || 'image':
           _flush(quote ? BlockKind.quote : BlockKind.paragraph);
-          final String? src =
-              child.getAttribute('src') ??
-              child.getAttribute('href', namespaceUri: '*') ??
-              child.getAttribute('xlink:href');
+          final String? src = attr(child, 'src') ?? attr(child, 'href') ?? attr(child, 'recindex');
           final String? key = src == null ? null : resolveImage(src);
           if (key != null) {
             _blocks.add(
@@ -164,7 +163,7 @@ class HtmlBlocks {
     'i' || 'em' || 'cite' || 'dfn' || 'var' => m.copyWith(italic: true),
     'code' || 'kbd' || 'samp' || 'tt' => m.copyWith(mono: true),
     'sup' || 'sub' || 'small' => m.copyWith(small: true),
-    'a' => m.copyWith(href: _link(e.getAttribute('href'))),
+    'a' => m.copyWith(href: _link(attr(e, 'href'))),
     _ => m,
   };
 

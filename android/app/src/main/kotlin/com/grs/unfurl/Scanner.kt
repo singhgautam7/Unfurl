@@ -27,14 +27,17 @@ class Scanner(private val context: Context) : EventChannel.StreamHandler {
     fun register(messenger: BinaryMessenger) = EventChannel(messenger, "unfurl/scan").setStreamHandler(this)
 
     override fun onListen(arguments: Any?, events: EventChannel.EventSink) {
-        val tree = Uri.parse((arguments as Map<*, *>)["uri"] as String)
+        val args = arguments as Map<*, *>
+        val tree = Uri.parse(args["uri"] as String)
+        // Device discovery looks for the extensions Dart's format registry calls books.
+        val exts = (args["exts"] as? List<*>)?.filterIsInstance<String>() ?: listOf("pdf", "epub")
         val stop = AtomicBoolean(false).also { cancel = it }
         pool.execute {
             try {
                 val emit: (List<Map<String, Any?>>) -> Unit = { batch -> main.post { if (!stop.get()) events.success(batch) } }
                 when (tree.scheme) {
                     "file" -> walkPath(File(tree.path!!), stop, emit)
-                    "device" -> walkMediaStore(stop, emit)
+                    "device" -> walkMediaStore(exts, stop, emit)
                     else -> walk(tree, stop, emit)
                 }
                 main.post { if (!stop.get()) events.endOfStream() }
@@ -130,7 +133,7 @@ class Scanner(private val context: Context) : EventChannel.StreamHandler {
      * volume, skipping pending, trashed and hidden-folder items and app-private folders.
      * Rows look like a walk's, the MediaStore id standing in for the document id.
      */
-    private fun walkMediaStore(stop: AtomicBoolean, emit: (List<Map<String, Any?>>) -> Unit) {
+    private fun walkMediaStore(exts: List<String>, stop: AtomicBoolean, emit: (List<Map<String, Any?>>) -> Unit) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && !android.os.Environment.isExternalStorageManager()) {
             throw SecurityException("No all-files access")
         }
@@ -142,9 +145,9 @@ class Scanner(private val context: Context) : EventChannel.StreamHandler {
             MediaStore.Files.FileColumns.SIZE,
             MediaStore.Files.FileColumns.DATE_MODIFIED,
         )
+        val byExt = exts.filter { it.all(Char::isLetterOrDigit) }.joinToString(" OR ") { "${MediaStore.Files.FileColumns.DATA} LIKE '%.$it'" }
         val sel = StringBuilder(
-            "(${MediaStore.Files.FileColumns.MIME_TYPE} IN ('application/pdf', 'application/epub+zip') " +
-                "OR ${MediaStore.Files.FileColumns.DATA} LIKE '%.pdf' OR ${MediaStore.Files.FileColumns.DATA} LIKE '%.epub') " +
+            "(${MediaStore.Files.FileColumns.MIME_TYPE} IN ('application/pdf', 'application/epub+zip') OR $byExt) " +
                 "AND ${MediaStore.Files.FileColumns.DATA} NOT LIKE '%/.%' " +
                 "AND ${MediaStore.Files.FileColumns.DATA} NOT LIKE '%/Android/data/%' " +
                 "AND ${MediaStore.Files.FileColumns.DATA} NOT LIKE '%/Android/obb/%'",

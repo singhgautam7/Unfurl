@@ -2,7 +2,10 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:markdown/markdown.dart' as md;
+import 'package:xml/xml.dart';
 
+import '../charsets.dart';
+import '../epub/epub.dart' show BookMeta;
 import '../html_blocks.dart';
 import '../reading_document.dart';
 
@@ -37,6 +40,70 @@ abstract final class TextFormats {
             TocEntry(title: blocks[i].text, section: 0, block: i, level: blocks[i].level - 1),
       ],
     );
+  }
+
+  /// A single-file HTML or XHTML book: sanitised like EPUB content (scripts,
+  /// styles and publisher CSS dropped), images only when embedded as data URIs.
+  static ReadingDocument html(Uint8List bytes, String name) {
+    final Map<String, Uint8List> resources = <String, Uint8List>{};
+    final XmlDocument doc = HtmlBlocks.parse(Charsets.decode(bytes, Charsets.declared(bytes)));
+    final List<Block> blocks = HtmlBlocks(
+      resolveImage: (String src) {
+        final UriData? data = src.startsWith('data:') ? Uri.tryParse(src)?.data : null;
+        if (data == null || !data.mimeType.startsWith('image/')) return null;
+        final String key = 'img${resources.length}';
+        resources[key] = data.contentAsBytes();
+        return key;
+      },
+      resolveLink: (String href) => href.startsWith('#') ? href.substring(1) : href,
+    ).convert(doc);
+    final (String title, String? author) = _htmlMeta(doc, blocks, name);
+    return ReadingDocument(
+      title: title,
+      author: author,
+      unitLabel: 'Section',
+      resources: resources,
+      sections: <Section>[
+        Section(title: title, blocks: blocks.isEmpty ? <Block>[_empty()] : blocks),
+      ],
+      anchors: <String, (int, int)>{
+        for (int i = 0; i < blocks.length; i++)
+          if (blocks[i].anchor != null) blocks[i].anchor!: (0, i),
+      },
+      toc: <TocEntry>[
+        for (int i = 0; i < blocks.length; i++)
+          if (blocks[i].kind == BlockKind.heading && blocks[i].level <= 3)
+            TocEntry(title: blocks[i].text, section: 0, block: i, level: blocks[i].level - 1),
+      ],
+    );
+  }
+
+  /// Title (the `<title>`, else the first top heading, else the file name)
+  /// and author (`<meta name="author">`), for the library index.
+  static BookMeta htmlMeta(Uint8List bytes, String name) {
+    final XmlDocument doc = HtmlBlocks.parse(Charsets.decode(bytes, Charsets.declared(bytes)));
+    final (String title, String? author) = _htmlMeta(doc, const <Block>[], name);
+    return BookMeta(title: title, author: author);
+  }
+
+  static (String, String?) _htmlMeta(XmlDocument doc, List<Block> blocks, String name) {
+    final String? title = doc.descendantElements
+        .where((XmlElement e) => e.localName.toLowerCase() == 'title')
+        .map((XmlElement e) => e.innerText.trim())
+        .where((String t) => t.isNotEmpty)
+        .firstOrNull;
+    final String? author = doc.descendantElements
+        .where(
+          (XmlElement e) => e.localName.toLowerCase() == 'meta' && e.getAttribute('name')?.toLowerCase() == 'author',
+        )
+        .map((XmlElement e) => e.getAttribute('content')?.trim())
+        .where((String? t) => t != null && t.isNotEmpty)
+        .firstOrNull;
+    final String? heading = blocks
+        .where((Block b) => b.kind == BlockKind.heading && b.level == 1)
+        .map((Block b) => b.text)
+        .firstOrNull;
+    return (title ?? heading ?? _stem(name), author);
   }
 
   static ReadingDocument plain(Uint8List bytes, String name) {

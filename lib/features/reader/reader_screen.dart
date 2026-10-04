@@ -10,10 +10,10 @@ import '../../core/providers.dart';
 import '../../core/library/library.dart';
 import '../../core/motion/motion.dart';
 import '../../core/library/enrich.dart';
-import '../../formats/epub/epub.dart';
+import '../../formats/books.dart';
+import '../../formats/format_problem.dart';
 import '../../formats/format_registry.dart';
 import '../../formats/reading_document.dart';
-import '../../formats/text/text_formats.dart';
 import '../viewer/document_screen.dart';
 import 'reader_scaffold.dart';
 
@@ -31,6 +31,7 @@ class ReaderScreen extends ConsumerStatefulWidget {
 class _ReaderScreenState extends ConsumerState<ReaderScreen> {
   ReadingDocument? _reading;
   bool _failed = false;
+  FormatProblem? _problem;
 
   @override
   void initState() {
@@ -48,31 +49,32 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
       final FormatModule f = widget.doc.format;
       final ReadingDocument doc = await _parse(f.id, bytes, name);
       // A book opened from outside the library still shows its own title.
-      if (f.id == 'epub' && widget.doc.record.title == null && doc.title.isNotEmpty) {
+      if (f.book && widget.doc.record.title == null && doc.title.isNotEmpty) {
         unawaited(_library.touch(widget.doc.fingerprint, widget.doc.ref, title: doc.title, author: doc.author));
       }
-      if (f.id == 'epub' && !Covers.tried(widget.doc.fingerprint)) {
-        unawaited(_cover(bytes).then((Uint8List? c) => Covers.write(widget.doc.fingerprint, c ?? Uint8List(0))));
+      if (f.book && !Covers.tried(widget.doc.fingerprint)) {
+        unawaited(
+          _cover(f.id, bytes, name).then((Uint8List? c) => Covers.write(widget.doc.fingerprint, c ?? Uint8List(0))),
+        );
       }
       if (mounted) setState(() => _reading = doc);
+    } on FormatProblem catch (p) {
+      if (mounted) setState(() => _problem = p);
     } catch (_) {
       if (mounted) setState(() => _failed = true);
     }
   }
 
-  static Future<Uint8List?> _cover(Uint8List bytes) => Isolate.run(() => Epub.open(bytes).meta().cover);
+  static Future<Uint8List?> _cover(String format, Uint8List bytes, String name) =>
+      Isolate.run(() => Books.meta(format, bytes, name).cover).catchError((Object _) => null);
 
   /// Static, so the isolate's closure carries only the bytes.
-  static Future<ReadingDocument> _parse(String format, Uint8List bytes, String name) => Isolate.run(
-    () => switch (format) {
-      'epub' => Epub.open(bytes).document(),
-      'md' => TextFormats.markdown(bytes, name),
-      _ => TextFormats.plain(bytes, name),
-    },
-  );
+  static Future<ReadingDocument> _parse(String format, Uint8List bytes, String name) =>
+      Isolate.run(() => Books.document(format, bytes, name));
 
   @override
   Widget build(BuildContext context) {
+    if (_problem != null) return problemState(context, widget.doc.ref, _problem!);
     if (_failed) return corruptState(context, widget.doc.ref);
     final ReadingDocument? r = _reading;
     return AnimatedSwitcher(

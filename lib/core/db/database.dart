@@ -45,10 +45,14 @@ class Entries extends Table {
   TextColumn get title => text().nullable()();
   TextColumn get author => text().nullable()();
 
-  /// Pages (PDF) or chapters (EPUB).
+  /// Pages (PDF, comics) or chapters (EPUB).
   IntColumn get units => integer().nullable()();
 
-  /// 0 never read, 1 metadata read, -1 unreadable.
+  /// A comic's issue or volume ("#14", "Vol. 2"), from its ComicInfo (schema 3).
+  TextColumn get issue => text().nullable()();
+
+  /// 0 never read, 1 metadata read, -1 unreadable, -2 protected (DRM),
+  /// -3 a variant Unfurl can't read (Topaz, KFX, RAR 5).
   IntColumn get enriched => integer().withDefault(const Constant(0))();
 
   /// "Remove from library": hidden here; the file stays on the phone.
@@ -93,6 +97,9 @@ class Documents extends Table {
   IntColumn get readMs => integer().withDefault(const Constant(0))();
   IntColumn get readWords => integer().withDefault(const Constant(0))();
   IntColumn get size => integer().withDefault(const Constant(0))();
+
+  /// A comic's issue or volume (schema 3).
+  TextColumn get issue => text().nullable()();
 
   @override
   Set<Column<Object>> get primaryKey => <Column<Object>>{fingerprint};
@@ -146,13 +153,129 @@ class Places extends Table {
   Set<Column<Object>> get primaryKey => <Column<Object>>{path};
 }
 
-@DriftDatabase(tables: <Type>[Folders, Entries, Documents, Annotations, Recents, Places])
+/// One reading session (schema 3, `ReadingSessionTracker`): time with a
+/// document open, the screen on and the reader in front, keyed by
+/// fingerprint. Written while it runs (checkpointed every 60 s); folded into
+/// [DailyStats], [BookStats] and [BookDays] once, when it ends. Insights read
+/// only those aggregates, never this table.
+@TableIndex(name: 'sessions_doc', columns: <Symbol>{#fingerprint})
+@TableIndex(name: 'sessions_open', columns: <Symbol>{#open})
+class ReadingSessions extends Table {
+  IntColumn get id => integer().autoIncrement()();
+  TextColumn get fingerprint => text()();
+
+  /// Registry id ('epub', 'kindle', 'comics'...), for the formats breakdown.
+  TextColumn get format => text()();
+
+  /// 'reader', 'page' (PDF, DOCX pages, slides) or 'comics'.
+  TextColumn get mode => text()();
+  DateTimeColumn get startedAt => dateTime()();
+  DateTimeColumn get endedAt => dateTime()();
+
+  /// The local date it started, as yyyymmdd.
+  IntColumn get day => integer()();
+
+  /// The local hour it started, for time of day.
+  IntColumn get hour => integer().withDefault(const Constant(0))();
+  IntColumn get activeMs => integer().withDefault(const Constant(0))();
+  IntColumn get listeningMs => integer().withDefault(const Constant(0))();
+  TextColumn get fromLocator => text().nullable()();
+  TextColumn get toLocator => text().nullable()();
+
+  /// Forward progress only: words read (Reader mode), unique pages (Page
+  /// view, comics).
+  IntColumn get words => integer().withDefault(const Constant(0))();
+  IntColumn get pages => integer().withDefault(const Constant(0))();
+
+  /// Still running: a crash leaves it open, and the next launch folds it in.
+  BoolColumn get open => boolean().withDefault(const Constant(true))();
+}
+
+/// Reading per local day (yyyymmdd), kept incrementally: a year of Insights
+/// is at most 366 rows.
+class DailyStats extends Table {
+  IntColumn get day => integer()();
+  IntColumn get readingMs => integer().withDefault(const Constant(0))();
+  IntColumn get listeningMs => integer().withDefault(const Constant(0))();
+  IntColumn get words => integer().withDefault(const Constant(0))();
+  IntColumn get pages => integer().withDefault(const Constant(0))();
+  IntColumn get sessions => integer().withDefault(const Constant(0))();
+
+  /// Time and progress per mode, for reading speed.
+  IntColumn get readerMs => integer().withDefault(const Constant(0))();
+  IntColumn get readerWords => integer().withDefault(const Constant(0))();
+  IntColumn get pageMs => integer().withDefault(const Constant(0))();
+  IntColumn get pagePages => integer().withDefault(const Constant(0))();
+
+  /// The day's longest session and its book.
+  IntColumn get longestMs => integer().withDefault(const Constant(0))();
+  TextColumn get longestFp => text().nullable()();
+
+  /// Reading ms per format id, as JSON.
+  TextColumn get formatMs => text().withDefault(const Constant('{}'))();
+
+  /// Reading ms per local hour, 24 comma-separated numbers.
+  TextColumn get hourMs => text().withDefault(const Constant(''))();
+
+  @override
+  Set<Column<Object>> get primaryKey => <Column<Object>>{day};
+}
+
+/// Totals per document (fingerprint), kept incrementally.
+@TableIndex(name: 'book_stats_time', columns: <Symbol>{#readingMs})
+class BookStats extends Table {
+  TextColumn get fingerprint => text()();
+  IntColumn get readingMs => integer().withDefault(const Constant(0))();
+  IntColumn get listeningMs => integer().withDefault(const Constant(0))();
+  IntColumn get sessions => integer().withDefault(const Constant(0))();
+  IntColumn get words => integer().withDefault(const Constant(0))();
+  IntColumn get pages => integer().withDefault(const Constant(0))();
+  IntColumn get readerMs => integer().withDefault(const Constant(0))();
+  IntColumn get readerWords => integer().withDefault(const Constant(0))();
+  IntColumn get pageMs => integer().withDefault(const Constant(0))();
+  IntColumn get pagePages => integer().withDefault(const Constant(0))();
+  IntColumn get longestMs => integer().withDefault(const Constant(0))();
+
+  /// A running median of time per page or screen, for the idle threshold.
+  IntColumn get medianPageMs => integer().withDefault(const Constant(0))();
+  DateTimeColumn get firstRead => dateTime().nullable()();
+  DateTimeColumn get lastRead => dateTime().nullable()();
+  DateTimeColumn get finishedAt => dateTime().nullable()();
+
+  @override
+  Set<Column<Object>> get primaryKey => <Column<Object>>{fingerprint};
+}
+
+/// Reading ms per document per day: book insights' 30-day chart.
+class BookDays extends Table {
+  TextColumn get fingerprint => text()();
+  IntColumn get day => integer()();
+  IntColumn get ms => integer().withDefault(const Constant(0))();
+
+  @override
+  Set<Column<Object>> get primaryKey => <Column<Object>>{fingerprint, day};
+}
+
+@DriftDatabase(
+  tables: <Type>[
+    Folders,
+    Entries,
+    Documents,
+    Annotations,
+    Recents,
+    Places,
+    ReadingSessions,
+    DailyStats,
+    BookStats,
+    BookDays,
+  ],
+)
 class AppDatabase extends _$AppDatabase {
   AppDatabase([QueryExecutor? executor]) : super(executor ?? driftDatabase(name: 'unfurl'));
 
   /// Bump with a tested migration on every schema change (data rule 4).
   @override
-  int get schemaVersion => 2;
+  int get schemaVersion => 3;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -166,6 +289,21 @@ class AppDatabase extends _$AppDatabase {
         await m.addColumn(folders, folders.source);
         await m.addColumn(entries, entries.source);
         await m.createTable(places);
+      }
+      if (from < 3) {
+        // v3: comic issues; reading sessions and the aggregates Insights read.
+        await m.addColumn(entries, entries.issue);
+        await m.addColumn(documents, documents.issue);
+        await m.createTable(readingSessions);
+        await m.createTable(dailyStats);
+        await m.createTable(bookStats);
+        await m.createTable(bookDays);
+        await m.createIndex(sessionsDoc);
+        await m.createIndex(sessionsOpen);
+        await m.createIndex(bookStatsTime);
+        // New book formats: device discovery runs again to find them, and
+        // entries that failed as unknown get another look.
+        await customStatement("UPDATE folders SET path = '' WHERE source = 'device'");
       }
     },
     beforeOpen: (OpeningDetails details) async {

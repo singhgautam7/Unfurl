@@ -52,4 +52,10 @@ dependencies {
     // FileProvider, for sharing paths from the Files tab. Already on the classpath
     // through Flutter's embedding; pinned here because Unfurl now uses it directly.
     implementation("androidx.core:core:1.17.0")
+    // Comic archives (v3, docs/v3-decisions.md): zip, 7z and tar through Commons
+    // Compress (Apache-2.0), 7z's LZMA through XZ for Java (0BSD), rar through junrar
+    // (UnRAR licence, extraction only).
+    implementation("org.apache.commons:commons-compress:1.28.0")
+    implementation("org.tukaani:xz:1.10")
+    implementation("com.github.junrar:junrar:7.5.5")
 }

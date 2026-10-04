@@ -65,3 +65,14 @@ the build prompt, what was done, and which Mull file it follows.
 | v2-21 | V4 PPTX | Board 4 gives PPTX a Reader mode (the outline). | Slides only: no Page/Reader toggle, so no highlights or read aloud in decks. Set in the registry (`Formats.pptx`), so the toggle can come back in one line. | Owner, 4 Oct 2026 |
 | v2-22 | A5 Settings | Board 2 A5 puts Reading defaults inline and Appearance last. | Appearance first, with two rows: Theme (the app) and Reader (its own page, every reading control). The sheet's and page's "THEME" header reads "READER COLOURS". More drops its Folders row (Settings › Library has it). | Owner, 4 Oct 2026 |
 | v2-23 | R9 Selection toolbar | Board 3 R9 draws one row of icons (Copy, four colours, Note, Read aloud, Mull). | Two rows, as Kindle's: the four colours on top, then labelled actions (Copy, Note, Listen, Define), each its icon over its name. Above the selection it is pinned by its bottom edge, so a larger text size can't push it onto the words. | Owner, 4 Oct 2026 |
+
+## v3
+
+| # | Item | Gap | What we did | Followed |
+|---|---|---|---|---|
+| v3-1 | V3-INSIGHTS | The v3 More frames draw Insights above a five-row "Settings" list (Appearance, Reading, Controls, Library and files, About); the changelog only says the card "sits at the top of More, above Settings". | The INSIGHTS section and card go on top; v2's groups stay below (Settings, About Unfurl, the Mull card), so Privacy, Permissions and Licences keep their rows. | Changelog text |
+| v3-2 | V3-FORMATS | v2's Library chips had Unread and Finished; the v3 chip row is format families only. | Family chips as specified (hidden with one family); Unread and Finished move into the Library's sort menu as "Show: All / Unread / Finished". | Board 6 V3 |
+| v3-3 | V3-FORMATS | Board 6 tiles show the file name under each cover; v2's Library tiles show cover, progress, state and folder. | v2 tiles kept; the badge, issue badge and comic meta ("#14 · 30%", "No metadata") added as drawn. | v2 board 2 |
+| v3-4 | V3-FORMATS | The Files row frame shows "Protected (DRM)" with a lock tile; DRM is only known once a file has been read. | Shown wherever the index has read the file (Library, picked folders); a path listing in Files learns it on open. | — |
+| v3-5 | V3-FORMATS | Device-wide discovery and HTML. | "Find books across this device" looks for every book family except HTML, which would list every saved web page and app help file on the phone. HTML in added folders is listed. | — |
+| v3-6 | V3-FORMATS | The unsupported-variant frame's copy is Topaz-specific. | The same layout with copy for each cause: Topaz, KFX, RAR 5 and other archive variants. | Board 6 V3 |

@@ -52,6 +52,8 @@ flutter:
     - assets/fonts/atkinson/OFL.txt
     - assets/fonts/opendyslexic/OFL.txt
     - assets/fonts/material_symbols/LICENSE
+    # v3: comic archives (Kotlin) and the Kindle reader's origin.
+    - assets/licenses/
 
   fonts:
     # Bundled, never fetched: Unfurl makes no network request. Instrument Sans

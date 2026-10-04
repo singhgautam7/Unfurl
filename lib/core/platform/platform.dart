@@ -278,9 +278,10 @@ abstract final class Platform {
     return m == null ? null : DocRef.fromMap(m);
   }
 
-  /// Streams a folder tree in batches; errors when access was lost.
-  static Stream<List<ScannedEntry>> scan(String treeUri) => _scan
-      .receiveBroadcastStream(<String, Object?>{'uri': treeUri})
+  /// Streams a folder tree in batches; errors when access was lost. Device
+  /// discovery (`device://all`) looks only for [exts].
+  static Stream<List<ScannedEntry>> scan(String treeUri, {List<String> exts = const <String>[]}) => _scan
+      .receiveBroadcastStream(<String, Object?>{'uri': treeUri, 'exts': exts})
       .map(
         (Object? batch) =>
             (batch! as List<Object?>).map((Object? e) => ScannedEntry.fromMap(e! as Map<Object?, Object?>)).toList(),

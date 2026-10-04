@@ -9,7 +9,11 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:pdfrx/pdfrx.dart';
 
-import '../../formats/epub/epub.dart';
+import '../../formats/books.dart';
+import '../../formats/comics/comic_archive.dart';
+import '../../formats/epub/epub.dart' show BookMeta;
+import '../../formats/format_problem.dart';
+import '../../formats/format_registry.dart';
 import '../db/database.dart';
 import '../files.dart';
 import 'library.dart';
@@ -62,6 +66,34 @@ abstract final class Covers {
     for (final (File f, FileStat s) in stats) {
       total += s.size;
       if (total > capBytes) await f.delete();
+    }
+  }
+
+  /// A comic's cover: its first page, cropped to 2:3 from the top (board 6,
+  /// V3), as a small PNG. Decoded at the target width, never at full size.
+  static Future<Uint8List?> comicCover(Uint8List page, {int width = 288}) async {
+    final ui.Codec codec = await ui.instantiateImageCodec(page, targetWidth: width);
+    final ui.Image img = (await codec.getNextFrame()).image;
+    codec.dispose();
+    try {
+      final int height = (width * 1.5).round();
+      final ui.PictureRecorder rec = ui.PictureRecorder();
+      final ui.Canvas canvas = ui.Canvas(rec);
+      final double scale = width / img.width > height / img.height ? width / img.width : height / img.height;
+      final double w = img.width * scale;
+      // Wider than 2:3 (a spread): centred; taller: from the top.
+      canvas.drawImageRect(
+        img,
+        ui.Rect.fromLTWH(0, 0, img.width.toDouble(), img.height.toDouble()),
+        ui.Rect.fromLTWH((width - w) / 2, 0, w, img.height * scale),
+        ui.Paint()..filterQuality = ui.FilterQuality.medium,
+      );
+      final ui.Image out = await rec.endRecording().toImage(width, height);
+      final ByteData? png = await out.toByteData(format: ui.ImageByteFormat.png);
+      out.dispose();
+      return png?.buffer.asUint8List();
+    } finally {
+      img.dispose();
     }
   }
 
@@ -142,36 +174,54 @@ class Enricher {
   }
 
   /// Static, so the isolate's closure carries only the bytes.
-  static Future<BookMeta> _meta(Uint8List bytes) => Isolate.run(() => Epub.open(bytes).meta());
+  static Future<BookMeta> _meta(String format, Uint8List bytes, String name) =>
+      Isolate.run(() => Books.meta(format, bytes, name));
 
   Future<void> _one(Entry e) async {
     final AppDatabase db = library.db;
     Future<void> mark(EntriesCompanion c) => (db.update(db.entries)..where((x) => x.id.equals(e.id))).write(c);
+    String? fp;
     try {
       await pdfrxFlutterInitialize();
       await Covers.dir();
-      final String? fp = await Files.fingerprint(e.uri);
+      fp = await Files.fingerprint(e.uri);
       if (fp == null) return await mark(const EntriesCompanion(enriched: Value<int>(-1)));
-      String? title, author;
+      final Uint8List head = await Files.withFd<Uint8List>(e.uri, (Fd fd) async => fd.read(0, 512)) ?? Uint8List(0);
+      final FormatModule? format = Formats.sniff(head, Formats.of(e.name, e.mime));
+      String? title, author, issue;
       int? units;
-      if (e.ext == 'epub') {
-        final Uint8List? bytes = await Files.readAll(e.uri);
-        if (bytes == null) return await mark(const EntriesCompanion(enriched: Value<int>(-1)));
-        final BookMeta meta = await _meta(bytes);
-        title = meta.title;
-        author = meta.author;
-        units = meta.units;
-        if (!Covers.tried(fp)) await Covers.write(fp, meta.cover ?? Uint8List(0));
-      } else {
+      if (format == Formats.pdf) {
         await Files.withFd<void>(e.uri, (Fd fd) async {
           final PdfDocument doc = await Files.openPdf(fd, name: e.name, passwordProvider: () => null);
           try {
             units = doc.pages.length;
-            if (!Covers.tried(fp)) await Covers.write(fp, await Covers.renderFirstPage(doc) ?? Uint8List(0));
+            if (!Covers.tried(fp!)) await Covers.write(fp, await Covers.renderFirstPage(doc) ?? Uint8List(0));
           } finally {
             await doc.dispose();
           }
         });
+      } else if (format == Formats.comics) {
+        final ComicArchive comic = await ComicArchive.open(e.uri);
+        try {
+          title = comic.info?.displayTitle;
+          author = comic.info?.writer;
+          issue = comic.info?.issue;
+          units = comic.pages.length;
+          if (!Covers.tried(fp)) {
+            final Uint8List? first = await comic.page(0);
+            await Covers.write(fp, (first == null ? null : await Covers.comicCover(first)) ?? Uint8List(0));
+          }
+        } finally {
+          await comic.close();
+        }
+      } else if (format != null) {
+        final Uint8List? bytes = await Files.readAll(e.uri);
+        if (bytes == null) return await mark(const EntriesCompanion(enriched: Value<int>(-1)));
+        final BookMeta meta = await _meta(format.id, bytes, e.name);
+        title = meta.title;
+        author = meta.author;
+        units = meta.units;
+        if (!Covers.tried(fp)) await Covers.write(fp, meta.cover ?? Uint8List(0));
       }
       await mark(
         EntriesCompanion(
@@ -179,7 +229,20 @@ class Enricher {
           title: Value<String?>(title),
           author: Value<String?>(author),
           units: Value<int?>(units),
+          issue: Value<String?>(issue),
           enriched: const Value<int>(1),
+        ),
+      );
+    } on FormatProblem catch (p) {
+      // Protected or an unreadable variant: listed with its state, never retried.
+      await mark(
+        EntriesCompanion(
+          fingerprint: Value<String?>(fp),
+          enriched: Value<int>(switch (p.kind) {
+            ProblemKind.drm => -2,
+            ProblemKind.unsupported => -3,
+            ProblemKind.damaged => -1,
+          }),
         ),
       );
     } catch (error) {
