@@ -116,3 +116,63 @@ surface; the panel ran at 90 Hz, dropping to 60 Hz on its own when idle.
 | Cover page turns | every frame 16.6 ms (panel at 60 Hz), none late |
 
 The emulator's "budget not met" above was the emulator; on the phone the cold first page fits.
+
+## v3
+
+### Phase I (5 October 2026)
+
+All on the Pixel_9_Pro emulator (API 36, 3 GB RAM), which today runs about twice as slow as on
+3 October: v2's own build, reinstalled, starts in 1982–2197 ms where it measured 958–1118 ms then.
+
+**Release size** (`--split-per-abi`, decimal MB):
+
+| | v2 | v3 before Phase I | v3 now |
+|---|---|---|---|
+| arm64-v8a | 31.6 | 32.68 | **31.11** |
+| armeabi-v7a | 27.3 | 28.45 | **26.57** |
+| x86_64 | 33.4 | 34.49 | **32.86** |
+
+- v3 before Phase I did not build at all in release: R8 stopped on classes Commons Compress and
+  junrar refer to (Zstandard, SLF4J's binder). `android/app/proguard-rules.pro` adds two justified
+  `-dontwarn` lines. The "v3 before" column is with that file only.
+- Commons Codec's Beider-Morse rule tables (127 Java resources, 98 KB compressed) are excluded
+  from packaging; R8 can't strip resources and comics never use them.
+- `--obfuscate --split-debug-info=build/symbols`: app code 9.50 → 8.06 MB (arm64). Symbols stay
+  in `build/symbols` for `flutter symbolize`; there is no crash reporting to send them to.
+- Unchanged, and the bulk: Flutter engine 11.7 MB, PDFium 6.4 MB, SQLite 1.7 MB (FTS5), reading
+  fonts about 4 MB, dex 1.2 MB. Material Symbols tree-shaken from 14.9 MB to 283 KB.
+- Release APK verified on the emulator: CBZ, CB7, CBR, CBT decode after R8; damaged and RAR 5
+  states; Kindle, FB2, PDF, DOCX; no class or method errors in logcat.
+
+**Cold start** (release, `am start -W` `TotalTime`, fresh install, four runs each, same emulator,
+same hour): v2 1982 / 2093 / 2155 / 2197 ms (mean 2107), v3 2012 / 2216 / 2274 / 2356 ms (mean
+2215). About 5%, within run-to-run spread. Nothing v3 adds runs before the first frame; session
+recovery, the wallpaper seed and rescans are post-frame.
+
+**Timings** (`integration_test/v3_perf_test.dart`, profile):
+
+| What | Result | Budget |
+|---|---|---|
+| Open EPUB, AZW3, MOBI, FB2, FBZ, HTML to the first page | 364–450 ms | |
+| Open a comic to its first decoded page: CBZ, CB7, CBR, CBT | 676, 603, 464, 463 ms | |
+| Open a PDF | 397 ms | |
+| Library search over 5,000 files (FTS5) | 3.0 ms median | < 50 ms |
+| Fold a finished session into a year of aggregates | 0.2 ms median | |
+| Insights data, a year of days and 300 books | 6.8 ms median | |
+| Insights screen to content | 298 ms | |
+
+**Frames** while flinging (UI build time, then raster time, in ms):
+
+| Surface | build p50 / p90 / p99 | raster p50 / p90 / p99 |
+|---|---|---|
+| Reader, Scroll | 1.7 / 6.5 / 9.0 | 14.7 / 18.9 / 29.1 |
+| PDF, continuous | 1.1 / 3.0 / 9.4 | 7.2 / 17.5 / 23.2 |
+| Comics, page swipes | 1.0 / 2.7 / 7.4 | 6.0 / 9.7 / 21.8 |
+| Library grid, 5,000 files | 1.0 / 3.5 / 8.6 | 7.2 / 18.3 / 22.4 |
+| Insights | 0.6 / 1.9 / 8.6 | 15.8 / 20.8 / 35.2 |
+
+- Build (our code on the UI thread) stays under 10 ms at p99 everywhere, inside a 16.7 ms frame.
+- Raster times are the emulator's GPU, translated to the host; they put text-heavy surfaces
+  (Reader, Insights) over a frame and are not representative of a phone. Insights paints no
+  shadows, blurs or opacity layers (a 371-cell heatmap and text). **To confirm on a real device**
+  with a DevTools profile run, with the reader frame budget from Phase 0.

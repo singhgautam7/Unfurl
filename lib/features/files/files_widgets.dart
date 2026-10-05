@@ -204,7 +204,8 @@ class ExplorerRow extends StatelessWidget {
         ),
       ),
     );
-    if (onTap == null && onLongPress == null) return body;
+    // A switch row reads as one control: the name, then the switch's state.
+    if (onTap == null && onLongPress == null) return switchValue != null ? MergeSemantics(child: body) : body;
     return Semantics(
       button: true,
       label: semanticLabel,

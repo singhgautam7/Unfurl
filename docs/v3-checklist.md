@@ -37,3 +37,10 @@ saved only when the reader closed.
 
 Screenshots: `docs/v3-screens/<ID>-<view>-{light,dark}.png` from the phone AVD (Insights, book insights,
 formats, comics, highlight cards, comfort), and `V3-TABLET-*.png` from the Pixel Tablet AVD.
+
+## Review and optimisation (Phase I, 5 October 2026)
+
+`docs/v3-review.md`. Release build fixed (R8 rules) and verified on the emulator; arm64 32.68 →
+31.11 MB; stricter lints; two controller leaks; motion tokens; query plans guarded by a test;
+accessibility guidelines over the v3 screens in both tones; timings in `docs/performance.md` › v3.
+Open: cold start and raster frame times on the owner's phone.

@@ -167,7 +167,8 @@ class ListRow extends StatelessWidget {
         ),
       ),
     );
-    if (onTap == null) return content;
+    // A row with a control (a switch) reads as one: its title, then the control.
+    if (onTap == null) return trailing != null ? MergeSemantics(child: content) : content;
     return Semantics(
       button: true,
       label: value == null ? label : '$label, $value',

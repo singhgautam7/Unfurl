@@ -9,6 +9,15 @@ android {
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
+    packaging {
+        resources {
+            // Commons Codec (via Commons Compress) ships Beider-Morse phonetic
+            // rule tables as Java resources; R8 can't strip those, and comics
+            // never use them.
+            excludes += "org/apache/commons/codec/language/bm/**"
+        }
+    }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
