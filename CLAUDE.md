@@ -240,7 +240,7 @@ flutter build apk --release --split-per-abi --obfuscate --split-debug-info=build
 
 5 October 2026 (v3): arm64 31.1 MB, armeabi-v7a 26.6 MB, x86_64 32.9 MB (v2: 31.6, 27.3, 33.4 MB,
 without obfuscation). Check for the `✓ Built` line: a failed build leaves the previous APKs in
-`build/`. No signing config yet. The
+`build/`. Signed with release key (`upload-keystore.jks` via `android/key.properties`). The
 release manifest declares `MANAGE_EXTERNAL_STORAGE`, `READ_EXTERNAL_STORAGE` (max SDK 29) and
 AndroidX's app-private `DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION`, and never `INTERNET`; the debug
 and profile manifests carry `INTERNET` for the Flutter tool only. If Play refuses all-files access,
