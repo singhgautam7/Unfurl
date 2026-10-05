@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -125,7 +127,7 @@ class _NavShellState extends ConsumerState<NavShell> with TickerProviderStateMix
     final bool shouldHide = _shouldHide();
     if (shouldHide != _hideNow) {
       _hideNow = shouldHide;
-      shouldHide ? _hidden.forward() : _hidden.reverse();
+      unawaited(shouldHide ? _hidden.forward() : _hidden.reverse());
     }
     final bool reduced = Motion.reduced(context);
     final Animation<double> pageCurved = CurvedAnimation(

@@ -57,6 +57,8 @@ class ComicPages {
     late final Future<Uint8List?> mine;
     mine = archive.page(i, cancellable: prefetch).then((Uint8List? b) {
       if (identical(_pending[i], mine)) {
+        // The entry is this future, already completing.
+        // ignore: discarded_futures
         _pending.remove(i);
         _prefetching.remove(i);
       }

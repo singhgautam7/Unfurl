@@ -76,6 +76,8 @@ class PageRenderer {
     final ui.Image? hit = _cache[key];
     if (hit != null) return Future<ui.Image?>.value(hit);
     return _pending[key] ??= _render(page, width, look, key).whenComplete(() {
+      // The entry is this future, already completing.
+      // ignore: discarded_futures
       _pending.remove(key);
       _tokens.remove(key);
     });

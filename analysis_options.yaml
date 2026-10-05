@@ -23,3 +23,16 @@ linter:
     - unawaited_futures
     - use_super_parameters
     - require_trailing_commas
+    - cancel_subscriptions
+    - close_sinks
+    - avoid_dynamic_calls
+    - avoid_slow_async_io
+    - avoid_type_to_string
+    - literal_only_boolean_expressions
+    - no_adjacent_strings_in_list
+    - test_types_in_equals
+    - prefer_void_to_null
+    - only_throw_errors
+    - unnecessary_lambdas
+    - use_named_constants
+    - discarded_futures

@@ -19,8 +19,7 @@ class SnackMessage {
   final bool isError;
   final Duration? duration;
 
-  Duration get effectiveDuration =>
-      duration ?? (actionLabel != null || isError ? const Duration(seconds: 5) : const Duration(seconds: 4));
+  Duration get effectiveDuration => duration ?? (actionLabel != null || isError ? Motion.toastLong : Motion.toast);
 }
 
 /// Mull's snackbar, ported: a top-positioned, timed snackbar with a countdown progress indicator,
@@ -40,9 +39,11 @@ abstract final class AppSnackbar {
     _currentEntry = null;
 
     if (controller != null && entry != null) {
-      controller.animateOut().then((_) {
-        if (entry.mounted) entry.remove();
-      });
+      unawaited(
+        controller.animateOut().then((_) {
+          if (entry.mounted) entry.remove();
+        }),
+      );
     } else {
       entry?.remove();
     }

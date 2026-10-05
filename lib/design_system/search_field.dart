@@ -109,3 +109,29 @@ class _SearchFieldState extends State<SearchField> {
     );
   }
 }
+
+/// A [TextEditingController] that lives as long as the widget: for text fields
+/// in sheets and dialogs, whose content outlives the call that showed them
+/// (it is still on screen while the sheet animates away).
+class TextControllerScope extends StatefulWidget {
+  const TextControllerScope({required this.builder, this.initial, super.key});
+
+  final String? initial;
+  final Widget Function(BuildContext context, TextEditingController controller) builder;
+
+  @override
+  State<TextControllerScope> createState() => _TextControllerScopeState();
+}
+
+class _TextControllerScopeState extends State<TextControllerScope> {
+  late final TextEditingController _c = TextEditingController(text: widget.initial);
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.builder(context, _c);
+}

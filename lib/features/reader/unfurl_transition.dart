@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -60,7 +62,7 @@ class _UnfurlSwitcherState extends State<UnfurlSwitcher> with SingleTickerProvid
       final bool reduced = Motion.reduced(context);
       _t.duration = reduced ? Motion.unfurlReduced : Motion.unfurl;
       _t.reverseDuration = reduced ? Motion.unfurlReduced : Motion.unfurlReverse;
-      widget.reader ? _t.forward() : _t.reverse();
+      unawaited(widget.reader ? _t.forward() : _t.reverse());
     }
   }
 
@@ -97,7 +99,7 @@ class _UnfurlSwitcherState extends State<UnfurlSwitcher> with SingleTickerProvid
           );
         }
         final double lift = Motion.decelerate.transform(_phase(t, 0, 140 / 520));
-        final double unroll = Curves.easeOutBack.transform(_phase(t, 140 / 520, 380 / 520));
+        final double unroll = Motion.spring.transform(_phase(t, 140 / 520, 380 / 520));
         return LayoutBuilder(
           builder: (BuildContext context, BoxConstraints box) {
             final double h = box.maxHeight;

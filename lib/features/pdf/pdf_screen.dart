@@ -260,7 +260,6 @@ class _PdfScreenState extends ConsumerState<PdfScreen> with WidgetsBindingObserv
   }
 
   Future<String?> _askPassword({required bool wrong}) {
-    final TextEditingController field = TextEditingController();
     bool hidden = true;
     return showAppBottomSheet<String>(
       context: context,
@@ -269,64 +268,66 @@ class _PdfScreenState extends ConsumerState<PdfScreen> with WidgetsBindingObserv
       description: wrong
           ? 'That password didn’t work. Try again.'
           : 'Enter its password to open it. Unfurl does not save it.',
-      builder: (BuildContext ctx) => StatefulBuilder(
-        builder: (BuildContext ctx, StateSetter set) {
-          final UnfurlColors c = ctx.colors;
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            spacing: Space.lg,
-            children: <Widget>[
-              Container(
-                height: 56,
-                padding: const EdgeInsets.only(left: 18, right: 6),
-                decoration: BoxDecoration(
-                  color: c.surface,
-                  borderRadius: BorderRadius.circular(Space.lg),
-                  border: Border.all(color: c.primary, width: 1.5),
+      builder: (BuildContext ctx) => TextControllerScope(
+        builder: (BuildContext ctx, TextEditingController field) => StatefulBuilder(
+          builder: (BuildContext ctx, StateSetter set) {
+            final UnfurlColors c = ctx.colors;
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              spacing: Space.lg,
+              children: <Widget>[
+                Container(
+                  height: 56,
+                  padding: const EdgeInsets.only(left: 18, right: 6),
+                  decoration: BoxDecoration(
+                    color: c.surface,
+                    borderRadius: BorderRadius.circular(Space.lg),
+                    border: Border.all(color: c.primary, width: 1.5),
+                  ),
+                  child: Row(
+                    children: <Widget>[
+                      Expanded(
+                        child: TextField(
+                          controller: field,
+                          autofocus: true,
+                          obscureText: hidden,
+                          onSubmitted: (String v) => Navigator.of(ctx).pop(v),
+                          style: UnfurlType.monoTabular.copyWith(
+                            fontSize: 16,
+                            letterSpacing: hidden ? 3.2 : 0,
+                            color: c.onSurface,
+                          ),
+                          decoration: const InputDecoration.collapsed(hintText: ''),
+                        ),
+                      ),
+                      AppIconButton(
+                        icon: hidden ? AppIcons.visibility : AppIcons.visibilityOff,
+                        filled: false,
+                        semanticLabel: hidden ? 'Show password' : 'Hide password',
+                        onPressed: () => set(() => hidden = !hidden),
+                      ),
+                    ],
+                  ),
                 ),
-                child: Row(
+                Row(
+                  spacing: 10,
                   children: <Widget>[
                     Expanded(
-                      child: TextField(
-                        controller: field,
-                        autofocus: true,
-                        obscureText: hidden,
-                        onSubmitted: (String v) => Navigator.of(ctx).pop(v),
-                        style: UnfurlType.monoTabular.copyWith(
-                          fontSize: 16,
-                          letterSpacing: hidden ? 3.2 : 0,
-                          color: c.onSurface,
-                        ),
-                        decoration: const InputDecoration.collapsed(hintText: ''),
+                      child: AppButton(
+                        label: 'Cancel',
+                        type: AppButtonType.secondary,
+                        onPressed: () => Navigator.of(ctx).pop(),
                       ),
                     ),
-                    AppIconButton(
-                      icon: hidden ? AppIcons.visibility : AppIcons.visibilityOff,
-                      filled: false,
-                      semanticLabel: hidden ? 'Show password' : 'Hide password',
-                      onPressed: () => set(() => hidden = !hidden),
+                    Expanded(
+                      child: AppButton(label: 'Open', onPressed: () => Navigator.of(ctx).pop(field.text)),
                     ),
                   ],
                 ),
-              ),
-              Row(
-                spacing: 10,
-                children: <Widget>[
-                  Expanded(
-                    child: AppButton(
-                      label: 'Cancel',
-                      type: AppButtonType.secondary,
-                      onPressed: () => Navigator.of(ctx).pop(),
-                    ),
-                  ),
-                  Expanded(
-                    child: AppButton(label: 'Open', onPressed: () => Navigator.of(ctx).pop(field.text)),
-                  ),
-                ],
-              ),
-            ],
-          );
-        },
+              ],
+            );
+          },
+        ),
       ),
     );
   }
@@ -533,7 +534,7 @@ class _PdfScreenState extends ConsumerState<PdfScreen> with WidgetsBindingObserv
       unawaited(_text(page));
     }
     _saveTimer?.cancel();
-    _saveTimer = Timer(const Duration(milliseconds: 700), _save);
+    _saveTimer = Timer(Motion.saveDelay, _save);
   }
 
   Future<void> _save({Locator? locator}) async {
@@ -1222,11 +1223,7 @@ class _PdfScreenState extends ConsumerState<PdfScreen> with WidgetsBindingObserv
                 left: 0,
                 right: 0,
                 child: Center(
-                  child: TimedChip(
-                    key: ValueKey<int>(_page),
-                    text: '$_page / $_pages',
-                    duration: const Duration(milliseconds: 1500),
-                  ),
+                  child: TimedChip(key: ValueKey<int>(_page), text: '$_page / $_pages', duration: Motion.chipPage),
                 ),
               ),
             Positioned(
@@ -1344,7 +1341,7 @@ class _PdfScreenState extends ConsumerState<PdfScreen> with WidgetsBindingObserv
                     key: ValueKey<String>(_backChip!),
                     text: _backChip!,
                     icon: AppIcons.back,
-                    duration: const Duration(seconds: 4),
+                    duration: Motion.chipScrubBack,
                     onTap: () {
                       final int? to = _backTo;
                       setState(() => _backChip = null);
@@ -1916,7 +1913,7 @@ class _PagesState extends State<_Pages> with SingleTickerProviderStateMixin {
     if (page != _page) setState(() => _page = page);
     widget.onPage(page, offset);
     _sharpen?.cancel();
-    _sharpen = Timer(const Duration(milliseconds: 160), _rebuild);
+    _sharpen = Timer(Motion.sharpenDelay, _rebuild);
   }
 
   /// What the reader is looking at: the page and the fraction down it of a

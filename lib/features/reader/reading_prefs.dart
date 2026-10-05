@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -208,7 +210,7 @@ class ReadingPrefsController extends Notifier<ReadingPrefs> {
   /// Applies at once (the page re-lays out within a frame) and persists.
   void update(ReadingPrefs Function(ReadingPrefs p) change) {
     state = change(state);
-    state.write(ref.read(prefsProvider));
+    unawaited(state.write(ref.read(prefsProvider)));
   }
 
   void reset() {

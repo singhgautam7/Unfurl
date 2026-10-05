@@ -226,7 +226,7 @@ class _ComicsScreenState extends ConsumerState<ComicsScreen> with WidgetsBinding
     if (page == _page) return;
     setState(() => _page = page);
     _saveTimer?.cancel();
-    _saveTimer = Timer(const Duration(milliseconds: 600), _save);
+    _saveTimer = Timer(Motion.saveDelay, _save);
   }
 
   void _jump(int page) {
@@ -478,7 +478,7 @@ class _ComicsScreenState extends ConsumerState<ComicsScreen> with WidgetsBinding
                   child: TimedChip(
                     key: ValueKey<double>(_zoomChip!),
                     text: '${(_zoomChip! * 100).round()}%',
-                    duration: const Duration(seconds: 1),
+                    duration: Motion.chipZoom,
                   ),
                 ),
               ),

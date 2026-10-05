@@ -228,7 +228,7 @@ class ReaderScaffoldState extends ConsumerState<ReaderScaffold> with WidgetsBind
   void _onPosition() {
     if (controller.position != _lastSaved) {
       _saveTimer?.cancel();
-      _saveTimer = Timer(const Duration(milliseconds: 600), _save);
+      _saveTimer = Timer(Motion.saveDelay, _save);
       _tracker.readerAt(controller.globalIndex, jump: _jumping);
       _jumping = false;
       final int? sleepSection = _sleepSection;
@@ -570,7 +570,7 @@ class ReaderScaffoldState extends ConsumerState<ReaderScaffold> with WidgetsBind
   void _armAutoHide() {
     _hideTimer?.cancel();
     if (_chrome && (_tts?.playing ?? false)) {
-      _hideTimer = Timer(const Duration(seconds: 4), () {
+      _hideTimer = Timer(Motion.chromeAutoHide, () {
         if (mounted && _chrome) _toggleChrome();
       });
     }
@@ -1156,17 +1156,13 @@ class ReaderScaffoldState extends ConsumerState<ReaderScaffold> with WidgetsBind
                 bottom: MediaQuery.paddingOf(context).bottom + (_chrome ? 168 : 72),
                 child: Center(
                   child: _sizeChip != null
-                      ? TimedChip(
-                          key: ValueKey<int>(_sizeChip!),
-                          text: '${_sizeChip}px',
-                          duration: const Duration(milliseconds: 900),
-                        )
+                      ? TimedChip(key: ValueKey<int>(_sizeChip!), text: '${_sizeChip}px', duration: Motion.chipSize)
                       : _backChip != null
                       ? TimedChip(
                           key: ValueKey<String>(_backChip!),
                           text: _backChip!,
                           icon: AppIcons.back,
-                          duration: const Duration(seconds: 6),
+                          duration: Motion.chipLinkBack,
                           onTap: () {
                             final (int, int, int)? to = _backTo;
                             setState(() => _backChip = null);

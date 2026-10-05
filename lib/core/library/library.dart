@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:drift/drift.dart';
 import 'package:flutter/foundation.dart';
 
+import '../motion/motion.dart';
 import '../../formats/format_registry.dart';
 import '../db/database.dart';
 import '../platform/platform.dart';
@@ -254,7 +255,7 @@ class Library {
 
   /// The x on a folder: gone from the list now, access released after
   /// [delay] unless [undoRemove] comes first.
-  void removeWithUndo(Folder f, {Duration delay = const Duration(seconds: 5)}) {
+  void removeWithUndo(Folder f, {Duration delay = Motion.toastLong}) {
     removing.value = <int>{...removing.value, f.id};
     _removeTimers[f.id] = Timer(delay, () async {
       _removeTimers.remove(f.id);

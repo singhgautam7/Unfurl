@@ -184,7 +184,7 @@ class _ImageScreenState extends ConsumerState<ImageScreen> {
                 child: TimedChip(
                   key: ValueKey<int>((_zoom * 100).round()),
                   text: '${(_zoom * 100).round()}%',
-                  duration: const Duration(milliseconds: 1500),
+                  duration: Motion.chipZoom,
                 ),
               ),
             ),

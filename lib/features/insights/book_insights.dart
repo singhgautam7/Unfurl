@@ -19,6 +19,7 @@ import '../../design_system/containers.dart';
 import '../../design_system/covers.dart';
 import '../../design_system/option_tiles.dart';
 import '../../formats/format_registry.dart';
+import '../files/files_widgets.dart' show ExplorerRow;
 import '../reader/sheets.dart';
 import '../viewer/document_screen.dart';
 import 'insights_data.dart';
@@ -184,24 +185,12 @@ class BookInsightsView extends ConsumerWidget {
                         ],
                       ),
                       if (b.highlights + b.bookmarks > 0)
-                        ListTile(
-                          contentPadding: const EdgeInsets.symmetric(horizontal: Space.xs),
-                          minTileHeight: 60,
-                          leading: Container(
-                            width: 40,
-                            height: 40,
-                            decoration: BoxDecoration(
-                              color: c.surfaceContainerHigh,
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: AppIcon(AppIcons.notes, color: c.icon),
-                          ),
-                          title: Text('Open in Notes', style: UnfurlType.titleMedium.copyWith(color: c.onSurface)),
-                          subtitle: Text(
-                            'Highlights and bookmarks for this book',
-                            style: UnfurlType.bodySmall.copyWith(color: c.onSurfaceVariant),
-                          ),
-                          trailing: AppIcon(AppIcons.chevronRight, color: c.iconMuted),
+                        ExplorerRow(
+                          name: 'Open in Notes',
+                          icon: AppIcons.notes,
+                          meta: 'Highlights and bookmarks for this book',
+                          sansMeta: true,
+                          trailing: AppIcons.chevronRight,
                           onTap: () {
                             onClose();
                             GoRouter.of(context).go(Routes.notes);

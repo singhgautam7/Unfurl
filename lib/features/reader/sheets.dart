@@ -13,6 +13,7 @@ import '../../core/theme/palette.dart';
 import '../../core/theme/reading_theme.dart';
 import '../../core/theme/tokens.dart';
 import '../../core/theme/typography.dart';
+import '../../design_system/search_field.dart';
 import '../../design_system/app_icon.dart';
 import '../../design_system/buttons.dart';
 import '../../design_system/chips.dart';
@@ -1199,45 +1200,47 @@ Future<String?> showNoteSheet(
   String? initial,
   VoidCallback? onDelete,
 }) {
-  final TextEditingController text = TextEditingController(text: initial);
   return showReaderSheet<String>(context, (BuildContext ctx) {
     final UnfurlColors c = ctx.colors;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      spacing: 14,
-      children: <Widget>[
-        Text(initial == null ? 'Add a note' : 'Note', style: UnfurlType.sheetTitle.copyWith(color: c.onSurface)),
-        HighlightQuote(text: quote.length > 240 ? '${quote.substring(0, 240)}…' : quote, color: color),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: Space.lg, vertical: Space.md),
-          decoration: BoxDecoration(
-            color: c.surface,
-            borderRadius: Radii.cardR,
-            border: Border.all(color: c.outline),
-          ),
-          child: TextField(
-            controller: text,
-            autofocus: true,
-            minLines: 3,
-            maxLines: 8,
-            style: UnfurlType.body.copyWith(color: c.onSurface),
-            decoration: InputDecoration.collapsed(
-              hintText: 'What did this make you think?',
-              hintStyle: UnfurlType.body.copyWith(color: c.onSurfaceVariant),
+    return TextControllerScope(
+      initial: initial,
+      builder: (BuildContext ctx, TextEditingController text) => Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        spacing: 14,
+        children: <Widget>[
+          Text(initial == null ? 'Add a note' : 'Note', style: UnfurlType.sheetTitle.copyWith(color: c.onSurface)),
+          HighlightQuote(text: quote.length > 240 ? '${quote.substring(0, 240)}…' : quote, color: color),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: Space.lg, vertical: Space.md),
+            decoration: BoxDecoration(
+              color: c.surface,
+              borderRadius: Radii.cardR,
+              border: Border.all(color: c.outline),
+            ),
+            child: TextField(
+              controller: text,
+              autofocus: true,
+              minLines: 3,
+              maxLines: 8,
+              style: UnfurlType.body.copyWith(color: c.onSurface),
+              decoration: InputDecoration.collapsed(
+                hintText: 'What did this make you think?',
+                hintStyle: UnfurlType.body.copyWith(color: c.onSurfaceVariant),
+              ),
             ),
           ),
-        ),
-        AppButton(label: 'Save note', onPressed: () => Navigator.of(ctx).pop(text.text.trim())),
-        if (onDelete != null)
-          AppButton(
-            label: 'Remove highlight',
-            type: AppButtonType.text,
-            onPressed: () {
-              Navigator.of(ctx).pop();
-              onDelete();
-            },
-          ),
-      ],
+          AppButton(label: 'Save note', onPressed: () => Navigator.of(ctx).pop(text.text.trim())),
+          if (onDelete != null)
+            AppButton(
+              label: 'Remove highlight',
+              type: AppButtonType.text,
+              onPressed: () {
+                Navigator.of(ctx).pop();
+                onDelete();
+              },
+            ),
+        ],
+      ),
     );
   });
 }

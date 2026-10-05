@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -83,7 +85,7 @@ class ComicPrefsController extends Notifier<ComicPrefs> {
 
   void update(ComicPrefs Function(ComicPrefs p) change) {
     state = change(state);
-    state.write(ref.read(prefsProvider));
+    unawaited(state.write(ref.read(prefsProvider)));
   }
 
   /// A book's own direction: the reader's choice, else its ComicInfo.

@@ -53,6 +53,24 @@ abstract final class Motion {
   static const Duration autoControlHide = Duration(milliseconds: 2500);
   static const Duration sleepFade = Duration(seconds: 10);
 
+  /// How long things stay before they go on their own (boards 3, 4 and 6):
+  /// the page chip, a zoom % chip, the text-size chip, the scrubber's "Back to
+  /// p." chip, a link's "Back" chip, the chrome while read aloud plays, and
+  /// toasts (with an action or an error, longer: the undo window).
+  static const Duration chipPage = Duration(milliseconds: 1500);
+  static const Duration chipZoom = Duration(seconds: 1);
+  static const Duration chipSize = Duration(milliseconds: 900);
+  static const Duration chipScrubBack = Duration(seconds: 4);
+  static const Duration chipLinkBack = Duration(seconds: 6);
+  static const Duration chromeAutoHide = Duration(seconds: 4);
+  static const Duration toast = Duration(seconds: 4);
+  static const Duration toastLong = Duration(seconds: 5);
+
+  /// Not animation: how long a position waits before it is written, and how
+  /// long a zoomed PDF waits before sharper tiles are drawn.
+  static const Duration saveDelay = Duration(milliseconds: 600);
+  static const Duration sharpenDelay = Duration(milliseconds: 160);
+
   /// Anything the finger caused.
   static const Curve spring = Curves.easeOutBack;
 

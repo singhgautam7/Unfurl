@@ -351,6 +351,8 @@ abstract final class Platform {
 
   static int _nextList = 0;
   static final Map<int, StreamController<DirEvent>> _lists = <int, StreamController<DirEvent>>{};
+  // Lives as long as the app: one EventChannel carries every listing.
+  // ignore: cancel_subscriptions
   static StreamSubscription<Object?>? _listEvents;
 
   /// A folder's entries, folders first, sorted natively: a head, then the first
@@ -381,6 +383,8 @@ abstract final class Platform {
       }
     });
     final int id = _nextList++;
+    // Closed by its 'done' or 'error' event, or dropped when cancelled.
+    // ignore: close_sinks
     final StreamController<DirEvent> c = StreamController<DirEvent>();
     c
       ..onListen = (() =>

@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../core/motion/motion.dart';
 import '../../core/platform/platform.dart';
 import '../../core/providers.dart';
 import '../../core/router/router.dart';
@@ -142,7 +143,7 @@ class ThemeScreen extends ConsumerWidget {
         ),
         const SizedBox(height: Space.md),
         AnimatedSize(
-          duration: const Duration(milliseconds: 220),
+          duration: Motion.of(context, Motion.reveal),
           child: darkInEffect
               ? Padding(
                   padding: const EdgeInsets.only(bottom: Space.md),
