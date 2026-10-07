@@ -98,19 +98,20 @@ class SettingsScreen extends ConsumerWidget {
             final bool access = ref.watch(filesAccessProvider.select((FilesAccess a) => a.granted));
             return ListContainer(
               children: <Widget>[
-                ExplorerRow(
-                  name: 'All files access',
-                  meta: access
-                      ? 'Lets Files browse the whole phone'
-                      : 'Off. Needed to browse the whole phone and to find books everywhere.',
-                  sansMeta: true,
-                  status: access ? 'On' : 'Off',
-                  statusOn: access,
-                  trailing: AppIcons.openInNew,
-                  onTap: () => askForAccess(context, ref),
-                ),
+                if (kAllFilesAccess)
+                  ExplorerRow(
+                    name: 'All files access',
+                    meta: access
+                        ? 'Lets Files browse the whole phone'
+                        : 'Off. Needed to browse the whole phone and to find books everywhere.',
+                    sansMeta: true,
+                    status: access ? 'On' : 'Off',
+                    statusOn: access,
+                    trailing: AppIcons.openInNew,
+                    onTap: () => askForAccess(context, ref),
+                  ),
                 // Left out while access is off: a control that can't apply.
-                if (access)
+                if (kAllFilesAccess && access)
                   ExplorerRow(
                     name: 'Find books across this device',
                     meta: 'Library lists every book on the phone',

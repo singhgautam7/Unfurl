@@ -65,11 +65,11 @@ python3 tool/make_fixtures.py                            # regenerate test/fixtu
   first), keeps an LRU of page images, sharp tiles when zoomed, recolour on an isolate, auto-crop.
   Page view shows the file's own colours; "Recolour pages" is opt-in (`pdf.recolourPages`, off).
   Reader mode for PDF is `formats/pdf/pdf_reflow.dart` (columns, running heads, dehyphenation,
-  headings), with progress shown while it runs; the result is kept on disk (`core/reflow_cache.dart`,
-  app storage, 300 MB LRU, bump `PdfReflow.version` when the analysis changes) and the laid-out
-  pages are kept while Page view shows (`ReaderLayoutCache`).
-- **File access:** All-files access is optional and requested only from the Files tab. The app must
-  work fully without it. No INTERNET permission, ever. Without access, files come through the Storage
+  headings), with progress shown while it runs.
+- **File access:** All-files access (`MANAGE_EXTERNAL_STORAGE`) is **off for now**: Play refuses it
+  for Unfurl, so it is out of the manifest and `kAllFilesAccess` (`core/explorer.dart`) hides the
+  Files tab, the Settings rows and every control that asks for it; folders come through Android's
+  picker. To bring it back, set the flag and restore the manifest line. No INTERNET permission, ever. Without access, files come through the Storage
   Access Framework (picked folders and files); with it, the Files tab and path-based folders read
   paths (`file://` URIs) directly, and other apps get a MediaStore or FileProvider content URI, never
   a `file://` one. Read-only either way. Kotlin hands over a detached descriptor;
@@ -248,16 +248,24 @@ after work on a reader, the library or Insights.
 flutter build apk --release --split-per-abi --obfuscate --split-debug-info=build/symbols
 ```
 
+8 October 2026: the release manifest declares only `READ_EXTERNAL_STORAGE` (max SDK 29) and
+AndroidX's app-private receiver permission; all-files access is off (`kAllFilesAccess`).
+
 5 October 2026 (v3): arm64 31.1 MB, armeabi-v7a 26.6 MB, x86_64 32.9 MB (v2: 31.6, 27.3, 33.4 MB,
 without obfuscation). Check for the `✓ Built` line: a failed build leaves the previous APKs in
 `build/`. Signed with release key (`upload-keystore.jks` via `android/key.properties`). The
-release manifest declares `MANAGE_EXTERNAL_STORAGE`, `READ_EXTERNAL_STORAGE` (max SDK 29) and
-AndroidX's app-private `DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION`, and never `INTERNET`; the debug
-and profile manifests carry `INTERNET` for the Flutter tool only. If Play refuses all-files access,
-deleting the `MANAGE_EXTERNAL_STORAGE` line leaves a working app (Files then shows picked folders).
-Play declaration draft: `docs/play-all-files-declaration.md`.
+release manifest never declares `INTERNET`; the debug and profile manifests carry it for the
+Flutter tool only. Play declaration draft for all-files access, if it comes back:
+`docs/play-all-files-declaration.md`.
 
 ## Known gotchas
+
+- **A launch intent is new only on a fresh `onCreate`** (no saved state, not
+  `FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY`). Android hands a recreated or restored activity, and a
+  task brought back after the process was killed, the VIEW intent that first started it; taking
+  it as new reopened that file by itself (8 October 2026, sev 0). `onNewIntent` is always new.
+- `integration_test/idle_test.dart` guards that the app settles: once a real folder is scanned
+  and enriched, an idle Home draws no frames and the database takes no writes.
 
 - Release builds need `android/app/proguard-rules.pro`: R8 fails on classes Commons Compress and
   junrar refer to but Unfurl doesn't ship (Zstandard, SLF4J's binder). Flutter's Gradle plugin

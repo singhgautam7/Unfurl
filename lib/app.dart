@@ -58,6 +58,12 @@ class _UnfurlAppState extends ConsumerState<UnfurlApp> with WidgetsBindingObserv
   /// viewer; a warm start's arrives through [Platform.arrivals]. Then the
   /// folders are rescanned in the background (never on the first frame).
   Future<void> _startUp() async {
+    // Device-wide books need all-files access; while that's off a row left
+    // from before would only show as a folder Unfurl can't see.
+    if (!kAllFilesAccess && ref.read(settingsProvider).findOnDevice) {
+      await ref.read(settingsProvider.notifier).setFindOnDevice(value: false);
+      await ref.read(libraryProvider).setFindOnDevice(on: false);
+    }
     // All-files access is re-read on every resume; start listening now.
     ref.read(filesAccessProvider);
     _arrivals = Platform.arrivals.listen(_open);

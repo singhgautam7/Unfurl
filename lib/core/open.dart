@@ -10,6 +10,7 @@ import '../design_system/buttons.dart';
 import '../design_system/sheets.dart';
 import '../formats/format_registry.dart';
 import 'db/database.dart';
+import 'explorer.dart' show kAllFilesAccess;
 import 'library/library.dart';
 import 'locator.dart';
 import 'platform/platform.dart';
@@ -141,9 +142,10 @@ Future<void> showUnsupportedSheet(BuildContext context, DocRef ref) async {
 
 /// Re-grants a folder whose access was removed: a picked folder through
 /// Android's picker again; a Files folder lives on all-files access, which
-/// only the Files tab's privacy card asks for.
+/// only the Files tab's privacy card asks for. While that access is off
+/// ([kAllFilesAccess]) every folder is picked again in Android's picker.
 Future<void> regrantFolder(BuildContext context, WidgetRef ref, Folder folder) async {
-  if (folder.source != 'saf_folder') return context.go(Routes.files);
+  if (folder.source != 'saf_folder' && kAllFilesAccess) return context.go(Routes.files);
   await addFolderFlow(context, ref, explain: false);
 }
 

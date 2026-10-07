@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../core/explorer.dart' show kAllFilesAccess;
 import '../../core/motion/motion.dart';
 import '../../core/platform/platform.dart';
 import '../../core/providers.dart';
@@ -480,12 +481,13 @@ class PermissionsScreen extends StatelessWidget {
       title: 'Permissions',
       onBack: () => context.pop(),
       children: <Widget>[
-        para(
-          'All files access',
-          'Optional, and asked for only from the Files tab. With it, Files can browse your whole phone and '
-              'Library can find books anywhere on it. Unfurl only reads: it never edits, moves or deletes a file. '
-              'Everything else works without it.',
-        ),
+        if (kAllFilesAccess)
+          para(
+            'All files access',
+            'Optional, and asked for only from the Files tab. With it, Files can browse your whole phone and '
+                'Library can find books anywhere on it. Unfurl only reads: it never edits, moves or deletes a file. '
+                'Everything else works without it.',
+          ),
         para(
           'Files and folders',
           'Not a permission. You pick folders in Android’s own folder picker, and Unfurl can only read those. '

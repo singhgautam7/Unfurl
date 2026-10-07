@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../core/explorer.dart' show kAllFilesAccess;
 import '../../core/db/database.dart';
 import '../../core/files.dart';
 import '../../core/layout.dart';
@@ -142,8 +143,10 @@ class HomeScreen extends ConsumerWidget {
                         title: 'Unfurl can’t see ${f.name} anymore',
                         body: f.source == 'saf_folder'
                             ? 'Access was removed by Android. Your progress, highlights and notes are kept.'
-                            : 'All files access was turned off. Your progress, highlights and notes are kept.',
-                        action: f.source == 'saf_folder' ? 'Grant access again' : 'Go to Files',
+                            : kAllFilesAccess
+                            ? 'All files access was turned off. Your progress, highlights and notes are kept.'
+                            : 'Pick it again in Android’s folder picker. Your progress, highlights and notes are kept.',
+                        action: f.source == 'saf_folder' || !kAllFilesAccess ? 'Grant access again' : 'Go to Files',
                         actionIcon: AppIcons.folderOpen,
                         onAction: () => regrantFolder(context, ref, f),
                       ),

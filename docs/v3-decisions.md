@@ -196,3 +196,14 @@ are the ones worth a second opinion.
     it once the view is ready, retrying for a few frames while the blocks above are only estimated.
 48. **Words left are saved when the app goes to the background**, not only when the reader closes: Android can
     end a backgrounded app without disposing the reader, which left "Estimated time left" without a count.
+49. **Launch intents replayed (sev 0, 8 October):** reopening Unfurl after Android killed it in the
+    background opened the last file it was opened with, by itself; a recreated activity did the same.
+    `MainActivity` now takes the intent only on a fresh launch. Reproduced on the emulator (Files app
+    → book → Home → background kill → launcher) and fixed; warm and cold opens from other apps still
+    work. The activity also handles navigation, touchscreen, colour-mode and font-weight changes
+    itself, so fewer system changes restart it.
+50. **All-files access off:** Play refuses `MANAGE_EXTERNAL_STORAGE` for Unfurl. The permission is
+    out of the manifest; `kAllFilesAccess = false` hides the Files tab (the other tabs keep their
+    branches), the Settings rows for access and device-wide books, and the Permissions copy. Folders
+    added from Files and the device-wide row lose access: their cards offer Android's picker, and the
+    device-wide row is dropped at launch (only index rows go; places and notes are by fingerprint).

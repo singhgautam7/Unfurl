@@ -624,10 +624,14 @@ class _FolderScreenState extends ConsumerState<FolderScreen> {
         tone: EmptyTone.danger,
         small: true,
         title: 'Unfurl lost access to ${folder.name}',
-        message: folder.source == 'path_folder' ? 'All files access was turned off. Your progress and notes are kept.' : 'Android removed access, which can happen after a backup restore or a storage change. Your progress and notes are kept.',
+        message: folder.source == 'path_folder'
+            ? kAllFilesAccess
+                  ? 'All files access was turned off. Your progress and notes are kept.'
+                  : 'Pick it again in Android’s folder picker. Your progress and notes are kept.'
+            : 'Android removed access, which can happen after a backup restore or a storage change. Your progress and notes are kept.',
         actions: <Widget>[
           AppButton(
-            label: folder.source == 'path_folder' ? 'Go to Files' : 'Grant access again',
+            label: folder.source == 'path_folder' && kAllFilesAccess ? 'Go to Files' : 'Grant access again',
             icon: AppIcons.folderOpen,
             onPressed: () => regrantFolder(context, ref, folder),
           ),
@@ -740,7 +744,9 @@ class _FolderScreenState extends ConsumerState<FolderScreen> {
         'All files access was turned off. Your progress and notes are kept.',
         danger: true,
       );
-      bottom = _bottomButton('Go to Files', AppIcons.folderOpen, () => context.go(Routes.files));
+      bottom = kAllFilesAccess
+          ? _bottomButton('Go to Files', AppIcons.folderOpen, () => context.go(Routes.files))
+          : _bottomButton('Back', AppIcons.back, () => context.pop());
     } else if (problem == DirProblem.removed) {
       final bool usb = PathNames.volumeOf(widget.root)?.kind == 'usb';
       body = usb
@@ -758,7 +764,9 @@ class _FolderScreenState extends ConsumerState<FolderScreen> {
             );
       bottom = usb
           ? _bottomButton('Try again', AppIcons.refresh, () => setState(_openListing))
-          : _bottomButton('Back to Files', AppIcons.folderOpen, () => context.go(Routes.files));
+          : kAllFilesAccess
+          ? _bottomButton('Back to Files', AppIcons.folderOpen, () => context.go(Routes.files))
+          : _bottomButton('Back', AppIcons.back, () => context.pop());
     } else if (problem == DirProblem.unreadable || problem == DirProblem.missing) {
       body = _state(
         problem == DirProblem.missing ? AppIcons.folderOff : AppIcons.usbOff,

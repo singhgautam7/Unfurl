@@ -8,6 +8,12 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../features/settings/settings_controller.dart';
 import 'platform/platform.dart';
 
+/// All-files access (`MANAGE_EXTERNAL_STORAGE`) is off for now: Play refuses
+/// the permission for this app, so it is out of the manifest, and the Files
+/// tab and every control that asks for it are hidden. Folders come through
+/// Android's picker. To bring it back, set this and restore the manifest line.
+const bool kAllFilesAccess = false;
+
 /// Why the Files root shows its privacy card with an eyebrow.
 enum AccessNote {
   none,

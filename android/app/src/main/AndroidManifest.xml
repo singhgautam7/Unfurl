@@ -1,10 +1,10 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <!-- No INTERNET, ever: Unfurl never touches the network, so nothing can leave the phone.
-         All-files access is optional, asked for only from the Files tab, and used to read:
-         Unfurl never writes, renames, moves or deletes a user's file. Without it the app
-         works fully through folders picked with the Storage Access Framework. -->
-    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
-    <!-- The same access on Android 10 and below. -->
+         No MANAGE_EXTERNAL_STORAGE either, for now (Play refuses it for Unfurl; see
+         kAllFilesAccess in lib/core/explorer.dart): files come through folders picked with
+         the Storage Access Framework, read only. Unfurl never writes, renames, moves or
+         deletes a user's file. -->
+    <!-- Read access on Android 10 and below (unused while kAllFilesAccess is off). -->
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="29" />
     <application
         android:label="Unfurl"
@@ -26,7 +26,7 @@
             android:exported="true"
             android:launchMode="singleTask"
             android:theme="@style/LaunchTheme"
-            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode|navigation|touchscreen|colorMode|fontWeightAdjustment"
             android:hardwareAccelerated="true"
             android:windowSoftInputMode="adjustResize">
             <meta-data

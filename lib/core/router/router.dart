@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../design_system/nav_pill.dart' show kDestinations, tabOfBranch;
 import '../../features/files/files_screen.dart';
 import '../../features/folders/folder_screens.dart';
 import '../../features/home/home_screen.dart';
@@ -135,10 +136,13 @@ GoRouter buildRouter({required bool onboarded}) => GoRouter(
     ),
     StatefulShellRoute.indexedStack(
       builder: (BuildContext context, GoRouterState state, StatefulNavigationShell shell) => NavShell(
-        index: shell.currentIndex,
+        index: tabOfBranch(shell.currentIndex),
         // Inside a tab (a folder in Library or Files) the pill steps away.
         nested: state.uri.pathSegments.length > 1,
-        onSelect: (int i) => shell.goBranch(i, initialLocation: i == shell.currentIndex),
+        onSelect: (int i) {
+          final int b = kDestinations[i].branch;
+          shell.goBranch(b, initialLocation: b == shell.currentIndex);
+        },
         child: shell,
       ),
       branches: <StatefulShellBranch>[

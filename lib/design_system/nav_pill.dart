@@ -1,5 +1,8 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
+import '../core/explorer.dart' show kAllFilesAccess;
 import '../core/motion/motion.dart';
 import '../core/theme/app_theme.dart';
 import '../core/theme/palette.dart';
@@ -9,20 +12,27 @@ import 'app_icon.dart';
 import 'buttons.dart';
 
 class NavDestination {
-  const NavDestination(this.icon, this.label);
+  const NavDestination(this.icon, this.label, this.branch);
 
   final IconData icon;
   final String label;
+
+  /// The shell branch it opens (branches stay put when a tab is hidden).
+  final int branch;
 }
 
-/// Home · Library · Files · Notes · More (board 5, N1).
+/// Home · Library · Files · Notes · More (board 5, N1). Files is hidden while
+/// all-files access is off ([kAllFilesAccess]).
 const List<NavDestination> kDestinations = <NavDestination>[
-  NavDestination(AppIcons.home, 'Home'),
-  NavDestination(AppIcons.library, 'Library'),
-  NavDestination(AppIcons.folderOpen, 'Files'),
-  NavDestination(AppIcons.notes, 'Notes'),
-  NavDestination(AppIcons.more, 'More'),
+  NavDestination(AppIcons.home, 'Home', 0),
+  NavDestination(AppIcons.library, 'Library', 1),
+  if (kAllFilesAccess) NavDestination(AppIcons.folderOpen, 'Files', 2),
+  NavDestination(AppIcons.notes, 'Notes', 3),
+  NavDestination(AppIcons.more, 'More', 4),
 ];
+
+/// The tab showing [branch], or Home's for a hidden one.
+int tabOfBranch(int branch) => math.max(0, kDestinations.indexWhere((NavDestination d) => d.branch == branch));
 
 /// Mull's floating pill at Unfurl's five-tab measurements (board 5, N1):
 /// 6dp padding, 44dp items, 48dp inactive tabs, 2dp between them, the

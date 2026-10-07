@@ -29,7 +29,12 @@ class MainActivity : FlutterActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         paintLaunchWindow()
-        pendingIntent = describe(intent)
+        // A file opens only on a fresh launch. Android hands a recreated or
+        // restored activity, and a task brought back from Recents or the
+        // launcher after the process was killed, the intent that first started
+        // it; taking that as new would open the same file again by itself.
+        val fromHistory = intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY != 0
+        pendingIntent = if (savedInstanceState == null && !fromHistory) describe(intent) else null
     }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {

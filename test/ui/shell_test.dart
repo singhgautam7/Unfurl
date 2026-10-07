@@ -62,15 +62,15 @@ void main() {
     await sans.load();
   });
 
-  Future<void> at360(WidgetTester tester, double scale) async {
-    tester.view.physicalSize = const Size(360, 800);
+  Future<void> at360(WidgetTester tester, double scale, {double width = 360}) async {
+    tester.view.physicalSize = Size(width, 800);
     tester.view.devicePixelRatio = 1;
     tester.platformDispatcher.textScaleFactorTestValue = scale;
     addTearDown(tester.view.reset);
     addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
   }
 
-  testWidgets('five tabs fit at 360dp with Library labelled up to 130% (N1)', (WidgetTester tester) async {
+  testWidgets('the tabs fit at 360dp with Library labelled up to 130% (N1)', (WidgetTester tester) async {
     await at360(tester, 1.3);
     await pumpApp(tester);
     await tester.tap(find.bySemanticsLabel('Library'));
@@ -78,13 +78,15 @@ void main() {
     expect(pillText('Library'), findsOneWidget);
     // The pill keeps a 16dp margin each side.
     expect(tester.getSize(find.byType(NavPill)).width, lessThanOrEqualTo(360 - 32));
-    for (final String tab in <String>['Home', 'Library', 'Files', 'Notes', 'More']) {
+    for (final String tab in <String>[for (final NavDestination d in kDestinations) d.label]) {
       expect(find.descendant(of: find.byType(NavPill), matching: find.bySemanticsLabel(tab)), findsOneWidget);
     }
   });
 
-  testWidgets('at the largest font the active tab drops its label for a tooltip (N1)', (WidgetTester tester) async {
-    await at360(tester, 2);
+  testWidgets('at the largest font on a 320dp phone the active tab drops its label for a tooltip (N1)', (
+    WidgetTester tester,
+  ) async {
+    await at360(tester, 2, width: 320);
     await pumpApp(tester);
     await tester.tap(find.bySemanticsLabel('Library'));
     await tester.pumpAndSettle();
@@ -95,7 +97,14 @@ void main() {
       reason: 'the label is the content description',
     );
     expect(find.byTooltip('Library'), findsOneWidget);
-    expect(tester.getSize(find.byType(NavPill)).width, lessThanOrEqualTo(360 - 32));
+    expect(tester.getSize(find.byType(NavPill)).width, lessThanOrEqualTo(320 - 32));
+  });
+
+  test('Files is hidden while all-files access is off; the other tabs keep their branches', () {
+    expect(kDestinations.map((NavDestination d) => d.label), <String>['Home', 'Library', 'Notes', 'More']);
+    expect(kDestinations.map((NavDestination d) => d.branch), <int>[0, 1, 3, 4]);
+    expect(tabOfBranch(3), 2);
+    expect(tabOfBranch(2), 0);
   });
 
   testWidgets('re-tapping a tab returns it to its root; each tab keeps its own stack', (WidgetTester tester) async {
