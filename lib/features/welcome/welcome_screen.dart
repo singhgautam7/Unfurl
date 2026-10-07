@@ -130,6 +130,9 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen> {
                     onPageChanged: (int i) => setState(() => _page = i),
                     children: <Widget>[
                       const _Page(
+                        // Board 2 draws nothing below the text; centred, the
+                        // page doesn't sit on an empty lower half.
+                        centred: true,
                         art: UnfurlMark(),
                         title: 'Open a file and start reading',
                         body: 'PDFs and books open where you left off, in the font, size and theme you choose.',
@@ -293,7 +296,17 @@ class _Swap extends StatelessWidget {
 
 /// One welcome page: everything scrolls, the note included.
 class _Page extends StatelessWidget {
-  const _Page({required this.art, required this.title, required this.body, this.extra, this.note});
+  const _Page({
+    required this.art,
+    required this.title,
+    required this.body,
+    this.extra,
+    this.note,
+    this.centred = false,
+  });
+
+  /// In the middle of the page, text centred (a page with only a title).
+  final bool centred;
 
   final Widget art;
   final String title;
@@ -304,18 +317,36 @@ class _Page extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final UnfurlColors c = context.colors;
-    return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(28, 36, 28, Space.xl),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        spacing: Space.screen,
-        children: <Widget>[
-          art,
-          Text(title, style: UnfurlType.display.copyWith(color: c.onSurface)),
-          Text(body, style: UnfurlType.body.copyWith(color: c.onSurfaceVariant)),
-          ?extra,
-          if (note != null) Text(note!, style: UnfurlType.monoLabel.copyWith(height: 1.5, color: c.onSurfaceVariant)),
-        ],
+    final TextAlign align = centred ? TextAlign.center : TextAlign.start;
+    const EdgeInsets pad = EdgeInsets.fromLTRB(28, 36, 28, Space.xl);
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints box) => SingleChildScrollView(
+        padding: pad,
+        child: ConstrainedBox(
+          // Still scrolls when the text is too big for the page.
+          constraints: BoxConstraints(minHeight: centred ? box.maxHeight - pad.vertical : 0),
+          child: Column(
+            mainAxisAlignment: centred ? MainAxisAlignment.center : MainAxisAlignment.start,
+            crossAxisAlignment: centred ? CrossAxisAlignment.center : CrossAxisAlignment.start,
+            spacing: Space.screen,
+            children: <Widget>[
+              art,
+              Text(
+                title,
+                textAlign: align,
+                style: UnfurlType.display.copyWith(color: c.onSurface),
+              ),
+              Text(
+                body,
+                textAlign: align,
+                style: UnfurlType.body.copyWith(color: c.onSurfaceVariant),
+              ),
+              ?extra,
+              if (note != null)
+                Text(note!, style: UnfurlType.monoLabel.copyWith(height: 1.5, color: c.onSurfaceVariant)),
+            ],
+          ),
+        ),
       ),
     );
   }

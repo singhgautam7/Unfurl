@@ -483,16 +483,29 @@ class Library {
               db.entries.ext.isIn(bookExts) &
               (device ? db.folders.source.equals('device') : db.folders.source.equals('device').not()),
         );
-    return q.watch().map(
-      (List<TypedResult> rows) => <BookItem>[
-        for (final TypedResult r in rows)
-          BookItem(
-            entry: r.readTable(db.entries),
-            folder: r.readTable(db.folders),
-            doc: r.readTableOrNull(db.documents),
-          ),
-      ],
-    );
+    return q.watch().map((List<TypedResult> rows) {
+      // One book however many folders hold a copy: the same fingerprint is
+      // the same book (its place and notes are shared already). The copy in
+      // a folder Unfurl can still read wins.
+      final List<BookItem> out = <BookItem>[];
+      final Map<String, int> at = <String, int>{};
+      for (final TypedResult r in rows) {
+        final BookItem b = BookItem(
+          entry: r.readTable(db.entries),
+          folder: r.readTable(db.folders),
+          doc: r.readTableOrNull(db.documents),
+        );
+        final String? fp = b.entry.fingerprint;
+        final int? i = fp == null ? null : at[fp];
+        if (i == null) {
+          if (fp != null) at[fp] = out.length;
+          out.add(b);
+        } else if (out[i].folder.accessLost && !b.folder.accessLost) {
+          out[i] = b;
+        }
+      }
+      return out;
+    });
   }
 
   /// The ids of entries matching a search (FTS5).

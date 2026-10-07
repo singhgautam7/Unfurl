@@ -12,7 +12,7 @@ class AppSettings {
   const AppSettings({
     this.themeMode = ThemeMode.system,
     this.amoled = false,
-    this.dynamicColor = true,
+    this.dynamicColor = false,
     this.familyId = 'saffron',
     this.wallpaperSeed,
     this.onboarded = false,
@@ -118,7 +118,9 @@ class AppSettings {
         orElse: () => ThemeMode.system,
       ),
       amoled: prefs.getBool(kAmoled) ?? false,
-      dynamicColor: prefs.getBool(kDynamic) ?? true,
+      // Saffron unless chosen otherwise; wallpaper colour is opt-in, or it
+      // would replace that hue on most phones.
+      dynamicColor: prefs.getBool(kDynamic) ?? false,
       familyId: prefs.getString(kFamily) ?? 'saffron',
       wallpaperSeed: seed == null ? null : Color(seed),
       onboarded: prefs.getBool(kOnboarded) ?? false,

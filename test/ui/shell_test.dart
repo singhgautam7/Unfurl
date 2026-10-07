@@ -171,8 +171,10 @@ void main() {
     expect(Theme.of(ctx).extension<UnfurlColors>()!.tone, Tone.amoled);
   });
 
-  testWidgets('a new wallpaper seed is applied and cached for the launch window', (WidgetTester tester) async {
-    final ProviderContainer c = await pumpApp(tester);
+  testWidgets('with wallpaper colour on, a new seed is applied and cached for the launch window', (
+    WidgetTester tester,
+  ) async {
+    final ProviderContainer c = await pumpApp(tester, prefs: <String, Object>{AppSettings.kDynamic: true});
     await c.read(settingsProvider.notifier).setWallpaperSeed(const Color(0xFF3367D6));
     await tester.pumpAndSettle();
     final SharedPreferences p = c.read(prefsProvider);
@@ -182,6 +184,14 @@ void main() {
       ThemeFamily.fromSeed(const Color(0xFF3367D6)).colors(Tone.light).surface.toARGB32(),
     );
     expect(AppSettings.read(p).family, ThemeFamily.fromSeed(const Color(0xFF3367D6)));
+  });
+
+  test('the default theme is Saffron, with wallpaper colour opt-in', () async {
+    SharedPreferences.setMockInitialValues(<String, Object>{});
+    final AppSettings d = AppSettings.read(await SharedPreferences.getInstance());
+    expect(d.familyId, 'saffron');
+    expect(d.dynamicColor, isFalse);
+    expect(ThemeFamily.all.first, ThemeFamily.saffron);
   });
 
   testWidgets('every tab and pushed page fits a 360dp phone at the largest font scale', (WidgetTester tester) async {
@@ -213,7 +223,7 @@ void main() {
     // Appearance › Theme, by its value (the Reader section has a "Theme" too).
     await tester.tap(find.text('Saffron · System'));
     await tester.pumpAndSettle();
-    expect(find.text('Saffron'), findsOneWidget);
+    expect(find.text('Mull'), findsWidgets);
     await tester.tap(find.bySemanticsLabel('Back'));
     await tester.pumpAndSettle();
     // Settings › Reader: every reading control, and Folders from Library.

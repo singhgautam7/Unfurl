@@ -44,8 +44,9 @@ python3 tool/make_fixtures.py                            # regenerate test/fixtu
 
 - **Theme:** Mull's OKLCH role formulas, ported unchanged (`core/theme/palette.dart`), with
   Unfurl's Saffron family (the HANDOFF decision) as default; Settings › Theme also offers Mull's
-  sixteen families (`ThemeFamily.all`, stored as `theme.family`). Dynamic colour (on by default)
-  replaces only the primary hue, chroma pinned at 0.11. `test/theme/tokens_test.dart` pins every chrome role,
+  sixteen families (`ThemeFamily.all`, stored as `theme.family`). Dynamic colour is **off by
+  default** (owner's call, 8 October 2026: on, it replaced Saffron with the wallpaper's hue on
+  most phones); when on it replaces only the primary hue, chroma pinned at 0.11. `test/theme/tokens_test.dart` pins every chrome role,
   reading surface, highlight and cover colour to `tokens.json`.
 - **No WebView.** The earlier plan (foliate-js, docx-preview, SheetJS in a WebView) was dropped:
   a WebView needs a network-capable engine, cold-starts slowly, and can't share Flutter's text

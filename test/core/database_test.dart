@@ -85,4 +85,32 @@ void main() {
     expect(await lib.document('read'), isNotNull);
     expect((await lib.watchRecents().first).map((Recent r) => r.fingerprint), <String>['read']);
   });
+
+  test('a book in two folders is one book in Library', () async {
+    final Library lib = Library(db);
+    Future<int> folder(String name) => db
+        .into(db.folders)
+        .insert(FoldersCompanion.insert(uri: 'content://tree/$name', name: name, addedAt: DateTime(2026)));
+    Future<void> entry(int folderId, String id, String? fp) => db
+        .into(db.entries)
+        .insert(
+          EntriesCompanion.insert(
+            folderId: folderId,
+            docId: id,
+            uri: 'content://tree/$id',
+            parent: '',
+            name: 'pride.epub',
+            ext: 'epub',
+            isDir: false,
+            fingerprint: Value<String?>(fp),
+          ),
+        );
+    final int a = await folder('Books'), b = await folder('Download');
+    await entry(a, 'a1', 'fp-pride');
+    await entry(b, 'b1', 'fp-pride');
+    await entry(b, 'b2', null); // not read yet: listed until its fingerprint is known
+    final List<BookItem> books = await lib.watchBooks().first;
+    expect(books.where((BookItem x) => x.entry.fingerprint == 'fp-pride'), hasLength(1));
+    expect(books, hasLength(2));
+  });
 }

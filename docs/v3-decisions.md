@@ -207,3 +207,9 @@ are the ones worth a second opinion.
     branches), the Settings rows for access and device-wide books, and the Permissions copy. Folders
     added from Files and the device-wide row lose access: their cards offer Android's picker, and the
     device-wide row is dropped at launch (only index rows go; places and notes are by fingerprint).
+51. **One book per fingerprint in Library and Home:** the same file in several folders listed once per
+    copy (three Pride and Prejudice on the owner's phone). `watchBooks` keeps one copy per
+    fingerprint, preferring a folder Unfurl can still read; a folder's own view still lists its files.
+52. **Generated covers:** the maroon Pride and Prejudice cover is the image inside the fixture EPUB
+    (`tool/make_fixtures.py` draws it), not Unfurl's. Unfurl's own covers for books without one keep
+    the spec's seven cover hues, re-derived per theme.
