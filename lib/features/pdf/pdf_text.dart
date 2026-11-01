@@ -42,6 +42,32 @@ class PageText {
     return bestD < 0.06 ? best : null;
   }
 
+  /// The character nearest to a page point (0..1), however far: the nearest
+  /// line, then the nearest character on it. A selection being dragged past
+  /// the text's edge stops at its first or last character. -1 for a page with
+  /// no text.
+  int nearest(Offset p) {
+    int best = -1;
+    double bestDy = double.infinity, bestDx = double.infinity;
+    for (int i = 0; i < rects.length && i < text.length; i++) {
+      final Rect r = rects[i];
+      if (r.isEmpty || text[i].trim().isEmpty) continue;
+      final double dy = p.dy < r.top ? r.top - p.dy : (p.dy > r.bottom ? p.dy - r.bottom : 0);
+      final double dx = p.dx < r.left ? r.left - p.dx : (p.dx > r.right ? p.dx - r.right : 0);
+      if (dy < bestDy - 1e-6 || ((dy - bestDy).abs() <= 1e-6 && dx < bestDx)) {
+        best = i;
+        bestDy = dy;
+        bestDx = dx;
+      }
+    }
+    return best;
+  }
+
+  /// A selection dragged from the long-pressed [word] to character [i]: it
+  /// runs from the word to the character, forwards or back, and never drops
+  /// the word.
+  static (int, int) extend((int, int) word, int i) => i < word.$1 ? (i, word.$2) : (word.$1, math.max(word.$2, i + 1));
+
   /// The word around [i].
   (int, int) wordAt(int i) {
     final RegExp w = RegExp(r"[\p{L}\p{N}’'-]", unicode: true);

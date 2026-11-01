@@ -9,12 +9,11 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:pdfrx/pdfrx.dart';
-import 'package:vector_math/vector_math_64.dart' show Quad;
 
 import '../../core/db/database.dart';
 import '../../core/files.dart';
 import '../../core/library/enrich.dart';
-import '../../core/layout.dart';
+import '../../core/reflow_cache.dart';
 import '../../core/library/library.dart';
 import '../../core/locator.dart';
 import '../../core/motion/motion.dart';
@@ -33,6 +32,7 @@ import '../../design_system/buttons.dart';
 import '../../design_system/chips.dart';
 import '../../design_system/covers.dart';
 import '../../design_system/search_field.dart';
+import '../../design_system/selection_handle.dart';
 import '../../design_system/sheets.dart';
 import '../../design_system/states.dart';
 import '../../formats/pdf/pdf_reflow.dart';
@@ -40,17 +40,36 @@ import '../../formats/reading_document.dart';
 import '../reader/chrome.dart';
 import '../reader/reader_scaffold.dart';
 import '../reader/comfort.dart';
+import '../reader/engine/layout.dart' show ReaderLayoutCache;
 import '../reader/reading_prefs.dart';
 import '../reader/sheets.dart';
 import '../reader/unfurl_transition.dart';
 import '../settings/settings_controller.dart';
 import '../insights/book_insights.dart';
 import '../viewer/document_screen.dart';
+import 'pdf_pages.dart';
 import 'pdf_render.dart';
 import 'pdf_text.dart';
 
-/// Reflowed PDFs, by fingerprint, for the session.
+/// Reflowed PDFs, by fingerprint, for the session: the two most recently
+/// read (a reflow with its figures can be tens of megabytes). On disk,
+/// [ReflowCache] keeps more.
 final Map<String, ReadingDocument> _reflowCache = <String, ReadingDocument>{};
+
+ReadingDocument? _recentReflow(String fingerprint) {
+  final ReadingDocument? r = _reflowCache.remove(fingerprint);
+  if (r != null) _reflowCache[fingerprint] = r;
+  return r;
+}
+
+void _keepReflow(String fingerprint, ReadingDocument r) {
+  _reflowCache
+    ..remove(fingerprint)
+    ..[fingerprint] = r;
+  while (_reflowCache.length > 2) {
+    _reflowCache.remove(_reflowCache.keys.first);
+  }
+}
 
 /// PDF: faithful Page view by default (or Reader, per Settings), with the
 /// Page ⇄ Reader toggle (R1 to R6).
@@ -84,7 +103,11 @@ class _PdfScreenState extends ConsumerState<PdfScreen> with WidgetsBindingObserv
   bool _simplifiedSeen = false;
   final GlobalKey<ReaderScaffoldState> _readerKey = GlobalKey<ReaderScaffoldState>();
 
-  final GlobalKey<_PagesState> _pagesKey = GlobalKey<_PagesState>();
+  /// Reader mode's laid-out pages, kept while Page view shows.
+  final ReaderLayoutCache _layouts = ReaderLayoutCache();
+
+  final GlobalKey<PdfPagesState> _pagesKey = GlobalKey<PdfPagesState>();
+  final GlobalKey _bodyKey = GlobalKey();
   bool _chrome = false;
   int _page = 1;
 
@@ -104,9 +127,14 @@ class _PdfScreenState extends ConsumerState<PdfScreen> with WidgetsBindingObserv
   /// Held so the position can still be saved from dispose().
   late final Library _library;
 
-  // Selection: page and character range.
+  // Selection: page and character range [from, to), the word the long press
+  // took (dragging extends from it), and whether a finger or handle is
+  // dragging it (the toolbar waits until it lets go; handles hide under the
+  // finger's drag only).
   (int, int, int)? _selection;
-  Rect? _selectionRect;
+  (int, int)? _anchor;
+  bool _selectDragging = false;
+  bool _handleDragging = false;
 
   // Search.
   bool _searching = false;
@@ -178,6 +206,7 @@ class _PdfScreenState extends ConsumerState<PdfScreen> with WidgetsBindingObserv
     unawaited(_annSub?.cancel());
     unawaited(_volSub?.cancel());
     _renderer?.dispose();
+    _layouts.dispose();
     _reflowProgress.dispose();
     unawaited(_pdf?.dispose());
     if (_fd != null) unawaited(Platform.closeFd(_fd!));
@@ -232,8 +261,9 @@ class _PdfScreenState extends ConsumerState<PdfScreen> with WidgetsBindingObserv
       );
       if (_reader) {
         unawaited(_ensureReflow());
-      } else if (_readerStart?.page != null) {
-        unawaited(_restorePagePosition(_readerStart!));
+      } else {
+        if (_readerStart?.page != null) unawaited(_restorePagePosition(_readerStart!));
+        unawaited(_warmReflow());
       }
     } catch (_) {
       if (!mounted) return;
@@ -347,10 +377,22 @@ class _PdfScreenState extends ConsumerState<PdfScreen> with WidgetsBindingObserv
   // ------------------------------------------------------------ reader mode
 
   Future<void> _ensureReflow() async {
-    final ReadingDocument? cached = _reflowCache[doc.fingerprint];
+    final ReadingDocument? cached = _recentReflow(doc.fingerprint);
     if (cached != null) return setState(() => _reflow = cached);
     if (_reflowing || _pdf == null) return;
     setState(() => _reflowing = true);
+    // Prepared before, on this or an earlier visit: read back from disk.
+    final ReadingDocument? kept = await ReflowCache.read(doc.fingerprint, producer: 'pdf', version: PdfReflow.version);
+    if (kept != null) {
+      _keepReflow(doc.fingerprint, kept);
+      if (mounted) {
+        setState(() {
+          _reflow = kept;
+          _reflowing = false;
+        });
+      }
+      return;
+    }
     final List<PdfPageInput> inputs = <PdfPageInput>[];
     final Map<String, Uint8List> images = <String, Uint8List>{};
     final List<PdfPage> pages = _pdf!.pages;
@@ -392,13 +434,27 @@ class _PdfScreenState extends ConsumerState<PdfScreen> with WidgetsBindingObserv
       if (mounted) setState(() => _reflowing = false);
       rethrow;
     }
-    _reflowCache[doc.fingerprint] = r;
+    _keepReflow(doc.fingerprint, r);
+    unawaited(ReflowCache.write(doc.fingerprint, r, producer: 'pdf', version: PdfReflow.version));
     if (mounted) {
       setState(() {
         _reflow = r;
         _reflowing = false;
       });
     }
+  }
+
+  /// Reader mode prepared on an earlier visit is read back in the background,
+  /// so the first switch to it is immediate. Nothing is prepared here: that
+  /// would hold PDFium while the pages are being drawn.
+  Future<void> _warmReflow() async {
+    if (_reflow != null || _reflowing) return;
+    final ReadingDocument? r =
+        _recentReflow(doc.fingerprint) ??
+        await ReflowCache.read(doc.fingerprint, producer: 'pdf', version: PdfReflow.version);
+    if (r == null || !mounted || _reflow != null) return;
+    _keepReflow(doc.fingerprint, r);
+    setState(() => _reflow = r);
   }
 
   /// Static, so the isolate's closure carries only the page text.
@@ -606,36 +662,90 @@ class _PdfScreenState extends ConsumerState<PdfScreen> with WidgetsBindingObserv
     return out;
   }
 
-  void _onLongPress(int page, Offset fraction, Rect Function(Rect) toGlobal) {
+  /// Long press: the word under the finger.
+  void _onLongPress(int page, Offset fraction) {
     final PageText? t = _texts[page];
     if (t == null) return;
     final int? i = t.indexAt(fraction);
     if (i == null) return;
     final (int a, int b) = t.wordAt(i);
+    unawaited(HapticFeedback.selectionClick());
     setState(() {
       _selection = (page, a, b);
-      final List<Rect> boxes = t.boxes(a, b);
-      _selectionRect = boxes.isEmpty ? null : toGlobal(boxes.reduce((Rect x, Rect y) => x.expandToInclude(y)));
+      _anchor = (a, b);
+      _selectDragging = true;
     });
   }
 
-  void _extendSelection(int page, Offset fraction, Rect Function(Rect) toGlobal) {
+  /// The finger, still down, moves: the selection runs from the word it took
+  /// to the character under the finger, forwards or back.
+  void _extendSelection(int page, Offset fraction) {
     final (int, int, int)? s = _selection;
+    final (int, int)? word = _anchor;
     final PageText? t = _texts[page];
-    if (s == null || s.$1 != page || t == null) return;
-    final int? i = t.indexAt(fraction);
-    if (i == null) return;
-    setState(() {
-      _selection = i < s.$2 ? (page, i, s.$3) : (page, s.$2, i + 1);
-      final List<Rect> boxes = t.boxes(_selection!.$2, _selection!.$3);
-      _selectionRect = boxes.isEmpty ? null : toGlobal(boxes.reduce((Rect x, Rect y) => x.expandToInclude(y)));
-    });
+    if (s == null || word == null || s.$1 != page || t == null) return;
+    final int i = t.nearest(fraction);
+    if (i < 0) return;
+    final (int a, int b) = PageText.extend(word, i);
+    final (int, int, int) next = (page, a, b);
+    if (next != s) setState(() => _selection = next);
   }
+
+  void _endSelectionDrag() {
+    if (_selectDragging) setState(() => _selectDragging = false);
+  }
+
+  /// A handle moved: [edge] is where its corner (the foot of the line) went,
+  /// in global coordinates. The selection keeps at least one character.
+  void _dragHandle(Offset edge, {required bool start}) {
+    final (int, int, int)? s = _selection;
+    final PageText? t = s == null ? null : _texts[s.$1];
+    final PdfPagesState? pages = _pagesKey.currentState;
+    if (s == null || t == null || pages == null) return;
+    // Half a line up, so the point is on the line, not under it.
+    final List<Rect> lines = t.boxes(s.$2, s.$3);
+    final Rect? page = pages.pageRect(s.$1);
+    final Rect crop = _cropOf(s.$1);
+    final double half = lines.isEmpty || page == null
+        ? 0
+        : (start ? lines.first : lines.last).height / crop.height * page.height / 2;
+    final Offset? f = pages.fractionAt(s.$1, edge - Offset(0, half));
+    if (f == null) return;
+    final int i = t.nearest(f);
+    if (i < 0) return;
+    final (int, int, int) next = start ? (s.$1, math.min(i, s.$3 - 1), s.$3) : (s.$1, s.$2, math.max(i + 1, s.$2 + 1));
+    if (next != s) setState(() => _selection = next);
+  }
+
+  Rect _cropOf(int page) =>
+      (ref.read(readingPrefsProvider).pdfCrop ? _crops[page] : null) ?? const Rect.fromLTRB(0, 0, 1, 1);
 
   void _clearSelection() => setState(() {
     _selection = null;
-    _selectionRect = null;
+    _anchor = null;
+    _selectDragging = false;
+    _handleDragging = false;
   });
+
+  /// The selection's line boxes on screen, in the page view's coordinates.
+  List<Rect> _selectionBoxes() {
+    final (int, int, int)? s = _selection;
+    final PageText? t = s == null ? null : _texts[s.$1];
+    final Rect? page = s == null ? null : _pagesKey.currentState?.pageRect(s.$1);
+    final RenderObject? body = _bodyKey.currentContext?.findRenderObject();
+    if (s == null || t == null || page == null || body is! RenderBox || !body.attached) return const <Rect>[];
+    final Offset origin = body.localToGlobal(Offset.zero);
+    final Rect crop = _cropOf(s.$1);
+    return <Rect>[
+      for (final Rect r in t.boxes(s.$2, s.$3))
+        Rect.fromLTRB(
+          page.left + (r.left - crop.left) / crop.width * page.width,
+          page.top + (r.top - crop.top) / crop.height * page.height,
+          page.left + (r.right - crop.left) / crop.width * page.width,
+          page.top + (r.bottom - crop.top) / crop.height * page.height,
+        ).shift(-origin),
+    ];
+  }
 
   String get _selectedText {
     final (int, int, int)? s = _selection;
@@ -1096,6 +1206,7 @@ class _PdfScreenState extends ConsumerState<PdfScreen> with WidgetsBindingObserv
       key: _readerKey,
       doc: doc,
       reading: r,
+      layoutCache: _layouts,
       start: _readerStart,
       onPageMode: _toPage,
       contents: _outline.isEmpty
@@ -1118,7 +1229,7 @@ class _PdfScreenState extends ConsumerState<PdfScreen> with WidgetsBindingObserv
 
   Widget _pageView(UnfurlColors c, ReadingPrefs prefs) {
     final Annotation? bookmark = _bookmarkHere;
-    final bool selecting = _selection != null && _selectionRect != null;
+    final bool selecting = _selection != null;
     final String title = doc.record.title ?? _stem(doc.ref.name);
     return PopScope(
       // Back closes a selection or search first, then leaves the book.
@@ -1138,6 +1249,7 @@ class _PdfScreenState extends ConsumerState<PdfScreen> with WidgetsBindingObserv
       child: Scaffold(
         backgroundColor: c.surfaceContainer,
         body: Stack(
+          key: _bodyKey,
           children: <Widget>[
             Positioned.fill(
               child: TrackedPages(
@@ -1149,7 +1261,7 @@ class _PdfScreenState extends ConsumerState<PdfScreen> with WidgetsBindingObserv
                     if (_auto.running) _auto.pause(byTouch: true);
                     _sleep.touched();
                   },
-                  child: _Pages(
+                  child: PdfPages(
                     key: _pagesKey,
                     pdf: _pdf!,
                     renderer: _renderer!,
@@ -1210,8 +1322,9 @@ class _PdfScreenState extends ConsumerState<PdfScreen> with WidgetsBindingObserv
                       }
                       _toggleChrome();
                     },
-                    onLongPress: _onLongPress,
-                    onDragSelect: _extendSelection,
+                    onLongPressStart: _onLongPress,
+                    onLongPressMove: _extendSelection,
+                    onLongPressEnd: _endSelectionDrag,
                   ),
                 ),
               ),
@@ -1356,7 +1469,7 @@ class _PdfScreenState extends ConsumerState<PdfScreen> with WidgetsBindingObserv
                 bottom: MediaQuery.paddingOf(context).bottom + 28,
                 child: AutoControl(auto: _auto),
               ),
-            if (selecting) _toolbar(),
+            if (selecting) Positioned.fill(child: _selectionLayer()),
           ],
         ),
       ),
@@ -1378,16 +1491,56 @@ class _PdfScreenState extends ConsumerState<PdfScreen> with WidgetsBindingObserv
     return m == null ? (best!.length > 18 ? '${best!.substring(0, 18)}…' : best) : 'Ch. ${m[1]}';
   }
 
-  Widget _toolbar() {
-    final Rect r = _selectionRect!;
-    final double h = MediaQuery.sizeOf(context).height;
+  /// The selection's handles and toolbar, following the page as it scrolls
+  /// or zooms. The toolbar steps aside while a finger or handle drags.
+  Widget _selectionLayer() => ListenableBuilder(
+    listenable: _pagesKey.currentState?.geometry ?? const AlwaysStoppedAnimation<double>(0),
+    builder: (BuildContext context, Widget? _) {
+      final List<Rect> boxes = _selectionBoxes();
+      if (boxes.isEmpty) return const SizedBox.shrink();
+      final Size screen = MediaQuery.sizeOf(context);
+      final Rect bounds = Offset.zero & screen;
+      final Rect all = boxes.reduce((Rect a, Rect b) => a.expandToInclude(b));
+      final Color colour = _theme.handle;
+      final Offset startEdge = boxes.first.bottomLeft, endEdge = boxes.last.bottomRight;
+      Widget handle({required bool start}) {
+        final Offset at = SelectionHandle.topLeft(start ? startEdge : endEdge, start: start);
+        return Positioned(
+          key: ValueKey<bool>(start),
+          left: at.dx,
+          top: at.dy,
+          child: SelectionHandle(
+            key: ValueKey<bool>(start),
+            start: start,
+            colour: colour,
+            onDragStart: () => setState(() => _handleDragging = true),
+            onDrag: (Offset edge) => _dragHandle(edge, start: start),
+            onDragEnd: () => setState(() => _handleDragging = false),
+          ),
+        );
+      }
+
+      return Stack(
+        children: <Widget>[
+          if (!_selectDragging) ...<Widget>[
+            if (bounds.contains(startEdge)) handle(start: true),
+            if (bounds.contains(endEdge)) handle(start: false),
+          ],
+          if (!_selectDragging && !_handleDragging && all.overlaps(bounds)) _toolbar(all, screen.height),
+        ],
+      );
+    },
+  );
+
+  Widget _toolbar(Rect r, double h) {
     final bool above = r.top > SelectionToolbar.clearance;
     final (int, int, int) s = _selection!;
     // Above: pinned by its bottom edge, whatever its height at this text size.
+    // Below, it clears the end handle.
     return Positioned(
       left: 14,
       right: 14,
-      top: above ? null : math.min(h - SelectionToolbar.clearance, r.bottom + 28),
+      top: above ? null : math.min(h - SelectionToolbar.clearance, r.bottom + SelectionHandle.target),
       bottom: above ? h - r.top + 8 : null,
       child: Reveal(
         child: SelectionToolbar(
@@ -1782,526 +1935,4 @@ class _ThumbnailsState extends State<_Thumbnails> {
       ),
     );
   }
-}
-
-// ------------------------------------------------------------ pages
-
-/// The page surface: continuous vertical (zoom 1x to 5x, panning, lazy
-/// pages, sharp tiles when zoomed) or paged horizontal (one page per swipe,
-/// neighbours peeking).
-class _Pages extends StatefulWidget {
-  const _Pages({
-    required this.pdf,
-    required this.renderer,
-    required this.initialPage,
-    required this.paged,
-    required this.topInset,
-    required this.lookFor,
-    required this.paintFor,
-    required this.pageAspect,
-    required this.cropFor,
-    required this.needText,
-    required this.onPage,
-    required this.onTap,
-    required this.onLongPress,
-    required this.onDragSelect,
-    super.key,
-  });
-
-  final PdfDocument pdf;
-  final PageRenderer renderer;
-  final int initialPage;
-  final bool paged;
-  final double topInset;
-  final PageLook Function(int page) lookFor;
-  final List<(Rect, Color)> Function(int page) paintFor;
-  final double Function(int page) pageAspect;
-  final Rect? Function(int page) cropFor;
-  final void Function(int page) needText;
-  final void Function(int page, double offset) onPage;
-  final void Function(int page, Offset fraction, double screenX) onTap;
-  final void Function(int page, Offset fraction, Rect Function(Rect) toGlobal) onLongPress;
-  final void Function(int page, Offset fraction, Rect Function(Rect) toGlobal) onDragSelect;
-
-  @override
-  State<_Pages> createState() => _PagesState();
-}
-
-class _PagesState extends State<_Pages> with SingleTickerProviderStateMixin {
-  final TransformationController _tx = TransformationController();
-  late PageController _pager = PageController(initialPage: widget.initialPage - 1, viewportFraction: 0.92);
-  int _page = 1;
-  List<double> _tops = const <double>[];
-  List<double> _heights = const <double>[];
-  double _width = 0;
-  double _total = 0;
-  Timer? _sharpen;
-  bool _restored = false;
-  static const double _gap = 12, _side = 12;
-
-  int get _count => widget.pdf.pages.length;
-
-  @override
-  void initState() {
-    super.initState();
-    _glide.addListener(() {
-      final Animation<double>? g = _glideY;
-      if (g != null) _setY(g.value);
-    });
-    _page = widget.initialPage;
-    _tx.addListener(_onTransform);
-    widget.renderer.ready.addListener(_rebuild);
-  }
-
-  @override
-  void didUpdateWidget(_Pages old) {
-    super.didUpdateWidget(old);
-    if (old.paged != widget.paged) {
-      final int keep = _page;
-      _pager.dispose();
-      _pager = PageController(initialPage: keep - 1, viewportFraction: 0.92);
-      _spread = false;
-      _restored = false;
-    }
-  }
-
-  @override
-  void dispose() {
-    _sharpen?.cancel();
-    _glide.dispose();
-    _tx.dispose();
-    _pager.dispose();
-    widget.renderer.ready.removeListener(_rebuild);
-    super.dispose();
-  }
-
-  void _rebuild() {
-    if (mounted) setState(() {});
-  }
-
-  double get _scale => _tx.value.getMaxScaleOnAxis();
-
-  void _layout(double width) {
-    _width = width - _side * 2;
-    double y = widget.topInset;
-    final List<double> tops = <double>[], heights = <double>[];
-    for (int p = 1; p <= _count; p++) {
-      tops.add(y);
-      final double h = _width / widget.pageAspect(p);
-      heights.add(h);
-      y += h + _gap;
-    }
-    _tops = tops;
-    _heights = heights;
-    _total = y + 200;
-  }
-
-  void _onTransform() {
-    if (widget.paged || _tops.isEmpty) return;
-    final double s = _scale;
-    final double ty = -_tx.value.getTranslation().y / s;
-    // The page under a line a third of the way down the view is the one
-    // you're on.
-    final double view = context.size?.height ?? 800;
-    final double probe = ty + (widget.topInset + (view - widget.topInset) / 3) / s;
-    int page = 1;
-    for (int i = 0; i < _tops.length; i++) {
-      if (_tops[i] <= probe) page = i + 1;
-    }
-    // The position saved is the line at the top, as the reader sees it.
-    final double offset = ((ty + widget.topInset / s - _tops[page - 1]) / _heights[page - 1]).clamp(0, 1);
-    if (page != _page) setState(() => _page = page);
-    widget.onPage(page, offset);
-    _sharpen?.cancel();
-    _sharpen = Timer(Motion.sharpenDelay, _rebuild);
-  }
-
-  /// What the reader is looking at: the page and the fraction down it of a
-  /// line a third of the way down the view (paged: the page's top).
-  (int, double) focus() {
-    if (widget.paged || _tops.isEmpty) return (_page, 0);
-    final double s = _scale;
-    final double view = context.size?.height ?? 800;
-    final double y = -_tx.value.getTranslation().y / s + (widget.topInset + (view - widget.topInset) / 3) / s;
-    int page = 1;
-    for (int i = 0; i < _tops.length; i++) {
-      if (_tops[i] <= y) page = i + 1;
-    }
-    return (page, ((y - _tops[page - 1]) / _heights[page - 1]).clamp(0.0, 1.0));
-  }
-
-  late final AnimationController _glide = AnimationController(vsync: this);
-  Animation<double>? _glideY;
-
-  double get _maxY {
-    final double view = context.size?.height ?? 800;
-    return math.max(0, _total * _scale - view);
-  }
-
-  /// Auto-scroll (continuous): moves by [px]; false at the end.
-  bool scrollByPixels(double px) {
-    if (widget.paged || _tops.isEmpty) return false;
-    final double y = -_tx.value.getTranslation().y;
-    if (y >= _maxY) return false;
-    _setY((y + px).clamp(0, _maxY));
-    return true;
-  }
-
-  /// Volume keys (continuous): [fraction] of a screen over 280 ms.
-  void scrollScreen(double fraction) {
-    if (widget.paged || _tops.isEmpty) return;
-    final double view = context.size?.height ?? 800;
-    final double from = -_tx.value.getTranslation().y;
-    _glide.duration = Motion.of(context, Motion.volumeScroll);
-    _glideY = Tween<double>(
-      begin: from,
-      end: (from + view * fraction).clamp(0, _maxY),
-    ).animate(CurvedAnimation(parent: _glide, curve: Motion.decelerate));
-    unawaited(_glide.forward(from: 0));
-  }
-
-  void _setY(double y) {
-    final Matrix4 m = _tx.value.clone()..setTranslationRaw(_tx.value.getTranslation().x, -y, 0);
-    _tx.value = m;
-  }
-
-  /// Scrolls (or turns) to page [page], [fraction] down it.
-  void goTo(int page, {double fraction = 0, bool animate = false}) {
-    if (widget.paged) {
-      if (!_pager.hasClients) return;
-      final int index = _spread ? (page - 1) ~/ 2 : page - 1;
-      if (animate && !Motion.reduced(context)) {
-        unawaited(_pager.animateToPage(index, duration: Motion.pageTurn, curve: Motion.spring));
-      } else {
-        _pager.jumpToPage(index);
-      }
-      return;
-    }
-    if (_tops.isEmpty) {
-      _page = page;
-      return;
-    }
-    final double s = _scale;
-    final double y = (_tops[page - 1] + _heights[page - 1] * fraction - widget.topInset).clamp(
-      0,
-      math.max(0, _total - 100),
-    );
-    final Matrix4 target = Matrix4.identity()
-      ..translateByDouble(_tx.value.getTranslation().x, -y * s, 0, 1)
-      ..scaleByDouble(s, s, 1, 1);
-    _tx.value = target;
-  }
-
-  @override
-  Widget build(BuildContext context) => widget.paged ? _pagedView() : _continuous();
-
-  Widget _continuous() => LayoutBuilder(
-    builder: (BuildContext context, BoxConstraints box) {
-      if (_width != box.maxWidth - _side * 2 || _tops.length != _count) {
-        _layout(box.maxWidth);
-      }
-      if (!_restored) {
-        _restored = true;
-        WidgetsBinding.instance.addPostFrameCallback((_) => goTo(_page));
-      }
-      return GestureDetector(
-        onDoubleTapDown: (TapDownDetails d) {
-          final double s = _scale;
-          if (s > 1.05) {
-            final double ty = _tx.value.getTranslation().y / s;
-            _tx.value = Matrix4.identity()..translateByDouble(0, ty, 0, 1);
-          } else {
-            // Fit the column: zoom to the page's content width.
-            final Rect crop = widget.cropFor(_page) ?? const Rect.fromLTRB(0.08, 0, 0.92, 1);
-            final double z = (1 / crop.width).clamp(1.0, 5.0);
-            final Offset f = d.localPosition;
-            _tx.value = Matrix4.identity()
-              ..translateByDouble(f.dx, f.dy, 0, 1)
-              ..scaleByDouble(z, z, 1, 1)
-              ..translateByDouble(-f.dx, -f.dy, 0, 1)
-              ..multiply(_tx.value);
-          }
-        },
-        child: InteractiveViewer.builder(
-          transformationController: _tx,
-          minScale: 1,
-          maxScale: 5,
-          boundaryMargin: EdgeInsets.zero,
-          interactionEndFrictionCoefficient: 0.00006,
-          builder: (BuildContext context, Quad viewport) {
-            final Rect view = Rect.fromPoints(
-              Offset(viewport.point0.x, viewport.point0.y),
-              Offset(viewport.point2.x, viewport.point2.y),
-            );
-            final Rect buffer = view.inflate(view.height);
-            final Set<int> visible = <int>{};
-            final List<Widget> children = <Widget>[];
-            for (int i = 0; i < _count; i++) {
-              final Rect r = Rect.fromLTWH(_side, _tops[i], _width, _heights[i]);
-              if (!r.overlaps(buffer)) continue;
-              visible.add(i + 1);
-              children.add(
-                Positioned.fromRect(
-                  rect: r,
-                  child: _tile(i + 1, r.size, view.overlaps(r) ? view.intersect(r).shift(-r.topLeft) : null),
-                ),
-              );
-            }
-            widget.renderer.cancelExcept(visible);
-            return SizedBox(
-              width: box.maxWidth,
-              height: _total,
-              child: Stack(children: children),
-            );
-          },
-        ),
-      );
-    },
-  );
-
-  Widget _tile(int page, Size size, Rect? visibleRegion) {
-    widget.needText(page);
-    return _PageTile(
-      key: ValueKey<int>(page),
-      page: page,
-      renderer: widget.renderer,
-      look: widget.lookFor(page),
-      size: size,
-      zoom: _scale,
-      visibleRegion: _scale > 1.4 ? visibleRegion : null,
-      marks: widget.paintFor(page),
-      onTap: (Offset f, double x) => widget.onTap(page, f, x),
-      onLongPress: (Offset f, Rect Function(Rect) g) => widget.onLongPress(page, f, g),
-      onDrag: (Offset f, Rect Function(Rect) g) => widget.onDragSelect(page, f, g),
-    );
-  }
-
-  /// Two pages side by side (tablets in landscape, board 6, V7).
-  bool _spread = false;
-  bool get spread => _spread;
-
-  Widget _pagedView() => LayoutBuilder(
-    builder: (BuildContext context, BoxConstraints box) {
-      final bool spread = SizeClass.of(context) == SizeClass.expanded && MediaQuery.sizeOf(context).shortestSide >= 600;
-      if (spread != _spread) {
-        // Rotation or a resize: the same page, paired or alone.
-        final PageController old = _pager;
-        _spread = spread;
-        _pager = PageController(
-          initialPage: spread ? (_page - 1) ~/ 2 : _page - 1,
-          viewportFraction: spread ? 1 : 0.92,
-        );
-        WidgetsBinding.instance.addPostFrameCallback((_) => old.dispose());
-      }
-      final double maxH = box.maxHeight - widget.topInset - 120;
-      Widget tile(int page, double maxW) {
-        final double aspect = widget.pageAspect(page);
-        final double w = math.min(maxW, maxH * aspect);
-        widget.needText(page);
-        return SizedBox(
-          width: w,
-          height: w / aspect,
-          child: _PageTile(
-            key: ValueKey<int>(page),
-            page: page,
-            renderer: widget.renderer,
-            look: widget.lookFor(page),
-            size: Size(w, w / aspect),
-            zoom: 1,
-            marks: widget.paintFor(page),
-            onTap: (Offset f, double x) => widget.onTap(page, f, x),
-            onLongPress: (Offset f, Rect Function(Rect) g) => widget.onLongPress(page, f, g),
-            onDrag: (Offset f, Rect Function(Rect) g) => widget.onDragSelect(page, f, g),
-          ),
-        );
-      }
-
-      return PageView.builder(
-        controller: _pager,
-        itemCount: spread ? (_count + 1) ~/ 2 : _count,
-        onPageChanged: (int i) {
-          final int page = spread ? i * 2 + 1 : i + 1;
-          setState(() => _page = page);
-          widget.onPage(page, 0);
-        },
-        itemBuilder: (BuildContext context, int i) => Padding(
-          padding: EdgeInsets.only(top: widget.topInset, bottom: 120, left: 4, right: 4),
-          child: Center(
-            child: spread
-                ? Row(
-                    mainAxisSize: MainAxisSize.min,
-                    spacing: Space.xs,
-                    children: <Widget>[
-                      tile(i * 2 + 1, (box.maxWidth - 24) / 2),
-                      if (i * 2 + 2 <= _count) tile(i * 2 + 2, (box.maxWidth - 24) / 2),
-                    ],
-                  )
-                : tile(i + 1, box.maxWidth * 0.92 - 8),
-          ),
-        ),
-      );
-    },
-  );
-}
-
-/// One page: the best image to hand (a sharper one is requested for the
-/// current zoom), a crisp tile over the visible region when zoomed, the
-/// marks, and a 1px outline. No shadow.
-class _PageTile extends StatefulWidget {
-  const _PageTile({
-    required this.page,
-    required this.renderer,
-    required this.look,
-    required this.size,
-    required this.zoom,
-    required this.marks,
-    required this.onTap,
-    required this.onLongPress,
-    required this.onDrag,
-    this.visibleRegion,
-    super.key,
-  });
-
-  final int page;
-  final PageRenderer renderer;
-  final PageLook look;
-  final Size size;
-  final double zoom;
-  final Rect? visibleRegion;
-  final List<(Rect, Color)> marks;
-  final void Function(Offset fraction, double screenX) onTap;
-  final void Function(Offset fraction, Rect Function(Rect) toGlobal) onLongPress;
-  final void Function(Offset fraction, Rect Function(Rect) toGlobal) onDrag;
-
-  @override
-  State<_PageTile> createState() => _PageTileState();
-}
-
-class _PageTileState extends State<_PageTile> {
-  ui.Image? _tile;
-  Rect? _tileRegion;
-
-  int _targetWidth(BuildContext context) {
-    final double dpr = MediaQuery.devicePixelRatioOf(context);
-    final double z = math.pow(1.5, (math.log(math.max(1, widget.zoom)) / math.log(1.5)).ceil()).toDouble();
-    return math.min(2600, (widget.size.width * dpr * math.min(z, 2.0)).round());
-  }
-
-  Offset _fraction(Offset local) => Offset(local.dx / widget.size.width, local.dy / widget.size.height);
-
-  Rect Function(Rect) _toGlobal() {
-    final RenderBox box = context.findRenderObject()! as RenderBox;
-    return (Rect f) {
-      final Rect local = Rect.fromLTRB(
-        f.left * widget.size.width,
-        f.top * widget.size.height,
-        f.right * widget.size.width,
-        f.bottom * widget.size.height,
-      );
-      return Rect.fromPoints(box.localToGlobal(local.topLeft), box.localToGlobal(local.bottomRight));
-    };
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final UnfurlColors c = context.colors;
-    final int w = _targetWidth(context);
-    final ui.Image? img = widget.renderer.cached(widget.page, w, widget.look);
-    if (img == null || img.width < w) {
-      unawaited(widget.renderer.render(widget.page, w, widget.look));
-    }
-    final Rect? region = widget.visibleRegion;
-    if (region != null && region != _tileRegion) {
-      // A sharp render of just what is on screen at this zoom.
-      _tileRegion = region;
-      final Rect crop = widget.look.crop ?? const Rect.fromLTRB(0, 0, 1, 1);
-      final Rect frac = Rect.fromLTRB(
-        region.left / widget.size.width,
-        region.top / widget.size.height,
-        region.right / widget.size.width,
-        region.bottom / widget.size.height,
-      );
-      final Rect sub = Rect.fromLTRB(
-        crop.left + frac.left * crop.width,
-        crop.top + frac.top * crop.height,
-        crop.left + frac.right * crop.width,
-        crop.top + frac.bottom * crop.height,
-      );
-      final int px = math.min(2400, (region.width * widget.zoom * MediaQuery.devicePixelRatioOf(context)).round());
-      unawaited(
-        widget.renderer
-            .render(widget.page, px, PageLook(paper: widget.look.paper, ink: widget.look.ink, crop: sub))
-            .then((ui.Image? t) {
-              if (mounted && _tileRegion == region) setState(() => _tile = t);
-            }),
-      );
-    }
-    final Color paper = widget.look.paper == null ? Colors.white : Color(widget.look.paper!);
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTapUp: (TapUpDetails d) =>
-          widget.onTap(_fraction(d.localPosition), d.globalPosition.dx / MediaQuery.sizeOf(context).width),
-      onLongPressStart: (LongPressStartDetails d) => widget.onLongPress(_fraction(d.localPosition), _toGlobal()),
-      onLongPressMoveUpdate: (LongPressMoveUpdateDetails d) => widget.onDrag(_fraction(d.localPosition), _toGlobal()),
-      child: Container(
-        decoration: BoxDecoration(
-          color: paper,
-          border: Border.all(color: c.outline, width: 0.5),
-        ),
-        child: Stack(
-          fit: StackFit.expand,
-          children: <Widget>[
-            // The page fades in once drawn; until then a hairline says so.
-            AnimatedOpacity(
-              opacity: img == null ? 0 : 1,
-              duration: Motion.of(context, Motion.fast),
-              curve: Motion.decelerate,
-              child: img == null
-                  ? const SizedBox.expand()
-                  : RawImage(image: img, fit: BoxFit.fill, filterQuality: FilterQuality.medium),
-            ),
-            Align(
-              alignment: Alignment.topCenter,
-              child: LoadingHairline(visible: img == null),
-            ),
-            if (region != null && _tile != null && _tileRegion == region)
-              Positioned.fromRect(
-                rect: region,
-                child: RawImage(image: _tile, fit: BoxFit.fill),
-              ),
-            if (widget.marks.isNotEmpty) CustomPaint(painter: _MarksPainter(widget.marks, widget.look.crop)),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _MarksPainter extends CustomPainter {
-  _MarksPainter(this.marks, this.crop);
-
-  final List<(Rect, Color)> marks;
-  final Rect? crop;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final Rect c = crop ?? const Rect.fromLTRB(0, 0, 1, 1);
-    for (final (Rect r, Color colour) in marks) {
-      final Rect onPage = Rect.fromLTRB(
-        (r.left - c.left) / c.width * size.width,
-        (r.top - c.top) / c.height * size.height,
-        (r.right - c.left) / c.width * size.width,
-        (r.bottom - c.top) / c.height * size.height,
-      );
-      canvas.drawRect(
-        onPage.inflate(1),
-        Paint()
-          ..color = colour
-          ..blendMode = BlendMode.multiply,
-      );
-    }
-  }
-
-  @override
-  bool shouldRepaint(_MarksPainter old) => old.marks != marks || old.crop != crop;
 }

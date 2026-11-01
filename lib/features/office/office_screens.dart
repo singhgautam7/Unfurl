@@ -28,6 +28,7 @@ import '../../formats/office/pptx.dart';
 import '../../formats/reading_document.dart';
 import '../reader/chrome.dart';
 import '../reader/reader_scaffold.dart';
+import '../reader/engine/layout.dart' show ReaderLayoutCache;
 import '../reader/sheets.dart';
 import '../reader/unfurl_transition.dart';
 import '../settings/settings_controller.dart';
@@ -109,6 +110,9 @@ class _DocxScreenState extends ConsumerState<DocxScreen> {
   double _laidWidth = 0;
   ReadingThemeId? _laidTheme;
   final ScrollController _scroll = ScrollController();
+
+  /// Reader mode's laid-out pages, kept while Page view shows.
+  final ReaderLayoutCache _layouts = ReaderLayoutCache();
   int _page = 0;
   bool _searching = false;
   List<int> _hits = const <int>[];
@@ -127,6 +131,7 @@ class _DocxScreenState extends ConsumerState<DocxScreen> {
   @override
   void dispose() {
     _scroll.dispose();
+    _layouts.dispose();
     super.dispose();
   }
 
@@ -331,6 +336,7 @@ class _DocxScreenState extends ConsumerState<DocxScreen> {
           ? null
           : ReaderScaffold(
               doc: widget.doc,
+              layoutCache: _layouts,
               reading: _reading!,
               start: _readerStart,
               onPageMode: _toPage,
@@ -644,6 +650,9 @@ class _PptxScreenState extends ConsumerState<PptxScreen> {
   final PageController _pages = PageController();
   final ScrollController _list = ScrollController();
 
+  /// Reader mode's laid-out pages, kept while the slides show.
+  final ReaderLayoutCache _layouts = ReaderLayoutCache();
+
   @override
   void initState() {
     super.initState();
@@ -657,6 +666,7 @@ class _PptxScreenState extends ConsumerState<PptxScreen> {
   void dispose() {
     _pages.dispose();
     _list.dispose();
+    _layouts.dispose();
     super.dispose();
   }
 
@@ -720,6 +730,7 @@ class _PptxScreenState extends ConsumerState<PptxScreen> {
           ? null
           : ReaderScaffold(
               doc: widget.doc,
+              layoutCache: _layouts,
               reading: _outline!,
               start: _readerStart ?? Locator(page: _slide + 1),
               pageIcon: AppIcons.slideshow,

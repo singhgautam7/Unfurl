@@ -31,75 +31,140 @@ class PageLook {
   int get hashCode => Object.hash(paper, ink, crop);
 }
 
+/// Render priorities, lowest first: what is on screen comes before what is
+/// near it, and a quick low-resolution preview before the sharp page.
+abstract final class RenderPriority {
+  static const int visiblePreview = 0;
+  static const int visible = 1;
+  static const int nearPreview = 2;
+  static const int near = 3;
+}
+
+typedef _Key = (int page, int width, PageLook look);
+
+/// A render waiting for, or holding, PDFium.
+class _Job {
+  _Job(this.key, this.priority, this.seq);
+
+  final _Key key;
+  int priority;
+  final int seq;
+  bool started = false;
+  PdfPageRenderCancellationToken? token;
+  final Completer<ui.Image?> done = Completer<ui.Image?>();
+}
+
 /// Renders pages at the size they are shown, recolours them off the UI
-/// isolate, and keeps an LRU of decoded images sized from the device. A
-/// render for a page that has scrolled away is cancelled.
+/// isolate, and keeps an LRU of decoded images sized from the device.
+///
+/// PDFium renders one page at a time, so renders queue here by priority (what
+/// is on screen first) with two in flight: one rendering while the last is
+/// handed to the engine. A queued render for a page that has scrolled away is
+/// dropped and a running one cancelled.
 class PageRenderer {
   PageRenderer(this.document, {int? budgetBytes}) : _budget = budgetBytes ?? 96 * 1024 * 1024;
 
   final PdfDocument document;
   final int _budget;
   int _bytes = 0;
-  final LinkedHashMap<String, ui.Image> _cache = LinkedHashMap<String, ui.Image>();
-  final Map<String, Future<ui.Image?>> _pending = <String, Future<ui.Image?>>{};
-  final Map<String, PdfPageRenderCancellationToken> _tokens = <String, PdfPageRenderCancellationToken>{};
+  final LinkedHashMap<_Key, ui.Image> _cache = LinkedHashMap<_Key, ui.Image>();
+  final Map<_Key, _Job> _jobs = <_Key, _Job>{};
+  final List<_Job> _queue = <_Job>[];
   final Map<int, Rect> _cropBoxes = <int, Rect>{};
+  static const int _inFlight = 2;
+  int _running = 0;
+  int _seq = 0;
   bool _disposed = false;
 
   /// Bumped when an image lands, so painters can repaint.
   final ValueNotifier<int> ready = ValueNotifier<int>(0);
 
-  static String _key(int page, int width, PageLook look) => '$page:$width:${look.hashCode}';
-
-  /// A cached image at exactly this width, or the best smaller one to show
+  /// A cached image at exactly this width, or the widest other one to show
   /// meanwhile.
   ui.Image? cached(int page, int width, PageLook look) {
-    final ui.Image? exact = _cache.remove(_key(page, width, look));
+    final _Key key = (page, width, look);
+    final ui.Image? exact = _cache.remove(key);
     if (exact != null) {
-      _cache[_key(page, width, look)] = exact;
+      _cache[key] = exact;
       return exact;
     }
     ui.Image? best;
-    for (final MapEntry<String, ui.Image> e in _cache.entries) {
-      final List<String> parts = e.key.split(':');
-      if (parts[0] == '$page' && parts[2] == '${look.hashCode}' && (best == null || e.value.width > best.width)) {
-        best = e.value;
-      }
+    for (final MapEntry<_Key, ui.Image> e in _cache.entries) {
+      if (e.key.$1 == page && e.key.$3 == look && (best == null || e.value.width > best.width)) best = e.value;
     }
     return best;
   }
 
   /// Renders page [page] (1-based) at [width] device pixels across the
-  /// visible (cropped) area.
-  Future<ui.Image?> render(int page, int width, PageLook look) {
-    final String key = _key(page, width, look);
+  /// visible (cropped) area. A render already queued keeps its place, moved
+  /// up if this asks for it sooner.
+  Future<ui.Image?> render(int page, int width, PageLook look, {int priority = RenderPriority.visible}) {
+    final _Key key = (page, width, look);
     final ui.Image? hit = _cache[key];
     if (hit != null) return Future<ui.Image?>.value(hit);
-    return _pending[key] ??= _render(page, width, look, key).whenComplete(() {
-      // The entry is this future, already completing.
-      // ignore: discarded_futures
-      _pending.remove(key);
-      _tokens.remove(key);
-    });
+    final _Job? queued = _jobs[key];
+    if (queued != null) {
+      if (!queued.started && priority < queued.priority) queued.priority = priority;
+      return queued.done.future;
+    }
+    if (_disposed) return Future<ui.Image?>.value();
+    final _Job job = _Job(key, priority, _seq++);
+    _jobs[key] = job;
+    _queue.add(job);
+    _pump();
+    return job.done.future;
   }
 
-  /// Cancels renders for pages outside [keep].
-  void cancelExcept(Set<int> keep) {
-    for (final MapEntry<String, PdfPageRenderCancellationToken> e in _tokens.entries.toList()) {
-      if (!keep.contains(int.parse(e.key.split(':').first))) e.value.cancel();
+  void _pump() {
+    while (!_disposed && _running < _inFlight && _queue.isNotEmpty) {
+      _Job next = _queue.first;
+      for (final _Job j in _queue) {
+        if (j.priority < next.priority || (j.priority == next.priority && j.seq < next.seq)) next = j;
+      }
+      _queue.remove(next);
+      next.started = true;
+      _running++;
+      unawaited(_run(next));
     }
   }
 
-  Future<ui.Image?> _render(int pageNumber, int width, PageLook look, String key) async {
+  Future<void> _run(_Job job) async {
+    ui.Image? image;
+    try {
+      image = await _render(job);
+    } catch (_) {
+      // A page PDFium can't draw, or memory for its pixels: it stays blank.
+      image = null;
+    }
+    _running--;
+    _jobs.remove(job.key);
+    if (!job.done.isCompleted) job.done.complete(image);
+    _pump();
+  }
+
+  /// Drops queued renders for pages outside [keep] and cancels running ones.
+  void cancelExcept(Set<int> keep) {
+    for (final _Job j in _queue.where((_Job j) => !keep.contains(j.key.$1)).toList()) {
+      _queue.remove(j);
+      _jobs.remove(j.key);
+      j.done.complete(null);
+    }
+    for (final _Job j in _jobs.values) {
+      if (j.started && !keep.contains(j.key.$1)) j.token?.cancel();
+    }
+  }
+
+  Future<ui.Image?> _render(_Job job) async {
+    final (int pageNumber, int width, PageLook look) = job.key;
     if (_disposed || pageNumber < 1 || pageNumber > document.pages.length) return null;
     final PdfPage page = document.pages[pageNumber - 1];
     final Rect crop = look.crop ?? const Rect.fromLTRB(0, 0, 1, 1);
     final double full = width / crop.width;
     final double fullH = full * page.height / page.width;
     final int x = (crop.left * full).round(), y = (crop.top * fullH).round();
-    final int w = width, h = (crop.height * fullH).round();
+    final int w = width, h = math.max(1, (crop.height * fullH).round());
     final PdfPageRenderCancellationToken token = page.createCancellationToken();
-    _tokens[key] = token;
+    job.token = token;
     final PdfImage? img = await page.render(
       x: x,
       y: y,
@@ -114,25 +179,32 @@ class PageRenderer {
       img?.dispose();
       return null;
     }
-    Uint8List pixels = Uint8List.fromList(img.pixels);
-    final int iw = img.width, ih = img.height;
-    img.dispose();
+    final ui.Image image;
     if (look.recolour) {
-      final TransferableTypedData t = TransferableTypedData.fromList(<Uint8List>[pixels]);
-      final int paper = look.paper!, ink = look.ink!;
-      pixels = await _recolourOff(t, iw, ih, paper, ink);
+      final Uint8List copy = Uint8List.fromList(img.pixels);
+      final int iw = img.width, ih = img.height;
+      img.dispose();
+      final TransferableTypedData t = TransferableTypedData.fromList(<Uint8List>[copy]);
+      final Uint8List pixels = await _recolourOff(t, iw, ih, look.paper!, look.ink!);
+      final Completer<ui.Image> done = Completer<ui.Image>();
+      ui.decodeImageFromPixels(pixels, iw, ih, ui.PixelFormat.bgra8888, done.complete);
+      image = await done.future;
+    } else {
+      // Straight from PDFium's buffer to the engine: no copy on this isolate.
+      try {
+        image = await img.createImage();
+      } finally {
+        img.dispose();
+      }
     }
-    final Completer<ui.Image> done = Completer<ui.Image>();
-    ui.decodeImageFromPixels(pixels, iw, ih, ui.PixelFormat.bgra8888, done.complete);
-    final ui.Image image = await done.future;
     if (_disposed) {
       image.dispose();
       return null;
     }
-    _cache[key] = image;
-    _bytes += iw * ih * 4;
+    _cache[job.key] = image;
+    _bytes += image.width * image.height * 4;
     while (_bytes > _budget && _cache.length > 2) {
-      final String oldest = _cache.keys.first;
+      final _Key oldest = _cache.keys.first;
       final ui.Image gone = _cache.remove(oldest)!;
       _bytes -= gone.width * gone.height * 4;
       gone.dispose();
@@ -289,9 +361,12 @@ class PageRenderer {
 
   void dispose() {
     _disposed = true;
-    for (final PdfPageRenderCancellationToken t in _tokens.values) {
-      t.cancel();
+    for (final _Job j in _jobs.values) {
+      j.token?.cancel();
+      if (!j.done.isCompleted) j.done.complete(null);
     }
+    _jobs.clear();
+    _queue.clear();
     for (final ui.Image i in _cache.values) {
       i.dispose();
     }
