@@ -9,6 +9,7 @@ import '../../../core/motion/motion.dart';
 import '../../../core/theme/tokens.dart';
 import '../../../core/theme/typography.dart';
 import '../../../design_system/app_icon.dart';
+import '../../../design_system/selection_handle.dart';
 import '../../../formats/reading_document.dart';
 import 'page_turn.dart';
 import '../reading_prefs.dart';
@@ -125,6 +126,7 @@ class ReaderView extends StatefulWidget {
     this.runningHead,
     this.footer,
     this.columns = 1,
+    this.layoutCache,
     super.key,
   });
 
@@ -151,13 +153,17 @@ class ReaderView extends StatefulWidget {
   /// Two columns on a wide screen.
   final int columns;
 
+  /// Where the laid-out pages are parked while this view is gone, so the next
+  /// one for the same document, style and size starts from them (paged).
+  final ReaderLayoutCache? layoutCache;
+
   @override
   State<ReaderView> createState() => _ReaderViewState();
 }
 
 class _ReaderViewState extends State<ReaderView> {
   Layout? _layout;
-  final ImageSizes _images = ImageSizes();
+  late final ImageSizes _images = ImageSizes.of(widget.controller.doc);
   PageController? _pages;
   final GlobalKey<TurnPagerState> _turner = GlobalKey<TurnPagerState>();
   final ScrollController _scroll = ScrollController();
@@ -175,9 +181,11 @@ class _ReaderViewState extends State<ReaderView> {
   Timer? _background;
   final GlobalKey _surface = GlobalKey();
 
-  // Selection drag state.
+  // Selection drag state: the word a long press began on, and whether the
+  // finger is dragging out from it.
   bool _dragging = false;
-  bool _dragStart = false;
+  (int, int) _anchorWord = (0, 0);
+  Offset _pressAt = Offset.zero;
 
   // Pinch state (two pointers, tracked by hand so it never fights the pager).
   final Map<int, Offset> _pointers = <int, Offset>{};
@@ -189,19 +197,30 @@ class _ReaderViewState extends State<ReaderView> {
     super.initState();
     widget.controller._view = this;
     widget.controller.addListener(_onController);
-    unawaited(_loadImages());
-  }
-
-  Future<void> _loadImages() async {
     final List<String> keys = <String>[
       for (final Section s in widget.controller.doc.sections)
         for (final Block b in s.blocks)
           if (b.image != null) b.image!,
     ];
+    // Sizes read from the headers (or kept from an earlier view of this
+    // document) are known now: the first frame is the page.
+    if (_images.loadKnown(widget.controller.doc.resources, keys)) {
+      _imagesReady = true;
+      _openAtPlace();
+    } else {
+      unawaited(_loadImages(keys));
+    }
+  }
+
+  Future<void> _loadImages(List<String> keys) async {
     await _images.load(widget.controller.doc.resources, keys);
     if (!mounted) return;
     setState(() => _imagesReady = true);
-    // Paged finds its page in layout; Scroll opens at the top unless told.
+    _openAtPlace();
+  }
+
+  /// Paged finds its page in layout; Scroll opens at the top unless told.
+  void _openAtPlace() {
     if (widget.layoutMode == ReaderLayout.scroll && _c.position != (0, 0, 0)) _goTo(_c.position, animate: false);
   }
 
@@ -230,7 +249,15 @@ class _ReaderViewState extends State<ReaderView> {
     _background?.cancel();
     widget.controller.removeListener(_onController);
     if (widget.controller._view == this) widget.controller._view = null;
-    _layout?.dispose();
+    final Layout? l = _layout;
+    if (l != null) {
+      final ReaderLayoutCache? cache = widget.layoutCache;
+      if (cache != null) {
+        cache.park(l, columns: _columnsFor);
+      } else {
+        l.dispose();
+      }
+    }
     _pages?.dispose();
     _scroll.dispose();
     super.dispose();
@@ -255,7 +282,9 @@ class _ReaderViewState extends State<ReaderView> {
     if (_layout != null && _laidFor == page && _styleFor == widget.style && _columnsFor == widget.columns) return;
     final (int, int, int) keep = _anchor ??= _c.position;
     _layout?.dispose();
-    _layout = Layout(doc: _doc, style: widget.style, pageSize: page, images: _images);
+    _layout =
+        widget.layoutCache?.take(doc: _doc, style: widget.style, pageSize: page, columns: widget.columns) ??
+        Layout(doc: _doc, style: widget.style, pageSize: page, images: _images);
     _laidFor = page;
     _styleFor = widget.style;
     _columnsFor = widget.columns;
@@ -263,7 +292,12 @@ class _ReaderViewState extends State<ReaderView> {
     _index = _spreadOf(_layout!.pageOf(keep.$1, keep.$2, keep.$3));
     _pages?.dispose();
     _pages = PageController(initialPage: _index);
-    _scheduleBackground();
+    _c.layoutComplete = _layout!.complete;
+    if (_layout!.complete) {
+      _background?.cancel();
+    } else {
+      _scheduleBackground();
+    }
     _reportFor(_index, notify: false);
   }
 
@@ -490,15 +524,71 @@ class _ReaderViewState extends State<ReaderView> {
       b++;
     }
     if (a == b) return;
-    _c.selection = (_global(f, a), _global(f, b));
+    _dragging = false;
+    _anchorWord = (_global(f, a), _global(f, b));
+    _pressAt = d.localPosition;
+    _setSelection(_global(f, a), _global(f, b));
+  }
+
+  void _setSelection(int from, int to) {
+    if (_c.selection == (from, to)) return;
+    _c.selection = (from, to);
     _c._report();
+    _emitSelection();
+  }
+
+  /// A finger held on the text and dragged: the selection runs from the word
+  /// the press began on to the character under the finger, either way.
+  void _extendFromAnchor(int g) {
+    final (int from, int to) = _anchorWord;
+    if (g < from) {
+      _setSelection(g, to);
+    } else if (g >= to) {
+      _setSelection(from, g + 1);
+    } else {
+      _setSelection(from, to);
+    }
+  }
+
+  /// A selection handle dragged to [edge] (global): the point is lifted half a
+  /// line so it falls inside the line it marks.
+  void _dragEdge(Offset edge, {required bool start}) {
+    final (int, int)? sel = _c.selection;
+    if (sel == null) return;
+    final ReaderStyle s = widget.style;
+    final Offset lift = Offset(0, s.size * s.lineHeight / 2);
+    final int? g;
+    if (widget.layoutMode == ReaderLayout.scroll) {
+      g = _scrollGlobalAt(edge - lift);
+    } else {
+      final RenderObject? box = _surface.currentContext?.findRenderObject();
+      if (box is! RenderBox) return;
+      g = _globalAt(box.globalToLocal(edge) - lift);
+    }
+    if (g == null) return;
+    final (int a, int b) = sel;
+    _setSelection(start ? math.min(g, b - 1) : a, start ? b : math.max(g, a + 1));
+  }
+
+  /// The global character index nearest a view point (paged), clamped to the
+  /// text of the page under it.
+  int? _globalAt(Offset local) {
+    final (ReaderPage, int)? at = _pageAt(local);
+    if (at == null) return null;
+    final (Fragment, int)? hit = _hit(at.$1, _toPage(local, at.$2), clamp: true);
+    return hit == null ? null : _global(hit.$1, hit.$2);
+  }
+
+  void _endDrag() {
+    if (!_dragging) return;
+    setState(() => _dragging = false);
     _emitSelection();
   }
 
   void _emitSelection() {
     SchedulerBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      widget.onSelection(_selectionRects());
+      widget.onSelection(widget.layoutMode == ReaderLayout.scroll ? _scrollSelectionRects() : _selectionRects());
     });
   }
 
@@ -527,18 +617,6 @@ class _ReaderViewState extends State<ReaderView> {
       out.addAll(f.boxes((a - base).clamp(0, f.block.text.length), (b - base).clamp(0, f.block.text.length)));
     }
     return out;
-  }
-
-  void _dragHandle(Offset local, {required bool start}) {
-    final (ReaderPage, int)? at = _pageAt(local);
-    if (at == null || _c.selection == null) return;
-    final (Fragment, int)? hit = _hit(at.$1, _toPage(local, at.$2) - const Offset(0, 24), clamp: true);
-    if (hit == null) return;
-    final int g = _global(hit.$1, hit.$2);
-    final (int a, int b) = _c.selection!;
-    _c.selection = start ? (math.min(g, b - 1), b) : (a, math.max(g, a + 1));
-    _c._report();
-    _emitSelection();
   }
 
   void _onPointerDown(PointerDownEvent e) {
@@ -582,7 +660,8 @@ class _ReaderViewState extends State<ReaderView> {
     return i < 0 ? 0 : i;
   }
 
-  final Map<int, GlobalKey> _itemKeys = <int, GlobalKey>{};
+  final Map<int, GlobalKey<_ScrollBlockState>> _itemKeys = <int, GlobalKey<_ScrollBlockState>>{};
+  final GlobalKey _scrollSurface = GlobalKey();
 
   void _jumpToFlat(int i, int offset, [int tries = 8]) {
     final BuildContext? ctx = _itemKeys[i]?.currentContext;
@@ -602,7 +681,10 @@ class _ReaderViewState extends State<ReaderView> {
   }
 
   bool _onScroll(ScrollNotification n) {
-    if (n is ScrollUpdateNotification) _reportScroll();
+    if (n is ScrollUpdateNotification) {
+      _reportScroll();
+      if (_c.selection != null) _followSelection();
+    }
     // The last update lands before the frame lays it out: measure once more
     // after that frame, so the saved place is what's on screen at rest.
     if (n is ScrollEndNotification) {
@@ -616,9 +698,11 @@ class _ReaderViewState extends State<ReaderView> {
 
   /// The first block whose box crosses the top of the viewport.
   void _reportScroll() {
-    for (final MapEntry<int, GlobalKey> e
-        in _itemKeys.entries.toList()
-          ..sort((MapEntry<int, GlobalKey> a, MapEntry<int, GlobalKey> b) => a.key.compareTo(b.key))) {
+    for (final MapEntry<int, GlobalKey<_ScrollBlockState>> e
+        in _itemKeys.entries.toList()..sort(
+          (MapEntry<int, GlobalKey<_ScrollBlockState>> a, MapEntry<int, GlobalKey<_ScrollBlockState>> b) =>
+              a.key.compareTo(b.key),
+        )) {
       final RenderObject? r = e.value.currentContext?.findRenderObject();
       if (r is! RenderBox || !r.attached) continue;
       final Offset o = r.localToGlobal(Offset.zero);
@@ -715,10 +799,12 @@ class _ReaderViewState extends State<ReaderView> {
             onLongPressMoveUpdate: (LongPressMoveUpdateDetails d) {
               // A held finger jitters; extend only once it really moves.
               if (!_dragging && d.offsetFromOrigin.distance < kTouchSlop) return;
-              _dragging = true;
-              _dragHandle(d.localPosition + const Offset(0, 24), start: false);
+              if (!_dragging) setState(() => _dragging = true);
+              final int? g = _globalAt(d.localPosition);
+              if (g != null) _extendFromAnchor(g);
             },
-            onLongPressEnd: (_) => _dragging = false,
+            onLongPressEnd: (_) => _endDrag(),
+            onLongPressCancel: _endDrag,
             child: pages,
           ),
           if (_c.selection != null && !_dragging) ..._handles(),
@@ -727,102 +813,175 @@ class _ReaderViewState extends State<ReaderView> {
     },
   );
 
+  /// A selection handle at [edge], the foot of the selection's first or last
+  /// line, in the coordinates of the Stack it sits in.
+  Widget _handleAt(Offset edge, {required bool start}) {
+    final Offset at = SelectionHandle.topLeft(edge, start: start);
+    return Positioned(
+      left: at.dx,
+      top: at.dy,
+      child: SelectionHandle(
+        start: start,
+        colour: widget.style.theme.handle,
+        onDrag: (Offset global) => _dragEdge(global, start: start),
+      ),
+    );
+  }
+
   List<Widget> _handles() {
     final List<Rect> rects = _selectionRects();
     if (rects.isEmpty) return const <Widget>[];
-    final Rect first = rects.first, last = rects.last;
-    final Color colour = widget.style.theme.handle;
-    Widget handle({required bool start}) {
-      final Rect r = start ? first : last;
-      return Positioned(
-        left: (start ? r.left - 18 : r.right) - 14,
-        top: r.bottom - 14,
-        child: GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onPanStart: (_) => setState(() => _dragStart = start),
-          onPanUpdate: (DragUpdateDetails d) {
-            final RenderBox box = _surface.currentContext!.findRenderObject()! as RenderBox;
-            _dragHandle(box.globalToLocal(d.globalPosition), start: _dragStart);
-          },
-          child: Padding(
-            padding: const EdgeInsets.all(14),
-            child: Container(
-              width: 18,
-              height: 18,
-              decoration: BoxDecoration(
-                color: colour,
-                borderRadius: start
-                    ? const BorderRadius.only(
-                        topLeft: Radius.circular(9),
-                        bottomLeft: Radius.circular(9),
-                        bottomRight: Radius.circular(9),
-                      )
-                    : const BorderRadius.only(
-                        topRight: Radius.circular(9),
-                        bottomLeft: Radius.circular(9),
-                        bottomRight: Radius.circular(9),
-                      ),
-              ),
-            ),
-          ),
-        ),
-      );
-    }
+    return <Widget>[
+      _handleAt(Offset(rects.first.left, rects.first.bottom), start: true),
+      _handleAt(Offset(rects.last.right, rects.last.bottom), start: false),
+    ];
+  }
 
-    return <Widget>[handle(start: true), handle(start: false)];
+  // ------------------------------------------------------------ scroll selection
+
+  /// The blocks on the tree now, in reading order.
+  List<(int, _ScrollBlockState)> _mountedBlocks() {
+    final List<(int, _ScrollBlockState)> out = <(int, _ScrollBlockState)>[];
+    for (final MapEntry<int, GlobalKey<_ScrollBlockState>> e in _itemKeys.entries) {
+      final _ScrollBlockState? st = e.value.currentState;
+      if (st != null) out.add((e.key, st));
+    }
+    out.sort(((int, _ScrollBlockState) a, (int, _ScrollBlockState) b) => a.$1.compareTo(b.$1));
+    return out;
+  }
+
+  /// The global character index nearest a screen point (scroll): the block
+  /// under it, or the nearest one when it is between blocks.
+  int? _scrollGlobalAt(Offset global) {
+    final List<(double, _ScrollBlockState)> near = <(double, _ScrollBlockState)>[];
+    for (final (int, _ScrollBlockState) e in _mountedBlocks()) {
+      final Rect? r = e.$2.bounds;
+      if (r == null) continue;
+      near.add((global.dy < r.top ? r.top - global.dy : (global.dy > r.bottom ? global.dy - r.bottom : 0), e.$2));
+    }
+    near.sort(((double, _ScrollBlockState) a, (double, _ScrollBlockState) b) => a.$1.compareTo(b.$1));
+    for (final (double, _ScrollBlockState) e in near) {
+      final int? g = e.$2.globalAt(global, clamp: true);
+      if (g != null) return g;
+    }
+    return null;
+  }
+
+  /// The selection's rectangles on screen (scroll), global coordinates.
+  List<Rect> _scrollSelectionRects() {
+    final (int, int)? s = _c.selection;
+    if (s == null) return const <Rect>[];
+    return <Rect>[for (final (int, _ScrollBlockState) e in _mountedBlocks()) ...e.$2.globalBoxes(s.$1, s.$2)];
+  }
+
+  void _scrollLongPressMove(Offset global) {
+    if (_c.selection == null) return;
+    // A held finger jitters; extend only once it really moves.
+    if (!_dragging) {
+      if ((global - _pressAt).distance < kTouchSlop) return;
+      setState(() => _dragging = true);
+    }
+    final int? g = _scrollGlobalAt(global);
+    if (g != null) _extendFromAnchor(g);
+  }
+
+  bool _followPending = false;
+
+  /// The selection moved with the scroll: put the handles and the toolbar
+  /// where it is now, once the frame has laid the new offset out.
+  void _followSelection() {
+    if (_followPending) return;
+    _followPending = true;
+    SchedulerBinding.instance.addPostFrameCallback((_) {
+      _followPending = false;
+      if (!mounted || _c.selection == null) return;
+      setState(() {});
+      widget.onSelection(_scrollSelectionRects());
+    });
+  }
+
+  List<Widget> _scrollHandles() {
+    final (int, int)? sel = _c.selection;
+    final RenderObject? stack = _scrollSurface.currentContext?.findRenderObject();
+    if (sel == null || stack is! RenderBox || !stack.hasSize) return const <Widget>[];
+    Rect? first, last;
+    for (final (int, _ScrollBlockState) e in _mountedBlocks()) {
+      final (int lo, int hi) = e.$2.range;
+      if (first == null && sel.$1 >= lo && sel.$1 < hi) first = e.$2.globalBoxes(sel.$1, sel.$2).firstOrNull;
+      if (sel.$2 > lo && sel.$2 <= hi) last = e.$2.globalBoxes(sel.$1, sel.$2).lastOrNull;
+    }
+    bool shown(Offset p) => p.dy >= 0 && p.dy <= stack.size.height;
+    final Offset? a = first == null ? null : stack.globalToLocal(first.bottomLeft);
+    final Offset? b = last == null ? null : stack.globalToLocal(last.bottomRight);
+    return <Widget>[
+      if (a != null && shown(a)) _handleAt(a, start: true),
+      if (b != null && shown(b)) _handleAt(b, start: false),
+    ];
   }
 
   Widget _buildScroll(BuildContext context) => LayoutBuilder(
     builder: (BuildContext context, BoxConstraints box) {
       final double width = math.min(box.maxWidth - widget.style.margin * 2, widget.style.size * 38);
       if (_flat.isEmpty) _flat = _flatten();
-      return NotificationListener<ScrollNotification>(
-        onNotification: _onScroll,
-        child: ListView.builder(
-          controller: _scroll,
-          padding: EdgeInsets.fromLTRB(
-            (box.maxWidth - width) / 2,
-            MediaQuery.paddingOf(context).top + 24,
-            (box.maxWidth - width) / 2,
-            120,
+      return Stack(
+        key: _scrollSurface,
+        fit: StackFit.expand,
+        children: <Widget>[
+          NotificationListener<ScrollNotification>(
+            onNotification: _onScroll,
+            child: ListView.builder(
+              controller: _scroll,
+              padding: EdgeInsets.fromLTRB(
+                (box.maxWidth - width) / 2,
+                MediaQuery.paddingOf(context).top + 24,
+                (box.maxWidth - width) / 2,
+                120,
+              ),
+              itemCount: _flat.length,
+              itemBuilder: (BuildContext context, int i) {
+                final (int s, int b) = _flat[i];
+                final GlobalKey<_ScrollBlockState> key = _itemKeys.putIfAbsent(i, GlobalKey<_ScrollBlockState>.new);
+                return _ScrollBlock(
+                  key: key,
+                  doc: _doc,
+                  section: s,
+                  block: b,
+                  width: width,
+                  style: widget.style,
+                  marks: _c.marks,
+                  spoken: _c.spoken,
+                  selection: _c.selection,
+                  images: _images,
+                  onTap: (int? global, String? href, Offset at) {
+                    if (_c.selection != null) {
+                      _c.clearSelection();
+                      widget.onSelection(const <Rect>[]);
+                      return;
+                    }
+                    if (href != null) return widget.onLink(href);
+                    if (global != null) {
+                      for (final Mark m in _c.marks) {
+                        if (global >= m.from && global < m.to) return widget.onMarkTap(m.id, at);
+                      }
+                    }
+                    widget.onCentreTap();
+                  },
+                  onSelect: ((int, int) range, List<Rect> rects, Offset at) {
+                    _dragging = false;
+                    _anchorWord = range;
+                    _pressAt = at;
+                    _c.selection = range;
+                    _c._report();
+                    widget.onSelection(rects);
+                  },
+                  onLongPressMove: _scrollLongPressMove,
+                  onLongPressEnd: _endDrag,
+                );
+              },
+            ),
           ),
-          itemCount: _flat.length,
-          itemBuilder: (BuildContext context, int i) {
-            final (int s, int b) = _flat[i];
-            final GlobalKey key = _itemKeys.putIfAbsent(i, GlobalKey.new);
-            return _ScrollBlock(
-              key: key,
-              doc: _doc,
-              section: s,
-              block: b,
-              width: width,
-              style: widget.style,
-              marks: _c.marks,
-              spoken: _c.spoken,
-              selection: _c.selection,
-              images: _images,
-              onTap: (int? global, String? href, Offset at) {
-                if (_c.selection != null) {
-                  _c.clearSelection();
-                  widget.onSelection(const <Rect>[]);
-                  return;
-                }
-                if (href != null) return widget.onLink(href);
-                if (global != null) {
-                  for (final Mark m in _c.marks) {
-                    if (global >= m.from && global < m.to) return widget.onMarkTap(m.id, at);
-                  }
-                }
-                widget.onCentreTap();
-              },
-              onSelect: ((int, int) range, List<Rect> rects) {
-                _c.selection = range;
-                _c._report();
-                widget.onSelection(rects);
-              },
-            );
-          },
-        ),
+          if (_c.selection != null && !_dragging) ..._scrollHandles(),
+        ],
       );
     },
   );
@@ -1179,6 +1338,8 @@ class _ScrollBlock extends StatefulWidget {
     required this.images,
     required this.onTap,
     required this.onSelect,
+    required this.onLongPressMove,
+    required this.onLongPressEnd,
     super.key,
   });
 
@@ -1192,7 +1353,14 @@ class _ScrollBlock extends StatefulWidget {
   final (int, int)? selection;
   final ImageSizes images;
   final void Function(int? global, String? href, Offset at) onTap;
-  final void Function((int, int) range, List<Rect> rects) onSelect;
+
+  /// A long press chose a word: its range, its boxes on screen and where the
+  /// finger is (global).
+  final void Function((int, int) range, List<Rect> rects, Offset at) onSelect;
+
+  /// The finger of a long press moved (global), and let go.
+  final void Function(Offset global) onLongPressMove;
+  final VoidCallback onLongPressEnd;
 
   @override
   State<_ScrollBlock> createState() => _ScrollBlockState();
@@ -1202,6 +1370,61 @@ class _ScrollBlockState extends State<_ScrollBlock> {
   Layout? _layout;
   double? _w;
   ReaderStyle? _s;
+
+  /// The block's text area, under any chapter divider and spacing.
+  final GlobalKey _content = GlobalKey();
+
+  Block get _block => widget.doc.sections[widget.section].blocks[widget.block];
+
+  /// Global [from, to] of this block's text.
+  (int, int) get range => (_block.start, _block.start + _block.text.length);
+
+  /// The whole block on screen (global), once it has a size.
+  Rect? get bounds {
+    final RenderObject? r = context.findRenderObject();
+    if (r is! RenderBox || !r.attached || !r.hasSize) return null;
+    return r.localToGlobal(Offset.zero) & r.size;
+  }
+
+  RenderBox? get _contentBox {
+    final RenderObject? r = _content.currentContext?.findRenderObject();
+    return r is RenderBox && r.attached && r.hasSize ? r : null;
+  }
+
+  /// The global character index under a global point in this block; with
+  /// [clamp], the nearest one in it. Null when the block has no text there.
+  int? globalAt(Offset global, {bool clamp = false}) {
+    final RenderBox? box = _contentBox;
+    if (box == null) return null;
+    final Offset p = box.globalToLocal(global);
+    final ReaderPage page = _page();
+    Fragment? best;
+    double d = double.infinity;
+    for (final Fragment f in page.fragments.where((Fragment f) => f.isText)) {
+      final double dist = p.dy < f.rect.top ? f.rect.top - p.dy : (p.dy > f.rect.bottom ? p.dy - f.rect.bottom : 0);
+      if (dist < d) {
+        d = dist;
+        best = f;
+      }
+    }
+    final int? o = best?.offsetAt(p, clamp: clamp);
+    return o == null ? null : _block.start + o;
+  }
+
+  /// The boxes of the global range [from, to) in this block, global coordinates.
+  List<Rect> globalBoxes(int from, int to) {
+    final RenderBox? box = _contentBox;
+    final (int lo, int hi) = range;
+    if (box == null || to <= lo || from >= hi) return const <Rect>[];
+    final int len = _block.text.length;
+    final List<Rect> out = <Rect>[];
+    for (final Fragment f in _page().fragments) {
+      for (final Rect r in f.boxes((from - lo).clamp(0, len), (to - lo).clamp(0, len))) {
+        out.add(Rect.fromPoints(box.localToGlobal(r.topLeft), box.localToGlobal(r.bottomRight)));
+      }
+    }
+    return out;
+  }
 
   ReaderPage _page() {
     if (_layout == null || _w != widget.width || _s != widget.style) {
@@ -1286,16 +1509,15 @@ class _ScrollBlockState extends State<_ScrollBlock> {
                 e++;
               }
               if (a == e) return;
-              final RenderBox box = context.findRenderObject()! as RenderBox;
-              final List<Rect> rects = f
-                  .boxes(a, e)
-                  .map((Rect r) => Rect.fromPoints(box.localToGlobal(r.topLeft), box.localToGlobal(r.bottomRight)))
-                  .toList();
-              widget.onSelect((base + a, base + e), rects);
+              widget.onSelect((base + a, base + e), globalBoxes(base + a, base + e), d.globalPosition);
               return;
             }
           },
+          onLongPressMoveUpdate: (LongPressMoveUpdateDetails d) => widget.onLongPressMove(d.globalPosition),
+          onLongPressEnd: (_) => widget.onLongPressEnd(),
+          onLongPressCancel: widget.onLongPressEnd,
           child: SizedBox(
+            key: _content,
             height: height,
             child: _PageContent(
               page: page,
