@@ -31,6 +31,8 @@ flutter build apk --profile --target-platform android-arm64 -t integration_test/
                                                          # v3 on-device round: formats, tracking, cards, comfort
 flutter build apk --profile --target-platform android-arm64 -t integration_test/v3_perf_test.dart
                                                          # v3 timings ("perf:" lines in logcat)
+PDFIUM_PATH=/path/to/libpdfium.so flutter test test/pdf  # PDF viewer tests on the host (else skipped;
+                                                         # pdfium-binaries linux-x64, release pdfium_dart pins)
 dart run build_runner build --delete-conflicting-outputs # after drift table changes
 flutter build apk --release --split-per-abi --obfuscate --split-debug-info=build/symbols
                                                          # arm64 31.1 MB (see docs/performance.md)
@@ -57,9 +59,15 @@ python3 tool/make_fixtures.py                            # regenerate test/fixtu
   maps Curl/Cover to Fade and Slide to None. Tables are real text; a table wider than the page
   scrolls sideways (`Fragment.scroll`), and columns never break inside a word.
 - **PDF:** pdfrx for PDFium (render, text, outline, links); the viewer is Unfurl's own
-  (`features/pdf/`): LRU page images, sharp tiles when zoomed, recolour on an isolate, auto-crop.
+  (`features/pdf/`): `pdf_pages.dart` is the page surface (its own gestures: Android fling physics
+  through `ClampingScrollSimulation`, a scroll frame moves one transform, pages rebuilt only when
+  one enters or leaves range); `PageRenderer` queues renders by priority (on screen, previews
+  first), keeps an LRU of page images, sharp tiles when zoomed, recolour on an isolate, auto-crop.
+  Page view shows the file's own colours; "Recolour pages" is opt-in (`pdf.recolourPages`, off).
   Reader mode for PDF is `formats/pdf/pdf_reflow.dart` (columns, running heads, dehyphenation,
-  headings), with progress shown while it runs.
+  headings), with progress shown while it runs; the result is kept on disk (`core/reflow_cache.dart`,
+  app storage, 300 MB LRU, bump `PdfReflow.version` when the analysis changes) and the laid-out
+  pages are kept while Page view shows (`ReaderLayoutCache`).
 - **File access:** All-files access is optional and requested only from the Files tab. The app must
   work fully without it. No INTERNET permission, ever. Without access, files come through the Storage
   Access Framework (picked folders and files); with it, the Files tab and path-based folders read
@@ -117,7 +125,8 @@ lib/core/db/             drift tables, FTS5 (database.g.dart is generated)
 lib/core/library/        library (folders, scan queue, positions, annotations) · enrich (covers)
 lib/core/platform/       the Kotlin channel: SAF, all-files access, listing, intents, TTS, window flags
 lib/core/explorer.dart   all-files access (live), folder listings, per-folder session memory
-lib/core/                files (Fd, fingerprint) · locator · open (open flows) · providers
+lib/core/                files (Fd, fingerprint) · locator · open (open flows) · providers ·
+                         reflow_cache (Reader mode on disk)
 lib/core/tracking/       session (LiveSession, rules) · tracker · stats_store
 lib/core/layout.dart     SizeClass (600 / 840), AdaptiveSpec, CoverGrid
 lib/formats/             reading_document · format_registry (sniff, families) · books · epub · kindle ·
@@ -154,6 +163,7 @@ If two elements share a layout they share a widget. One implementation each:
 | Bottom sheet | `showAppBottomSheet` (reader: `showReaderSheet`) |
 | Overflow menu | `showAppMenu` + `AppMenuEntry` |
 | Toast with undo | `AppSnackbar` |
+| Text selection handle (reader and PDF) | `SelectionHandle` |
 | Filter / toggle chip, chip row | `PillChip`, `ChipRow` |
 | Segmented control | `SegmentedToggle` |
 | A reading control (sheet and the Settings › Reader page) | `TextSizeControl`, `LineSpacingControl`, `MarginsControl`, `AlignControl`, `LayoutControl`, `PageTurnControl`, `BrightnessRow` (`reader/sheets.dart`) |

@@ -50,6 +50,7 @@ class _Job {
   int priority;
   final int seq;
   bool started = false;
+  bool cancelled = false;
   PdfPageRenderCancellationToken? token;
   final Completer<ui.Image?> done = Completer<ui.Image?>();
 }
@@ -70,6 +71,9 @@ class PageRenderer {
   final LinkedHashMap<_Key, ui.Image> _cache = LinkedHashMap<_Key, ui.Image>();
   final Map<_Key, _Job> _jobs = <_Key, _Job>{};
   final List<_Job> _queue = <_Job>[];
+
+  /// Renders PDFium could not make: not asked for again on every rebuild.
+  final Set<_Key> _failed = <_Key>{};
   final Map<int, Rect> _cropBoxes = <int, Rect>{};
   static const int _inFlight = 2;
   int _running = 0;
@@ -102,6 +106,7 @@ class PageRenderer {
     final _Key key = (page, width, look);
     final ui.Image? hit = _cache[key];
     if (hit != null) return Future<ui.Image?>.value(hit);
+    if (_failed.contains(key)) return Future<ui.Image?>.value();
     final _Job? queued = _jobs[key];
     if (queued != null) {
       if (!queued.started && priority < queued.priority) queued.priority = priority;
@@ -138,6 +143,7 @@ class PageRenderer {
     }
     _running--;
     _jobs.remove(job.key);
+    if (image == null && !job.cancelled && !_disposed) _failed.add(job.key);
     if (!job.done.isCompleted) job.done.complete(image);
     _pump();
   }
@@ -150,7 +156,10 @@ class PageRenderer {
       j.done.complete(null);
     }
     for (final _Job j in _jobs.values) {
-      if (j.started && !keep.contains(j.key.$1)) j.token?.cancel();
+      if (j.started && !keep.contains(j.key.$1)) {
+        j.cancelled = true;
+        j.token?.cancel();
+      }
     }
   }
 

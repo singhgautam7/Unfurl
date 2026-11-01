@@ -586,7 +586,14 @@ class _PdfScreenState extends ConsumerState<PdfScreen> with WidgetsBindingObserv
     _page = page;
     _pageOffset = offset;
     if (changed) {
-      setState(() {});
+      setState(() {
+        // A turned page takes its selection with it (continuous keeps it:
+        // the page is still there to scroll back to).
+        if (ref.read(readingPrefsProvider).pdfLayout == PdfLayout.paged) {
+          _selection = null;
+          _anchor = null;
+        }
+      });
       unawaited(_text(page));
     }
     _saveTimer?.cancel();

@@ -667,7 +667,9 @@ class PdfPagesState extends State<PdfPages> with TickerProviderStateMixin {
   }
 
   Widget _tile(int page, Size size, {required bool visible, required double zoom, Rect? region}) {
-    widget.needText(page);
+    // Text (selection, highlights, the saved place) only for pages on
+    // screen: each load holds PDFium like a render does.
+    if (visible) widget.needText(page);
     final Widget tile = RepaintBoundary(
       child: _PageTile(
         key: ValueKey<int>(page),
@@ -722,6 +724,7 @@ class PdfPagesState extends State<PdfPages> with TickerProviderStateMixin {
         itemCount: spread ? (_count + 1) ~/ 2 : _count,
         onPageChanged: (int i) {
           final int page = spread ? i * 2 + 1 : i + 1;
+          widget.renderer.cancelExcept(<int>{for (int p = page - 2; p <= page + 3; p++) p});
           setState(() => _page = page);
           widget.onPage(page, 0);
         },
