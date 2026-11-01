@@ -33,7 +33,7 @@ class MadeInIndia extends StatelessWidget {
   Widget build(BuildContext context) => Text(
     'Made with ❤️ in India',
     textAlign: TextAlign.center,
-    style: UnfurlType.monoLabel.copyWith(color: context.colors.onSurfaceMuted),
+    style: UnfurlType.monoLabel.copyWith(color: context.colors.onSurfaceVariant),
   );
 }
 
