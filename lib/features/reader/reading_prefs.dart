@@ -66,7 +66,7 @@ class ReadingPrefs {
     this.pdfOpensReader = false,
     this.pdfLayout = PdfLayout.continuous,
     this.pdfCrop = false,
-    this.pdfRecolour = true,
+    this.pdfRecolour = false,
     this.ttsRate = 1.0,
     this.ttsVoice,
   });
@@ -100,6 +100,9 @@ class ReadingPrefs {
   final bool pdfOpensReader;
   final PdfLayout pdfLayout;
   final bool pdfCrop;
+
+  /// Page view in the reading colours (photos keep theirs). Off unless chosen:
+  /// a page shows the file's own colours in every app theme.
   final bool pdfRecolour;
   final double ttsRate;
   final String? ttsVoice;
@@ -175,7 +178,9 @@ class ReadingPrefs {
     pdfOpensReader: p.getBool('pdf.opensReader') ?? false,
     pdfLayout: _enum(PdfLayout.values, p.getString('pdf.layout'), PdfLayout.continuous),
     pdfCrop: p.getBool('pdf.crop') ?? false,
-    pdfRecolour: p.getBool('pdf.recolour') ?? true,
+    // A new key: the old one was written as true by any reading change, so it
+    // can't tell a choice from the old default.
+    pdfRecolour: p.getBool('pdf.recolourPages') ?? false,
     ttsRate: p.getDouble('tts.rate') ?? 1.0,
     ttsVoice: p.getString('tts.voice'),
   );
@@ -197,7 +202,8 @@ class ReadingPrefs {
     await p.setBool('pdf.opensReader', pdfOpensReader);
     await p.setString('pdf.layout', pdfLayout.name);
     await p.setBool('pdf.crop', pdfCrop);
-    await p.setBool('pdf.recolour', pdfRecolour);
+    await p.setBool('pdf.recolourPages', pdfRecolour);
+    await p.remove('pdf.recolour');
     await p.setDouble('tts.rate', ttsRate);
     if (ttsVoice != null) await p.setString('tts.voice', ttsVoice!);
   }

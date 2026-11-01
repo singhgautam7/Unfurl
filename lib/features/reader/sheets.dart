@@ -424,7 +424,7 @@ class _PageSettings extends ConsumerWidget {
             ),
             _SwitchRow(
               label: 'Recolour pages',
-              subtitle: 'Photos keep their colours',
+              subtitle: 'Pages take the reader colours; photos keep theirs',
               value: p.pdfRecolour,
               onChanged: (bool v) => set((ReadingPrefs x) => x.copyWith(pdfRecolour: v)),
             ),

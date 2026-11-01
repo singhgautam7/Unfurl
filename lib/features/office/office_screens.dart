@@ -28,7 +28,6 @@ import '../../formats/office/pptx.dart';
 import '../../formats/reading_document.dart';
 import '../reader/chrome.dart';
 import '../reader/reader_scaffold.dart';
-import '../reader/reading_prefs.dart';
 import '../reader/sheets.dart';
 import '../reader/unfurl_transition.dart';
 import '../settings/settings_controller.dart';
@@ -316,7 +315,9 @@ class _DocxScreenState extends ConsumerState<DocxScreen> {
     final UnfurlColors c = context.colors;
     final Docx? d = _docx;
     if (d == null) return OpeningCard(ref: widget.doc.ref);
-    final ReadingTheme theme = readingThemeOf(context, ref.watch(readingPrefsProvider), ref.watch(settingsProvider));
+    // The page keeps the document's own look (paper and ink) in every app
+    // theme; Reader mode takes the reading colours.
+    final ReadingTheme theme = ReadingTheme.of(ref.watch(settingsProvider).family, ReadingThemeId.light);
     return UnfurlSwitcher(
       reader: _reader,
       anchorY: MediaQuery.paddingOf(context).top + 64,
