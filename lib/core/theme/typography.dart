@@ -78,8 +78,9 @@ abstract final class UnfurlType {
   static TextStyle get kvValue => _sans(16.5, 1.2, 600);
   static TextStyle get monoSmall => _mono(10.5, 500).copyWith(height: 1.35);
 
-  /// A format badge on a cover or row: 600 9.5 · .04em (v3).
-  static TextStyle get badge => _mono(9.5, 600, letterSpacing: 0.38).copyWith(height: 1);
+  /// A format badge on a cover or row: 600 10.5 · .04em (v3, a step up so
+  /// it reads on any preview).
+  static TextStyle get badge => _mono(10.5, 600, letterSpacing: 0.42).copyWith(height: 1);
 
   static TextTheme textTheme(Color onSurface, Color onSurfaceVariant) => TextTheme(
     displayLarge: display.copyWith(color: onSurface),

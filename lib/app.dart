@@ -100,9 +100,9 @@ class _UnfurlAppState extends ConsumerState<UnfurlApp> with WidgetsBindingObserv
       debugShowCheckedModeBanner: false,
       routerConfig: _router,
       themeMode: s.themeMode,
-      theme: AppTheme.of(s.family, s.toneFor(Brightness.light)),
-      darkTheme: AppTheme.of(s.family, s.toneFor(Brightness.dark)),
-      // A theme change (mode, true black, a new wallpaper hue) cross-fades.
+      theme: AppTheme.of(s.family, s.toneFor(Brightness.light), expressive: s.expressive),
+      darkTheme: AppTheme.of(s.family, s.toneFor(Brightness.dark), expressive: s.expressive),
+      // A theme change (mode, pure black, expressive, a new wallpaper hue) cross-fades.
       themeAnimationDuration: reduced ? Motion.reducedFade : Motion.background,
       themeAnimationCurve: reduced ? Curves.linear : Motion.decelerate,
       builder: (BuildContext context, Widget? child) {

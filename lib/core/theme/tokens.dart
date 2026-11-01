@@ -72,6 +72,15 @@ abstract final class IconSpec {
 
   /// The round icon button's visible disc inside its 48dp target.
   static const double button = 44;
+
+  /// A file tile with no preview: the format's glyph, centred, at this
+  /// share of the tile's width (as wide as v2's large extension label).
+  static const double tileFraction = 0.58;
+}
+
+/// A control that can't act right now (Material's disabled opacity).
+abstract final class Opacities {
+  static const double disabled = 0.38;
 }
 
 /// Depth lives in 1px outlines; a shadow exists on exactly one object, the

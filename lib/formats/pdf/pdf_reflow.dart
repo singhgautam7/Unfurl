@@ -73,7 +73,7 @@ class _Line {
 abstract final class PdfReflow {
   /// Bump whenever the analysis changes what it produces: Reader mode kept on
   /// disk (`ReflowCache`) under an older version is prepared again.
-  static const int version = 1;
+  static const int version = 2;
 
   static String regionKey(int page, int index) => 'p${page}r$index';
 
@@ -85,9 +85,14 @@ abstract final class PdfReflow {
   /// - text laid out in a grid: three or more consecutive lines, each with
   ///   two or more wide gaps between words (an unruled table).
   ///
+  /// A scanned book's paper is tinted, so ink is what differs from the
+  /// page's own paper colour; a page with almost no text, or a scan, keeps a
+  /// picture as big as the page (a full-page illustration, a cover).
+  ///
   /// ponytail: pixel heuristics, no PDF object model. Background tints that
-  /// cover most of a page are ignored; a very busy page may read as one
-  /// picture. PDFium's page objects would be exact if pdfrx exposes them.
+  /// cover most of a page with text on it are ignored; a very busy page may
+  /// read as one picture. PDFium's page objects would be exact if pdfrx
+  /// exposes them.
   static List<double> findRegions(PdfPageInput p, Uint8List? bgra, int w, int h) {
     final List<Rect4> found = <Rect4>[];
     final double sx = p.width / math.max(1, w), sy = p.height / math.max(1, h);
@@ -95,12 +100,18 @@ abstract final class PdfReflow {
       final int cell = math.max(4, w ~/ 90);
       final int gw = (w + cell - 1) ~/ cell, gh = (h + cell - 1) ~/ cell;
       final Uint8List ink = Uint8List(gw * gh);
+      final bool textless = p.text.replaceAll(RegExp(r'\s'), '').length < _textlessChars;
+      final (int pr, int pg, int pb) = _paper(bgra, w, h);
+      final bool white = pr >= 235 && pg >= 235 && pb >= 235;
       for (int y = 0; y < h; y++) {
         for (int x = 0; x < w; x++) {
           final int i = (y * w + x) * 4;
           final int b = bgra[i], g = bgra[i + 1], r = bgra[i + 2];
           final int hi = math.max(r, math.max(g, b)), lo = math.min(r, math.min(g, b));
-          if (hi < 230 || hi - lo > 40) ink[(y ~/ cell) * gw + x ~/ cell] = 1;
+          final bool mark = white
+              ? hi < 230 || hi - lo > 40
+              : (r - pr).abs() + (g - pg).abs() + (b - pb).abs() > _scanInk;
+          if (mark) ink[(y ~/ cell) * gw + x ~/ cell] = 1;
         }
       }
       // Clear text: each glyph's cells, grown by one.
@@ -150,8 +161,19 @@ abstract final class PdfReflow {
         }
         final double bw = (x1 - x0 + 1) / gw, bh = (y1 - y0 + 1) / gh;
         // Large enough to be a picture or a table, not a rule or a bullet,
-        // and not a tint behind the whole page.
-        if (bw < 0.12 || bh < 0.05 || bw * bh < 0.015 || bw * bh > 0.7) continue;
+        // and not a tint behind a page of text (a scan's paper is already
+        // left out, so there a page-sized region is a picture).
+        if (bw < 0.12 || bh < 0.05 || bw * bh < 0.015 || (bw * bh > 0.7 && white && !textless)) continue;
+        // On a scan, specks of dirt grown together are sparse; a drawing isn't.
+        if (!white) {
+          int marks = 0;
+          for (int y = y0; y <= y1; y++) {
+            for (int x = x0; x <= x1; x++) {
+              marks += ink[y * gw + x];
+            }
+          }
+          if (marks < _scanDensity * (x1 - x0 + 1) * (y1 - y0 + 1)) continue;
+        }
         found.add(
           Rect4(
             x0 * cell * sx,
@@ -243,6 +265,38 @@ abstract final class PdfReflow {
         math.max(0, r.b - 4),
       ],
     ];
+  }
+
+  /// How far (summed over r, g, b) a pixel on tinted paper must be from the
+  /// paper to be ink: above a scan's grain and JPEG noise.
+  static const int _scanInk = 90;
+
+  /// The share of a scanned region's cells that must be ink to be a picture.
+  static const double _scanDensity = 0.13;
+
+  /// Fewer characters than this (a page number, OCR specks): an
+  /// illustration page.
+  static const int _textlessChars = 24;
+
+  /// The page's paper: the commonest colour (4 bits a channel) in a sample of
+  /// the render, averaged within that bucket.
+  static (int, int, int) _paper(Uint8List bgra, int w, int h) {
+    final Int32List count = Int32List(4096);
+    final Int32List sum = Int32List(4096 * 3);
+    for (int i = 0; i + 3 < bgra.length; i += 4 * 7) {
+      final int b = bgra[i], g = bgra[i + 1], r = bgra[i + 2];
+      final int k = (r >> 4) << 8 | (g >> 4) << 4 | b >> 4;
+      count[k]++;
+      sum[k * 3] += r;
+      sum[k * 3 + 1] += g;
+      sum[k * 3 + 2] += b;
+    }
+    int best = 0;
+    for (int k = 1; k < count.length; k++) {
+      if (count[k] > count[best]) best = k;
+    }
+    final int n = math.max(1, count[best]);
+    return (sum[best * 3] ~/ n, sum[best * 3 + 1] ~/ n, sum[best * 3 + 2] ~/ n);
   }
 
   /// Symbol-font bullets (Wingdings, Symbol) arrive in the private use

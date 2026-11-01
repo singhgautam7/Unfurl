@@ -9,7 +9,8 @@ import '../db/database.dart';
 import '../platform/platform.dart';
 import '../tracking/stats_store.dart';
 
-/// A book (PDF or EPUB) in the Library, with what Unfurl knows of it.
+/// A file in the Library (a book, or any file Unfurl opens), with what
+/// Unfurl knows of it.
 @immutable
 class BookItem {
   const BookItem({required this.entry, required this.folder, this.doc});
@@ -18,7 +19,7 @@ class BookItem {
   final Folder folder;
   final Document? doc;
 
-  String get title => doc?.title ?? entry.title ?? _stem(entry.name);
+  String get title => doc?.title ?? entry.title ?? stem(entry.name);
   String? get author => doc?.author ?? entry.author;
   double get progress => doc?.progress ?? 0;
   bool get finished => doc?.finished ?? false;
@@ -44,7 +45,8 @@ class BookItem {
   DocRef get ref =>
       DocRef(uri: entry.uri, name: entry.name, size: entry.size, modified: entry.modified, mime: entry.mime);
 
-  static String _stem(String name) {
+  /// "Thesis Draft" for "Thesis Draft.docx".
+  static String stem(String name) {
     final int dot = name.lastIndexOf('.');
     return dot <= 0 ? name : name.substring(0, dot);
   }
@@ -102,6 +104,9 @@ class Library {
 
   /// Every format the Library lists (PDF, EPUB, Kindle, FB2, HTML, comics).
   static final List<String> bookExts = Formats.bookExtensions;
+
+  /// Every format Unfurl opens: what Library's All lists.
+  static final List<String> readableExts = <String>[for (final FormatModule m in Formats.all) ...m.extensions];
 
   /// What "Find books across this device" looks for: books, minus HTML, which
   /// would pull in every saved web page and app help file on the phone.
@@ -470,8 +475,9 @@ class Library {
     )..where((x) => x.id.equals(f.id))).write(FoldersCompanion(path: Value<String>('gen:$gen')));
   }
 
-  /// Library's books: those in added folders, or with "Find books across
-  /// this device" every book on the phone.
+  /// Library's files: every readable one in added folders (books first
+  /// among them; the chips filter), or with "Find books across this device"
+  /// every book on the phone.
   Stream<List<BookItem>> watchBooks({bool device = false}) {
     final JoinedSelectStatement<HasResultSet, dynamic> q =
         db.select(db.entries).join(<Join<HasResultSet, dynamic>>[
@@ -480,7 +486,7 @@ class Library {
         ])..where(
           db.entries.isDir.equals(false) &
               db.entries.hidden.equals(false) &
-              db.entries.ext.isIn(bookExts) &
+              db.entries.ext.isIn(readableExts) &
               (device ? db.folders.source.equals('device') : db.folders.source.equals('device').not()),
         );
     return q.watch().map((List<TypedResult> rows) {

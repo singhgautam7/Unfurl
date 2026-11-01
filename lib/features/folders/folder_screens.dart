@@ -22,13 +22,14 @@ import '../../core/theme/app_theme.dart';
 import '../../core/theme/palette.dart';
 import '../../core/theme/tokens.dart';
 import '../../core/theme/typography.dart';
+import '../../design_system/app_header.dart';
 import '../../design_system/app_icon.dart';
 import '../../design_system/app_menu.dart';
 import '../../design_system/app_snackbar.dart';
 import '../../design_system/buttons.dart';
 import '../../design_system/chips.dart';
+import '../../design_system/containers.dart';
 import '../../design_system/covers.dart';
-import '../../design_system/search_field.dart';
 import '../../design_system/states.dart';
 import '../../formats/format_registry.dart';
 import '../files/file_sheets.dart';
@@ -410,7 +411,9 @@ class _FolderScreenState extends ConsumerState<FolderScreen> {
 
   /// name, modified, size or type.
   String _sort = 'name';
-  late bool _grid = widget.mode == FolderMode.picker ? false : ref.read(settingsProvider.notifier).folderGrid(_gridKey);
+
+  /// One view mode for the app (Library's), except the picker, a list.
+  bool get _grid => !_picker && ref.read(settingsProvider).libraryGrid;
 
   // Library.
   Map<String, (int, int)> _counts = const <String, (int, int)>{};
@@ -447,7 +450,6 @@ class _FolderScreenState extends ConsumerState<FolderScreen> {
 
   bool get _explorer => widget.mode != FolderMode.library;
   bool get _picker => widget.mode == FolderMode.picker;
-  String get _gridKey => _explorer ? 'path:${widget.root}' : '${widget.folderId}/${widget.path}';
 
   @override
   void initState() {
@@ -598,7 +600,10 @@ class _FolderScreenState extends ConsumerState<FolderScreen> {
       : (widget.path.isEmpty ? '' : widget.path.split('/').last);
 
   @override
-  Widget build(BuildContext context) => _explorer ? _buildExplorer(context) : _buildLibrary(context);
+  Widget build(BuildContext context) {
+    ref.watch(settingsProvider.select((AppSettings s) => s.libraryGrid));
+    return _explorer ? _buildExplorer(context) : _buildLibrary(context);
+  }
 
   // ------------------------------------------------------------ library
 
@@ -932,15 +937,18 @@ class _FolderScreenState extends ConsumerState<FolderScreen> {
     child: AppButton(label: label, icon: icon, onPressed: onPressed),
   );
 
+  void _setGrid({required bool grid}) {
+    unawaited(ref.read(settingsProvider.notifier).setLibraryGrid(grid: grid));
+  }
+
+  /// View: Grid and View: List, at the end of both menus.
+  List<AppMenuEntry<String>> get _viewEntries => <AppMenuEntry<String>>[
+    const AppMenuEntry<String>.divider(),
+    AppMenuEntry<String>(value: 'grid', label: 'View: Grid', icon: AppIcons.gridView, selected: _grid),
+    AppMenuEntry<String>(value: 'list', label: 'View: List', icon: AppIcons.viewList, selected: !_grid),
+  ];
+
   List<Widget> _actions() => <Widget>[
-    AppIconButton(
-      icon: _grid ? AppIcons.viewList : AppIcons.gridView,
-      semanticLabel: _grid ? 'Show as list' : 'Show as grid',
-      onPressed: () {
-        setState(() => _grid = !_grid);
-        unawaited(ref.read(settingsProvider.notifier).setFolderGrid(_gridKey, grid: _grid));
-      },
-    ),
     Builder(
       builder: (BuildContext b) => AppIconButton(
         icon: AppIcons.moreHoriz,
@@ -964,13 +972,20 @@ class _FolderScreenState extends ConsumerState<FolderScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
-          _Header(
-            title: title,
-            crumb: crumb,
-            onCrumb: onCrumb,
-            backIcon: closeIcon ? AppIcons.close : AppIcons.back,
-            onBack: closeIcon ? () => closePicker(context) : () => context.pop(),
-            actions: actions,
+          // Search in the header, Grid and List in the menu (Kuber's Accounts).
+          HeaderSearch(
+            hint: 'Search in $title',
+            onChanged: (String q) => setState(() => _query = q.trim()),
+            enabled: !_picker && actions.isNotEmpty,
+            height: 64,
+            builder: (BuildContext context, Widget? search) => _Header(
+              title: title,
+              crumb: crumb,
+              onCrumb: onCrumb,
+              backIcon: closeIcon ? AppIcons.close : AppIcons.back,
+              onBack: closeIcon ? () => closePicker(context) : () => context.pop(),
+              actions: <Widget>[?search, ...actions],
+            ),
           ),
           Expanded(
             child: AnimatedSwitcher(
@@ -1010,41 +1025,24 @@ class _FolderScreenState extends ConsumerState<FolderScreen> {
     return CustomScrollView(
       controller: _explorer ? _scroll : null,
       slivers: <Widget>[
-        if (!_picker)
-          SliverPadding(
-            padding: const EdgeInsets.fromLTRB(Space.screen, Space.xs, Space.screen, 14),
-            sliver: SliverToBoxAdapter(
-              child: SearchField(hint: 'Search in $title', onChanged: (String q) => setState(() => _query = q.trim())),
-            ),
-          ),
         // One family only: no chip row (board 6, V3 chips).
         if (!_picker && present.length + (hasOther ? 1 : 0) > 1)
           SliverToBoxAdapter(
-            child: ChipRow(
-              children: <Widget>[
-                PillChip(
-                  label: 'All',
-                  selected: _group == null && !_other,
-                  count: _explorer && loadingMore == null && !skeleton ? presentFrom.length : null,
-                  onTap: () => setState(() {
-                    _group = null;
-                    _other = false;
-                  }),
-                ),
-                for (final FormatGroup g in FormatGroup.values)
-                  if (present.contains(g))
-                    PillChip(
-                      label: g.label,
-                      selected: _group == g,
-                      onTap: () => setState(() {
-                        _group = _group == g ? null : g;
-                        _other = false;
-                      }),
-                    ),
+            child: FormatChips(
+              present: present,
+              selected: _group,
+              allSelected: _group == null && !_other,
+              shown: loadingMore == null && !skeleton ? shown.length : null,
+              onSelected: (FormatGroup? g) => setState(() {
+                _group = g;
+                _other = false;
+              }),
+              trailing: <Widget>[
                 if (hasOther)
                   PillChip(
                     label: 'Other',
                     selected: _other,
+                    count: shown.length,
                     onTap: () => setState(() {
                       _other = !_other;
                       _group = null;
@@ -1143,39 +1141,7 @@ class _FolderScreenState extends ConsumerState<FolderScreen> {
                     final Widget row = skeleton
                         ? SkeletonRow(index: i)
                         : Reveal(index: i < 9 ? i : 0, child: _explorer ? _explorerRow(shown[i]) : _row(shown[i]));
-                    // One rounded group, drawn row by row so long folders stay lazy.
-                    // The border is one colour (a rounded border can't mix
-                    // colours); the divider between rows is drawn inside.
-                    return DecoratedBox(
-                      decoration: BoxDecoration(
-                        color: c.surfaceContainer,
-                        border: Border(
-                          left: BorderSide(color: c.outline),
-                          right: BorderSide(color: c.outline),
-                          top: first ? BorderSide(color: c.outline) : BorderSide.none,
-                          bottom: last ? BorderSide(color: c.outline) : BorderSide.none,
-                        ),
-                        borderRadius: BorderRadius.vertical(
-                          top: first ? const Radius.circular(Radii.card) : Radius.zero,
-                          bottom: last ? const Radius.circular(Radii.card) : Radius.zero,
-                        ),
-                      ),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.vertical(
-                          top: first ? const Radius.circular(Radii.card) : Radius.zero,
-                          bottom: last ? const Radius.circular(Radii.card) : Radius.zero,
-                        ),
-                        child: last
-                            ? row
-                            : Column(
-                                mainAxisSize: MainAxisSize.min,
-                                children: <Widget>[
-                                  row,
-                                  Divider(height: 1, color: c.divider),
-                                ],
-                              ),
-                      ),
-                    );
+                    return ListGroupRow(first: first, last: last, child: row);
                   },
                 ),
         ),
@@ -1272,15 +1238,14 @@ class _FolderScreenState extends ConsumerState<FolderScreen> {
     }
     final bool image = _explorer && m == Formats.image && !e.hidden;
     return CoverTile(
-      cover: image
-          ? _Thumb(path: e.path, label: Formats.labelOf(e.name), width: g.tile, height: g.cover)
-          : FormatTile(
-              label: Formats.labelOf(e.name),
-              icon: m?.icon ?? unknownIcon(e.name),
-              muted: m == null || e.hidden,
-              width: g.tile,
-              height: g.cover,
-            ),
+      cover: FormatTile(
+        label: Formats.labelOf(e.name),
+        icon: m?.icon ?? unknownIcon(e.name),
+        muted: m == null || e.hidden,
+        width: g.tile,
+        height: g.cover,
+        preview: image ? PreviewImage(File(e.path), width: g.tile) : null,
+      ),
       progress: 0,
       finished: false,
       name: _stem(e.name),
@@ -1412,9 +1377,11 @@ class _FolderScreenState extends ConsumerState<FolderScreen> {
           icon: _showAll ? AppIcons.visibilityOff : AppIcons.visibility,
           subtitle: _showAll ? null : 'includes files Unfurl can’t open',
         ),
+        ..._viewEntries,
       ],
     );
     if (!mounted || v == null) return;
+    if (v == 'grid' || v == 'list') return _setGrid(grid: v == 'grid');
     setState(() {
       if (v == 'all') {
         _showAll = !_showAll;
@@ -1464,10 +1431,13 @@ class _FolderScreenState extends ConsumerState<FolderScreen> {
             accentIcon: _pinned,
           ),
         const AppMenuEntry<String>(value: 'info', label: 'Folder info', icon: AppIcons.info),
+        ..._viewEntries,
       ],
     );
     if (!mounted || v == null) return;
     switch (v) {
+      case 'grid' || 'list':
+        _setGrid(grid: v == 'grid');
       case 'sort':
         if (!anchor.mounted) return;
         final String? s = await showAppMenu<String>(
@@ -1554,43 +1524,6 @@ _Item _itemOf(String root, DirEntry e, Document? doc) => _Item(
   doc: doc,
   path: '$root/${e.name}',
 );
-
-/// An image file's own picture, decoded at the size it is drawn.
-class _Thumb extends StatelessWidget {
-  const _Thumb({required this.path, required this.label, this.width = 96, this.height = 136});
-
-  final String path;
-  final String label;
-  final double width;
-  final double height;
-
-  @override
-  Widget build(BuildContext context) {
-    final double dpr = MediaQuery.devicePixelRatioOf(context);
-    return ClipRRect(
-      borderRadius: Radii.coverR,
-      child: SizedBox(
-        width: width,
-        height: height,
-        child: Image(
-          image: ResizeImage(FileImage(File(path)), width: (width * dpr).round()),
-          fit: BoxFit.cover,
-          gaplessPlayback: true,
-          frameBuilder: (BuildContext context, Widget child, int? frame, bool sync) => sync
-              ? child
-              : AnimatedOpacity(
-                  opacity: frame == null ? 0 : 1,
-                  duration: Motion.of(context, Motion.reveal),
-                  curve: Motion.decelerate,
-                  child: child,
-                ),
-          errorBuilder: (BuildContext context, Object e, StackTrace? s) =>
-              FormatTile(label: label, icon: AppIcons.image),
-        ),
-      ),
-    );
-  }
-}
 
 /// Every file below [root] (up to 5,000), off the UI isolate.
 Future<List<(String, int, int)>> _walk(String root, bool hidden) => Isolate.run(() {

@@ -10,6 +10,18 @@ import 'tokens_expected.dart';
 void main() {
   String hex(Color c) => c.toARGB32().toRadixString(16).toUpperCase();
 
+  test('Expressive colours off: one grey ramp for every family, accents kept', () {
+    for (final Tone tone in Tone.values) {
+      final UnfurlColors grey = ThemeFamily.saffron.colors(tone, expressive: false);
+      for (final ThemeFamily f in ThemeFamily.all) {
+        final UnfurlColors c = f.colors(tone, expressive: false);
+        expect(hex(c.surface), hex(grey.surface), reason: '${f.id} ${tone.name}');
+        expect(hex(c.surfaceContainerHigh), hex(grey.surfaceContainerHigh), reason: '${f.id} ${tone.name}');
+        expect(hex(c.primary), hex(f.colors(tone).primary), reason: '${f.id} ${tone.name}');
+      }
+    }
+  });
+
   test('chrome roles match tokens.json in every tone', () {
     for (final Tone tone in Tone.values) {
       final UnfurlColors c = ThemeFamily.saffron.colors(tone);

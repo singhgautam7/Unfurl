@@ -58,6 +58,42 @@ void main() {
     expect(doc.plainText, contains('Body text below'));
   });
 
+  test('a scan: tinted paper is not ink, a drawing on it is, specks are not', () {
+    // Beige paper, a few scattered specks, and a line drawing (a grid of
+    // strokes, a third of its area inked) from y 60 to 200.
+    final Uint8List px = Uint8List(200 * 300 * 4);
+    void dot(int x, int y, int v) {
+      final int i = (y * 200 + x) * 4;
+      px[i] = v;
+      px[i + 1] = v;
+      px[i + 2] = v;
+      px[i + 3] = 255;
+    }
+
+    for (int y = 0; y < 300; y++) {
+      for (int x = 0; x < 200; x++) {
+        final int i = (y * 200 + x) * 4;
+        px[i] = 170; // b
+        px[i + 1] = 225; // g
+        px[i + 2] = 245; // r
+        px[i + 3] = 255;
+      }
+    }
+    for (final (int x, int y) in <(int, int)>[(150, 240), (170, 260), (160, 280), (185, 250)]) {
+      dot(x, y, 40);
+    }
+    final PdfPageInput specks = page(<(String, double, double)>[('A line of body text on the page.', 10, 290)]);
+    expect(PdfReflow.findRegions(specks, px, 200, 300), isEmpty, reason: 'paper and specks are not pictures');
+    for (int y = 100; y < 240; y++) {
+      for (int x = 30; x < 170; x++) {
+        if (x % 6 < 2 || y % 6 < 2) dot(x, y, 30);
+      }
+    }
+    final List<double> found = PdfReflow.findRegions(specks, px, 200, 300);
+    expect(found.length, 4, reason: 'the drawing');
+    expect(found[1] - found[3], greaterThan(120), reason: 'all of it');
+  });
+
   test('text laid out in a grid becomes a table of text, not a picture', () {
     final List<(String, double, double)> lines = <(String, double, double)>[
       ('Intro paragraph line.', 10, 290),

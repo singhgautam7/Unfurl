@@ -9,7 +9,8 @@ import 'buttons.dart';
 
 /// The pill search field (board 2): 52dp, `surfaceContainer`, 1px outline,
 /// 1.5px `primary` while focused, a clear button once there is text, and an
-/// optional trailing count ("3 of 14").
+/// optional trailing count ("3 of 14"). With [onBack] it leads with a back
+/// button instead of the glyph (the header search).
 class SearchField extends StatefulWidget {
   const SearchField({
     required this.hint,
@@ -20,6 +21,7 @@ class SearchField extends StatefulWidget {
     this.trailing,
     this.onSubmitted,
     this.height = 52,
+    this.onBack,
     super.key,
   });
 
@@ -31,6 +33,7 @@ class SearchField extends StatefulWidget {
   final bool autofocus;
   final Widget? trailing;
   final double height;
+  final VoidCallback? onBack;
 
   @override
   State<SearchField> createState() => _SearchFieldState();
@@ -65,16 +68,22 @@ class _SearchFieldState extends State<SearchField> {
     return AnimatedContainer(
       duration: Motion.of(context, Motion.fast),
       constraints: BoxConstraints(minHeight: widget.height),
-      padding: EdgeInsets.only(left: 18, right: _controller.text.isEmpty && widget.trailing == null ? 18 : 2),
+      padding: EdgeInsets.only(
+        left: widget.onBack == null ? 18 : 0,
+        right: _controller.text.isEmpty && widget.trailing == null ? 18 : 2,
+      ),
       decoration: BoxDecoration(
         color: c.surfaceContainer,
         borderRadius: BorderRadius.circular(widget.height),
         border: Border.all(color: focused ? c.primary : c.outline, width: focused ? 1.5 : 1),
       ),
       child: Row(
-        spacing: 12,
+        spacing: widget.onBack == null ? 12 : 0,
         children: <Widget>[
-          AppIcon(AppIcons.search, color: c.icon),
+          if (widget.onBack == null)
+            AppIcon(AppIcons.search, color: c.icon)
+          else
+            AppIconButton(icon: AppIcons.back, filled: false, semanticLabel: 'Close search', onPressed: widget.onBack),
           Expanded(
             child: TextField(
               controller: _controller,

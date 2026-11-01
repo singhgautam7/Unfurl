@@ -7,20 +7,29 @@ import '../core/theme/typography.dart';
 
 /// One colour family as a card, as Mull's Theme page draws it: three swatches
 /// (primary, its container, the raised surface), the name and the blurb.
+/// Each card previews its family under the current switches, as Kuber's do.
 class FamilyCard extends StatelessWidget {
-  const FamilyCard({required this.family, required this.tone, required this.selected, required this.onTap, super.key});
+  const FamilyCard({
+    required this.family,
+    required this.tone,
+    required this.selected,
+    required this.onTap,
+    this.expressive = true,
+    super.key,
+  });
 
   final ThemeFamily family;
 
   /// The tone the swatches show, so they match the app as it is now.
   final Tone tone;
+  final bool expressive;
   final bool selected;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     final UnfurlColors c = context.colors;
-    final UnfurlColors f = family.colors(tone);
+    final UnfurlColors f = family.colors(tone, expressive: expressive);
     return Semantics(
       button: true,
       selected: selected,
@@ -56,10 +65,7 @@ class FamilyCard extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: <Widget>[
                     Text(family.name, style: UnfurlType.titleMedium.copyWith(color: c.onSurface)),
-                    Text(
-                      family.hasAmoled ? '${family.blurb} · true black' : family.blurb,
-                      style: UnfurlType.monoLabel.copyWith(color: c.onSurfaceVariant),
-                    ),
+                    Text(family.blurb, style: UnfurlType.bodySmall.copyWith(color: c.onSurfaceVariant)),
                   ],
                 ),
               ],

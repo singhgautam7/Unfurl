@@ -11,6 +11,7 @@ import '../../core/theme/reading_theme.dart';
 import '../../core/theme/tokens.dart';
 import '../../core/theme/typography.dart';
 import '../../design_system/app_icon.dart';
+import '../../design_system/app_menu.dart';
 import '../../design_system/buttons.dart';
 
 /// Reader bars appear and leave together: slide 12dp and fade on
@@ -149,34 +150,38 @@ class ModeToggle extends StatelessWidget {
   final ValueChanged<bool> onChanged;
   final IconData pageIcon;
 
+  static const double _w = 40, _h = 38, _gap = 2;
+
   @override
   Widget build(BuildContext context) {
     final UnfurlColors c = context.colors;
-    final Duration d = Motion.of(context, Motion.navIndicator);
+    // In the accent, so it is seen once: a `primary` thumb that slides
+    // between Page and Reader on a `primaryContainer` track.
     Widget item({required bool isReader}) {
       final bool on = reader == isReader;
-      return Semantics(
-        button: true,
-        selected: on,
-        label: isReader ? 'Reader mode' : 'Page view',
-        onTap: () => onChanged(isReader),
-        excludeSemantics: true,
-        child: GestureDetector(
+      final String label = isReader ? 'Reader mode' : 'Page view';
+      return AppTooltip(
+        message: label,
+        child: Semantics(
+          button: true,
+          selected: on,
+          label: label,
           onTap: () => onChanged(isReader),
-          child: AnimatedContainer(
-            duration: d,
-            curve: Motion.curveOf(context, Motion.spring),
-            width: 40,
-            height: 38,
-            decoration: BoxDecoration(
-              color: on ? (isReader ? c.primaryContainer : c.surface) : c.surface.withValues(alpha: 0),
-              borderRadius: Radii.fullR,
-              border: Border.all(color: on && !isReader ? c.outline : c.outline.withValues(alpha: 0)),
-            ),
-            child: AppIcon(
-              isReader ? AppIcons.wrapText : pageIcon,
-              size: 20,
-              color: on ? (isReader ? c.onPrimaryContainer : c.onSurface) : c.iconMuted,
+          excludeSemantics: true,
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: () => onChanged(isReader),
+            child: SizedBox(
+              width: _w,
+              height: _h,
+              child: Center(
+                child: TweenAnimationBuilder<Color?>(
+                  tween: ColorTween(end: on ? c.onPrimary : c.onPrimaryContainer),
+                  duration: Motion.of(context, Motion.navIndicator),
+                  builder: (BuildContext context, Color? color, Widget? _) =>
+                      AppIcon(isReader ? AppIcons.wrapText : pageIcon, size: 20, color: color),
+                ),
+              ),
             ),
           ),
         ),
@@ -186,15 +191,37 @@ class ModeToggle extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(3),
       margin: const EdgeInsets.symmetric(horizontal: 4),
-      decoration: BoxDecoration(color: c.surfaceContainerHigh, borderRadius: Radii.fullR),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        spacing: 2,
-        children: <Widget>[item(isReader: false), item(isReader: true)],
+      decoration: BoxDecoration(color: c.primaryContainer, borderRadius: Radii.fullR),
+      child: SizedBox(
+        width: _w * 2 + _gap,
+        height: _h,
+        child: Stack(
+          children: <Widget>[
+            AnimatedAlign(
+              duration: Motion.of(context, Motion.navIndicator),
+              curve: Motion.curveOf(context, Motion.spring),
+              alignment: reader ? Alignment.centerRight : Alignment.centerLeft,
+              child: Container(
+                width: _w,
+                height: _h,
+                decoration: BoxDecoration(color: c.primary, borderRadius: Radii.fullR),
+              ),
+            ),
+            Row(spacing: _gap, children: <Widget>[item(isReader: false), item(isReader: true)]),
+          ],
+        ),
       ),
     );
   }
 }
+
+/// "Open in Reader mode", first in a viewer's overflow while it shows pages
+/// and the format has a Reader mode.
+const AppMenuEntry<String> kReaderModeEntry = AppMenuEntry<String>(
+  value: 'reader',
+  label: 'Open in Reader mode',
+  icon: AppIcons.wrapText,
+);
 
 /// The page or chapter scrubber (board 1, PageScrubber): a 4dp track with a
 /// 4x20 thumb; dragging thickens it to 8 and 6x28 and floats a bubble with

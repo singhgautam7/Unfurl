@@ -141,6 +141,10 @@ GoRouter buildRouter({required bool onboarded}) => GoRouter(
         nested: state.uri.pathSegments.length > 1,
         onSelect: (int i) {
           final int b = kDestinations[i].branch;
+          // The tab already showing, at its root: back to its top.
+          if (b == shell.currentIndex && state.uri.pathSegments.length <= 1) {
+            return scrollTabToTop(shell.route.branches[b].navigatorKey.currentContext);
+          }
           shell.goBranch(b, initialLocation: b == shell.currentIndex);
         },
         child: shell,

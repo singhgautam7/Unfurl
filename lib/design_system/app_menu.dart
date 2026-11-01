@@ -52,6 +52,9 @@ class AppMenuEntry<T> {
   final bool danger;
 }
 
+/// Every overflow and context menu is this wide.
+const double _menuWidth = 280;
+
 /// The overflow menu (board 2, A3 and A6): a `surface` card with a 1px
 /// outline and radius 20, opened under the button that raised it. Rows are
 /// 52dp pills; no shadow, since the nav pill owns the only one.
@@ -86,7 +89,8 @@ Future<T?> showAppMenu<T>({
     position: position,
     color: c.surface,
     elevation: 0,
-    constraints: const BoxConstraints(minWidth: 262),
+    // One width for every menu, whatever its labels; long ones wrap.
+    constraints: const BoxConstraints.tightFor(width: _menuWidth),
     shape: RoundedRectangleBorder(
       borderRadius: Radii.cardR,
       side: BorderSide(color: c.outline),

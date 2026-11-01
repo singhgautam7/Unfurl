@@ -19,6 +19,7 @@ import '../../design_system/buttons.dart';
 import '../../design_system/chips.dart';
 import '../../design_system/containers.dart';
 import '../../design_system/covers.dart';
+import '../../design_system/sheets.dart';
 import '../settings/settings_controller.dart';
 import 'reading_prefs.dart';
 
@@ -31,8 +32,13 @@ class ReaderSheet extends StatelessWidget {
     this.padding = const EdgeInsets.fromLTRB(Space.screen, 10, Space.screen, 0),
     this.controller,
     this.surface = false,
+    this.title,
     super.key,
   });
+
+  /// Pinned under the handle with a close button ([SheetTitleBar]); the
+  /// content scrolls beneath it.
+  final String? title;
 
   /// A draggable sheet's controller, so scrolling the content resizes it.
   final ScrollController? controller;
@@ -68,7 +74,21 @@ class ReaderSheet extends StatelessWidget {
         border: Border(top: BorderSide(color: c.outline)),
       ),
       padding: padding.copyWith(bottom: padding.bottom + MediaQuery.paddingOf(context).bottom + Space.lg),
-      child: controller != null
+      child: controller != null && title != null
+          // Draggable with a title: the title stays put (its close button
+          // always in reach); dragging the content resizes the sheet.
+          ? Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                handle,
+                SheetTitleBar(title: title!),
+                const SizedBox(height: Space.sm),
+                Expanded(
+                  child: SingleChildScrollView(controller: controller, child: child),
+                ),
+              ],
+            )
+          : controller != null
           // Draggable: the handle scrolls with the content, so dragging it
           // (or anything) resizes the sheet.
           ? SingleChildScrollView(
@@ -138,8 +158,11 @@ Future<void> showReadingSettings(BuildContext context, {bool pdf = false}) => sh
     minChildSize: 0.3,
     maxChildSize: 0.94,
     expand: false,
-    builder: (BuildContext ctx, ScrollController scroll) =>
-        ReaderSheet(controller: scroll, child: pdf ? const _PageSettings() : const _ReadingSettings()),
+    builder: (BuildContext ctx, ScrollController scroll) => ReaderSheet(
+      controller: scroll,
+      title: pdf ? 'Page settings' : 'Reading settings',
+      child: pdf ? const _PageSettings() : const _ReadingSettings(),
+    ),
   ),
 );
 
@@ -268,25 +291,6 @@ class _ReadingSettings extends ConsumerWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       spacing: Space.lg,
       children: <Widget>[
-        Row(
-          children: <Widget>[
-            Expanded(
-              child: Text('Reading settings', style: UnfurlType.sheetTitle.copyWith(color: c.onSurface)),
-            ),
-            Semantics(
-              button: true,
-              child: InkWell(
-                onTap: ctl.reset,
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(minHeight: IconSpec.tapTarget, minWidth: IconSpec.tapTarget),
-                  child: Center(
-                    child: Text('Reset', style: UnfurlType.monoLabel.copyWith(color: c.accent)),
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ),
         const _Group(label: 'Reader colours', child: _ThemeSwatches()),
         _Group(
           label: 'Font',
@@ -358,25 +362,11 @@ class _ReadingSettings extends ConsumerWidget {
             _Group(label: 'Align', child: AlignControl()),
           ],
         ),
-        if (p.layout == ReaderLayout.paged) const _Group(label: 'Page turn', child: PageTurnControl()),
+        const _Group(label: 'Layout', child: LayoutControl()),
         _Group(
           label: 'Page',
           child: _Card(
             children: <Widget>[
-              ConstrainedBox(
-                constraints: const BoxConstraints(minHeight: 52),
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(14, 6, 6, 6),
-                  child: Row(
-                    children: <Widget>[
-                      Expanded(
-                        child: Text('Layout', style: UnfurlType.titleMedium.copyWith(color: c.onSurface)),
-                      ),
-                      const LayoutControl(),
-                    ],
-                  ),
-                ),
-              ),
               _SwitchRow(
                 label: 'Hyphenation',
                 value: p.hyphenate,
@@ -385,6 +375,18 @@ class _ReadingSettings extends ConsumerWidget {
               const BrightnessRow(labelled: true),
             ],
           ),
+        ),
+        // Last, so leaving Paged moves nothing above it.
+        ShowHide(
+          visible: p.layout == ReaderLayout.paged,
+          child: const _Group(label: 'Page turn', child: PageTurnControl()),
+        ),
+        AppButton(
+          label: 'Reset to defaults',
+          icon: AppIcons.history,
+          type: AppButtonType.secondary,
+          height: IconSpec.tapTarget,
+          onPressed: ctl.reset,
         ),
         const SizedBox(height: Space.sm),
       ],
@@ -397,14 +399,12 @@ class _PageSettings extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final UnfurlColors c = context.colors;
     final ReadingPrefs p = ref.watch(readingPrefsProvider);
     void set(ReadingPrefs Function(ReadingPrefs) f) => ref.read(readingPrefsProvider.notifier).update(f);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       spacing: Space.lg,
       children: <Widget>[
-        Text('Page settings', style: UnfurlType.sheetTitle.copyWith(color: c.onSurface)),
         const _Group(label: 'Reader colours', child: _ThemeSwatches()),
         const SectionHeader(label: 'Scrolling'),
         SegmentedToggle<PdfLayout>(
@@ -455,15 +455,26 @@ class TextSizeControl extends ConsumerWidget {
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: <Widget>[
           _StepButton(
-            label: 'A',
-            size: 13,
+            label: '−A',
+            size: 14,
             semantic: 'Smaller text',
             onTap: at > 0 ? () => _set(ref, (ReadingPrefs x) => x.copyWith(size: ReadingPrefs.sizes[at - 1])) : null,
           ),
-          Text('${p.size.round()}', style: UnfurlType.monoTabular.copyWith(color: context.colors.onSurface)),
+          AnimatedSwitcher(
+            duration: Motion.of(context, Motion.fast),
+            transitionBuilder: (Widget child, Animation<double> a) => FadeTransition(
+              opacity: a,
+              child: ScaleTransition(scale: Tween<double>(begin: 0.7, end: 1).animate(a), child: child),
+            ),
+            child: Text(
+              '${p.size.round()}',
+              key: ValueKey<double>(p.size),
+              style: UnfurlType.monoTabular.copyWith(color: context.colors.onSurface),
+            ),
+          ),
           _StepButton(
-            label: 'A',
-            size: 20,
+            label: '+A',
+            size: 18,
             semantic: 'Larger text',
             onTap: at < ReadingPrefs.sizes.length - 1
                 ? () => _set(ref, (ReadingPrefs x) => x.copyWith(size: ReadingPrefs.sizes[at + 1]))
@@ -527,16 +538,13 @@ class LayoutControl extends ConsumerWidget {
   const LayoutControl({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) => SizedBox(
-    width: 168,
-    child: SegmentedToggle<ReaderLayout>(
-      options: const <(ReaderLayout, String, IconData?)>[
-        (ReaderLayout.paged, 'Paged', null),
-        (ReaderLayout.scroll, 'Scroll', null),
-      ],
-      selected: ref.watch(readingPrefsProvider.select((ReadingPrefs p) => p.layout)),
-      onChanged: (ReaderLayout v) => _set(ref, (ReadingPrefs x) => x.copyWith(layout: v)),
-    ),
+  Widget build(BuildContext context, WidgetRef ref) => SegmentedToggle<ReaderLayout>(
+    options: const <(ReaderLayout, String, IconData?)>[
+      (ReaderLayout.paged, 'Paged', AppIcons.swapHoriz),
+      (ReaderLayout.scroll, 'Continuous', AppIcons.swapVert),
+    ],
+    selected: ref.watch(readingPrefsProvider.select((ReadingPrefs p) => p.layout)),
+    onChanged: (ReaderLayout v) => _set(ref, (ReadingPrefs x) => x.copyWith(layout: v)),
   );
 }
 
@@ -577,7 +585,8 @@ class _Track extends StatelessWidget {
   );
 }
 
-class _StepButton extends StatelessWidget {
+/// −A and +A: presses in (0.85, a spring back) under the finger.
+class _StepButton extends StatefulWidget {
   const _StepButton({required this.label, required this.size, required this.semantic, required this.onTap});
 
   final String label;
@@ -586,37 +595,58 @@ class _StepButton extends StatelessWidget {
   final VoidCallback? onTap;
 
   @override
-  Widget build(BuildContext context) => Semantics(
-    button: true,
-    enabled: onTap != null,
-    label: semantic,
-    onTap: onTap,
-    excludeSemantics: true,
-    child: GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: Space.xs),
-        child: InkWell(
-          onTap: onTap,
-          customBorder: const StadiumBorder(),
-          child: SizedBox(
-            width: 48,
-            height: 40,
-            child: Center(
+  State<_StepButton> createState() => _StepButtonState();
+}
+
+class _StepButtonState extends State<_StepButton> {
+  bool _down = false;
+
+  void _press({required bool down}) {
+    if (widget.onTap != null && down != _down) setState(() => _down = down);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final UnfurlColors c = context.colors;
+    return Semantics(
+      button: true,
+      enabled: widget.onTap != null,
+      label: widget.semantic,
+      onTap: widget.onTap,
+      excludeSemantics: true,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: widget.onTap,
+        onTapDown: (_) => _press(down: true),
+        onTapUp: (_) => _press(down: false),
+        onTapCancel: () => _press(down: false),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: Space.xs),
+          child: AnimatedScale(
+            scale: _down ? 0.85 : 1,
+            duration: Motion.of(context, Motion.instant),
+            curve: Motion.curveOf(context, Motion.spring),
+            child: AnimatedContainer(
+              duration: Motion.of(context, Motion.instant),
+              width: 48,
+              height: 40,
+              decoration: BoxDecoration(
+                color: _down ? c.surface : c.surface.withValues(alpha: 0),
+                borderRadius: Radii.fullR,
+              ),
+              alignment: Alignment.center,
               child: Text(
-                label,
-                style: UnfurlType.titleMedium.copyWith(
-                  fontSize: size,
-                  color: onTap == null ? context.colors.onSurfaceMuted : context.colors.icon,
-                ),
+                widget.label,
+                style: UnfurlType.titleMedium
+                    .copyWith(fontSize: widget.size, color: widget.onTap == null ? c.onSurfaceMuted : c.icon)
+                    .weight(600),
               ),
             ),
           ),
         ),
       ),
-    ),
-  );
+    );
+  }
 }
 
 class _IconSegments<T> extends StatelessWidget {
@@ -908,12 +938,7 @@ class _ContentsSheetState extends State<ContentsSheet> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       spacing: 14,
       children: <Widget>[
-        Text(
-          widget.title,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: UnfurlType.sheetTitle.copyWith(color: c.onSurface),
-        ),
+        SheetTitleBar(title: widget.title),
         SegmentedToggle<int>(
           options: const <(int, String, IconData?)>[
             (0, 'Contents', null),
@@ -1335,6 +1360,23 @@ Future<void> showBookInfo(
 // ------------------------------------------------------------ voice
 
 /// Read aloud's voice and speed (R10).
+/// Before the book is read out loud: somewhere quiet, or headphones on.
+Future<bool> confirmReadAloud(BuildContext context) async {
+  void close(bool go) => Navigator.of(context, rootNavigator: true).pop(go);
+  return await showAppBottomSheet<bool>(
+        context: context,
+        icon: AppIcons.headphones,
+        title: 'Read this book aloud?',
+        description: 'Unfurl will read out loud from where you are. Put your headphones on, or make sure you are somewhere you won’t disturb anyone.',
+        actions: <Widget>[
+          AppButton(label: 'Start reading', icon: AppIcons.play, onPressed: () => close(true)),
+          AppButton(label: 'Not now', type: AppButtonType.text, onPressed: () => close(false)),
+        ],
+        builder: (BuildContext _) => const SizedBox.shrink(),
+      ) ??
+      false;
+}
+
 Future<void> showVoiceSheet(BuildContext context, {required double rate, required ValueChanged<double> onRate}) =>
     showReaderSheet<void>(context, (BuildContext ctx) => _VoiceSheet(rate: rate, onRate: onRate));
 

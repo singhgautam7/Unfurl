@@ -51,7 +51,9 @@ class HomeScreen extends ConsumerWidget {
     final bool foldersLoaded = ref.watch(foldersProvider).hasValue;
     final List<Document> opened = ref.watch(openedDocumentsProvider).value ?? const <Document>[];
     final List<Recent> recents = ref.watch(recentsProvider).value ?? const <Recent>[];
-    final List<BookItem> books = ref.watch(booksProvider).value ?? const <BookItem>[];
+    final List<BookItem> books = (ref.watch(booksProvider).value ?? const <BookItem>[])
+        .where((BookItem b) => b.format.book)
+        .toList();
     final List<Folder> lost = folders.where((Folder f) => f.accessLost).toList();
 
     final List<Document> reading = opened

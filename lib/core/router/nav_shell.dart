@@ -29,6 +29,37 @@ class NavHidden extends Notifier<bool> {
 /// A tab switch slides the incoming page in from the side it lies on
 /// (`containerTransform`, decelerate). The pill translates down 72 and fades
 /// on scroll-down past 24px and returns on any scroll-up (`navHide`).
+/// The active tab tapped again: its outermost vertical scroll view goes back
+/// to the top (Kuber's). Runs only on the tap; the walk stops at the first
+/// vertical scrollable, which is the page's own.
+void scrollTabToTop(BuildContext? tab) {
+  if (tab == null) return;
+  ScrollPosition? found;
+  void visit(Element e) {
+    if (found != null) return;
+    if (e is StatefulElement && e.state is ScrollableState) {
+      final ScrollableState s = e.state as ScrollableState;
+      if (axisDirectionToAxis(s.axisDirection) == Axis.vertical) {
+        found = s.position;
+        return;
+      }
+    }
+    e.visitChildren(visit);
+  }
+
+  tab.visitChildElements(visit);
+  final ScrollPosition? p = found;
+  if (p == null || p.pixels <= p.minScrollExtent) return;
+  final double screens = (p.pixels - p.minScrollExtent) / p.viewportDimension;
+  unawaited(
+    p.animateTo(
+      p.minScrollExtent,
+      duration: Motion.of(tab, Motion.scrollTopFor(screens)),
+      curve: Motion.curveOf(tab, Motion.scrollTop),
+    ),
+  );
+}
+
 class NavShell extends ConsumerStatefulWidget {
   const NavShell({required this.child, required this.index, required this.onSelect, this.nested = false, super.key});
 

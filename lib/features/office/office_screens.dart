@@ -43,17 +43,19 @@ Future<void> officeOverflow(
   OpenedDoc doc, {
   required String text,
   required List<(String, String)> facts,
+  VoidCallback? onReader,
 }) async {
   final String? choice = await showAppMenu<String>(
     context: context,
     anchorContext: anchor,
-    entries: const <AppMenuEntry<String>>[
-      AppMenuEntry<String>(value: 'copy', label: 'Copy all text', icon: AppIcons.copy),
-      AppMenuEntry<String>(value: 'share', label: 'Share file', icon: AppIcons.share),
+    entries: <AppMenuEntry<String>>[
+      if (onReader != null) kReaderModeEntry,
+      const AppMenuEntry<String>(value: 'copy', label: 'Copy all text', icon: AppIcons.copy),
+      const AppMenuEntry<String>(value: 'share', label: 'Share file', icon: AppIcons.share),
       kInsightsEntry,
-      AppMenuEntry<String>(value: 'info', label: 'File info', icon: AppIcons.info),
-      AppMenuEntry<String>.divider(),
-      AppMenuEntry<String>(
+      const AppMenuEntry<String>(value: 'info', label: 'File info', icon: AppIcons.info),
+      const AppMenuEntry<String>.divider(),
+      const AppMenuEntry<String>(
         value: 'other',
         label: 'Open in another app',
         icon: AppIcons.openInNew,
@@ -63,6 +65,8 @@ Future<void> officeOverflow(
   );
   if (!context.mounted) return;
   switch (choice) {
+    case 'reader':
+      onReader?.call();
     case 'copy':
       await Clipboard.setData(ClipboardData(text: text));
       if (context.mounted) AppSnackbar.info(context, 'Copied all text');
@@ -470,6 +474,7 @@ class _DocxScreenState extends ConsumerState<DocxScreen> {
                                   context,
                                   b,
                                   widget.doc,
+                                  onReader: _toReader,
                                   text: d.items.map((DocxItem i) => i.text).join('\n'),
                                   facts: <(String, String)>[
                                     ('Name', widget.doc.ref.name),

@@ -12,6 +12,7 @@ class AppSettings {
   const AppSettings({
     this.themeMode = ThemeMode.system,
     this.amoled = false,
+    this.expressive = true,
     this.dynamicColor = false,
     this.familyId = 'saffron',
     this.wallpaperSeed,
@@ -25,8 +26,12 @@ class AppSettings {
 
   final ThemeMode themeMode;
 
-  /// True black chrome. Only takes effect while dark is in effect.
+  /// Pure black chrome. Only takes effect while dark is in effect.
   final bool amoled;
+
+  /// Expressive colours (Kuber): surfaces tinted by the family; off, one
+  /// neutral grey ramp for every family.
+  final bool expressive;
   final bool dynamicColor;
 
   /// The chosen colour family when dynamic colour is off (Settings › Theme).
@@ -42,6 +47,8 @@ class AppSettings {
   /// A file has been opened at least once: until then the nav pill hides
   /// (HANDOFF "Deviations from Mull").
   final bool openedFile;
+
+  /// Grid or list, for Library and every folder alike.
   final bool libraryGrid;
 
   /// 'recent', 'title' or 'progress'.
@@ -70,6 +77,7 @@ class AppSettings {
   AppSettings copyWith({
     ThemeMode? themeMode,
     bool? amoled,
+    bool? expressive,
     bool? dynamicColor,
     String? familyId,
     Color? wallpaperSeed,
@@ -82,6 +90,7 @@ class AppSettings {
   }) => AppSettings(
     themeMode: themeMode ?? this.themeMode,
     amoled: amoled ?? this.amoled,
+    expressive: expressive ?? this.expressive,
     dynamicColor: dynamicColor ?? this.dynamicColor,
     familyId: familyId ?? this.familyId,
     wallpaperSeed: wallpaperSeed ?? this.wallpaperSeed,
@@ -95,6 +104,7 @@ class AppSettings {
 
   static const String kMode = 'theme.mode';
   static const String kAmoled = 'theme.amoled';
+  static const String kExpressive = 'theme.expressive';
   static const String kDynamic = 'theme.dynamic';
   static const String kSeed = 'theme.seed';
   static const String kFamily = 'theme.family';
@@ -118,6 +128,7 @@ class AppSettings {
         orElse: () => ThemeMode.system,
       ),
       amoled: prefs.getBool(kAmoled) ?? false,
+      expressive: prefs.getBool(kExpressive) ?? true,
       // Saffron unless chosen otherwise; wallpaper colour is opt-in, or it
       // would replace that hue on most phones.
       dynamicColor: prefs.getBool(kDynamic) ?? false,
@@ -154,6 +165,12 @@ class SettingsController extends Notifier<AppSettings> {
   Future<void> setAmoled({required bool value}) async {
     state = state.copyWith(amoled: value);
     await _prefs.setBool(AppSettings.kAmoled, value);
+    await _cacheLaunchColours();
+  }
+
+  Future<void> setExpressive({required bool value}) async {
+    state = state.copyWith(expressive: value);
+    await _prefs.setBool(AppSettings.kExpressive, value);
     await _cacheLaunchColours();
   }
 
@@ -209,14 +226,14 @@ class SettingsController extends Notifier<AppSettings> {
     await _prefs.setBool(AppSettings.kShowHidden, value);
   }
 
-  /// Grid or list, remembered per folder level.
-  bool folderGrid(String key) => _prefs.getBool('folder.grid.$key') ?? true;
-  Future<void> setFolderGrid(String key, {required bool grid}) => _prefs.setBool('folder.grid.$key', grid);
-
   Future<void> _cacheLaunchColours() async {
     final ThemeFamily f = state.family;
-    await _prefs.setInt(AppSettings.kLaunchLight, f.colors(Tone.light).surface.toARGB32());
-    await _prefs.setInt(AppSettings.kLaunchDark, f.colors(state.amoled ? Tone.amoled : Tone.dark).surface.toARGB32());
+    final bool e = state.expressive;
+    await _prefs.setInt(AppSettings.kLaunchLight, f.colors(Tone.light, expressive: e).surface.toARGB32());
+    await _prefs.setInt(
+      AppSettings.kLaunchDark,
+      f.colors(state.amoled ? Tone.amoled : Tone.dark, expressive: e).surface.toARGB32(),
+    );
   }
 }
 

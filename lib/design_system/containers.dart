@@ -97,6 +97,51 @@ class ListContainer extends StatelessWidget {
   }
 }
 
+/// One row of a [ListContainer] built lazily (a `SliverList.builder`): each
+/// row draws its own slice of the card, so long lists stay lazy. The border
+/// is one colour (a rounded border can't mix colours); the divider between
+/// rows is drawn inside.
+class ListGroupRow extends StatelessWidget {
+  const ListGroupRow({required this.first, required this.last, required this.child, super.key});
+
+  final bool first;
+  final bool last;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final UnfurlColors c = context.colors;
+    final BorderRadius radius = BorderRadius.vertical(
+      top: first ? const Radius.circular(Radii.card) : Radius.zero,
+      bottom: last ? const Radius.circular(Radii.card) : Radius.zero,
+    );
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: c.surfaceContainer,
+        border: Border(
+          left: BorderSide(color: c.outline),
+          right: BorderSide(color: c.outline),
+          top: first ? BorderSide(color: c.outline) : BorderSide.none,
+          bottom: last ? BorderSide(color: c.outline) : BorderSide.none,
+        ),
+        borderRadius: radius,
+      ),
+      child: ClipRRect(
+        borderRadius: radius,
+        child: last
+            ? child
+            : Column(
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  child,
+                  Divider(height: 1, color: c.divider),
+                ],
+              ),
+      ),
+    );
+  }
+}
+
 /// A row in a [ListContainer]: optional icon, label (and a line under it),
 /// its current value in mono on the right, and a chevron if it leads
 /// somewhere. [trailing] replaces value and chevron (a switch).

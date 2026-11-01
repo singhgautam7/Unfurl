@@ -60,7 +60,7 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen> {
     final Folder? f = await addFolderFlow(context, ref, explain: false);
     if (f == null || !mounted) return;
     setState(() => _added = f);
-    if (advance) _go(3);
+    if (advance) _go(4);
   }
 
   Future<void> _openFile() async {
@@ -71,16 +71,16 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen> {
   }
 
   _Actions get _actions => switch (_page) {
-    0 || 1 => (
+    0 || 1 || 2 => (
       quiet: 'Skip',
-      onQuiet: () => _go(2),
+      onQuiet: () => _go(3),
       main: 'Next',
       mainIcon: AppIcons.arrowForward,
       onMain: () => _go(_page + 1),
     ),
-    2 => (
+    3 => (
       quiet: 'Skip for now',
-      onQuiet: () => _go(3),
+      onQuiet: () => _go(4),
       main: 'Choose a folder',
       mainIcon: AppIcons.folderOpen,
       onMain: () => _addFolder(advance: true),
@@ -108,7 +108,7 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen> {
                     padding: const EdgeInsets.fromLTRB(28, Space.sm, Space.md, Space.sm),
                     child: Row(
                       children: <Widget>[
-                        for (int i = 0; i < 4; i++)
+                        for (int i = 0; i < 5; i++)
                           AnimatedContainer(
                             duration: Motion.of(context, Motion.navIndicator),
                             curve: Motion.curveOf(context, Motion.spring),
@@ -169,6 +169,12 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen> {
                             _Legend(color: c.primaryContainer, text: 'Viewer, plus Reader mode for text'),
                           ],
                         ),
+                      ),
+                      const _Page(
+                        art: _Tile(icon: AppIcons.palette),
+                        title: 'Make it yours',
+                        body: 'Pick a colour and light or dark. You can change it any time in Settings › Theme.',
+                        extra: ThemeControls(),
                       ),
                       _Page(
                         art: const _Tile(icon: AppIcons.folderOpen),

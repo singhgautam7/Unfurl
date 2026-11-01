@@ -24,8 +24,9 @@ final StreamProvider<List<Folder>> foldersProvider = StreamProvider<List<Folder>
   (Ref ref) => ref.watch(libraryProvider).watchFolders(),
 );
 
-/// Library's books: added folders, or every book on the phone while "Find
-/// books across this device" is on and all-files access is granted.
+/// Library's files (every format Unfurl opens; Home keeps the books): added
+/// folders, or every book on the phone while "Find books across this device"
+/// is on and all-files access is granted.
 final StreamProvider<List<BookItem>> booksProvider = StreamProvider<List<BookItem>>((Ref ref) {
   final bool device =
       ref.watch(settingsProvider.select((AppSettings s) => s.findOnDevice)) &&

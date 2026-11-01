@@ -78,6 +78,16 @@ abstract final class Motion {
   static const Curve decelerate = Curves.easeOutCubic;
   static const Curve standard = Curves.easeInOut;
 
+  /// Back to the top of a tab (its nav item tapped again, as in Kuber): every
+  /// row on the way is laid out, so never a jump; longer trips get more time
+  /// and an even-speed curve keeps the rows per frame low.
+  static Duration scrollTopFor(double screens) => Duration(milliseconds: (250 + screens * 40).clamp(250, 800).round());
+  static const Curve scrollTop = Curves.easeInOutSine;
+
+  /// The header search pill stays opaque for most of its grow and shrink
+  /// (Kuber's), fading only in the first 30% of the open.
+  static const Curve searchPillFade = Interval(0, 0.3);
+
   /// Under OS reduced motion: transforms become cross-fades, springs go linear.
   static const Duration reducedFade = Duration(milliseconds: 90);
 
@@ -90,6 +100,27 @@ abstract final class Motion {
   static Duration of(BuildContext context, Duration full) => reduced(context) ? reducedFade : full;
 
   static Curve curveOf(BuildContext context, Curve full) => reduced(context) ? Curves.linear : full;
+}
+
+/// A control that comes and goes with a setting (Page turn under Paged):
+/// the space opens or closes on `containerTransform`, the content fades.
+class ShowHide extends StatelessWidget {
+  const ShowHide({required this.visible, required this.child, super.key});
+
+  final bool visible;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => AnimatedSize(
+    duration: Motion.of(context, Motion.containerTransform),
+    curve: Motion.curveOf(context, Motion.decelerate),
+    alignment: Alignment.topCenter,
+    child: AnimatedOpacity(
+      opacity: visible ? 1 : 0,
+      duration: Motion.of(context, Motion.fast),
+      child: visible ? child : const SizedBox(width: double.infinity),
+    ),
+  );
 }
 
 /// Content arriving: fades in while rising 8dp and settling from 0.98

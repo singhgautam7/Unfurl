@@ -1115,6 +1115,7 @@ class _PdfScreenState extends ConsumerState<PdfScreen> with WidgetsBindingObserv
       context: context,
       anchorContext: anchor,
       entries: const <AppMenuEntry<String>>[
+        kReaderModeEntry,
         AppMenuEntry<String>(value: 'info', label: 'Book info', icon: AppIcons.info),
         kInsightsEntry,
         AppMenuEntry<String>(value: 'auto', label: 'Auto-scroll or page turn', icon: AppIcons.schedule),
@@ -1124,6 +1125,8 @@ class _PdfScreenState extends ConsumerState<PdfScreen> with WidgetsBindingObserv
       ],
     );
     switch (choice) {
+      case 'reader':
+        await _toReader();
       case 'info':
         await _bookInfo();
       case 'insights':

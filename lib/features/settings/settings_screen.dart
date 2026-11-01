@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/db/database.dart';
 import '../../core/explorer.dart';
+import '../../core/motion/motion.dart';
 import '../../core/providers.dart';
 import '../../core/router/router.dart';
 import '../../core/theme/app_theme.dart';
@@ -303,9 +304,11 @@ class ReaderSettingsScreen extends ConsumerWidget {
             const _ControlRow(label: 'Line spacing', child: LineSpacingControl()),
             const _ControlRow(label: 'Margins', stacked: true, child: MarginsControl()),
             const _ControlRow(label: 'Align', child: AlignControl()),
-            const _ControlRow(label: 'Layout', child: LayoutControl()),
-            if (p.layout == ReaderLayout.paged)
-              const _ControlRow(label: 'Page turn', stacked: true, child: PageTurnControl()),
+            const _ControlRow(label: 'Layout', stacked: true, child: LayoutControl()),
+            ShowHide(
+              visible: p.layout == ReaderLayout.paged,
+              child: const _ControlRow(label: 'Page turn', stacked: true, child: PageTurnControl()),
+            ),
             ListRow(
               label: 'Hyphenation',
               trailing: Switch(

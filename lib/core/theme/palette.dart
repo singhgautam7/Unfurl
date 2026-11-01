@@ -150,7 +150,6 @@ class ThemeFamily {
     required this.primaryChroma,
     required this.primaryContainerChroma,
     this.neutralChroma = 1,
-    this.hasAmoled = true,
     this.lightSurfaceSink = 0,
     double? darkNeutralChroma,
   }) : darkNeutralChroma = darkNeutralChroma ?? neutralChroma;
@@ -167,9 +166,6 @@ class ThemeFamily {
 
   /// How far below the shared construction the light surfaces sit (Clay).
   final double lightSurfaceSink;
-
-  /// Shown as "true black" on the family card, as in Mull.
-  final bool hasAmoled;
 
   final double neutralHue;
   final double primaryHue;
@@ -213,7 +209,21 @@ class ThemeFamily {
     primaryLightness: 0.52,
     primaryChroma: 0.11,
     primaryContainerChroma: 0.04,
-    hasAmoled: true,
+  );
+
+  /// Kuber's Signature blue (the app icon's hue), its tinted surfaces
+  /// carried into Mull's role formulas.
+  static const ThemeFamily kuber = ThemeFamily(
+    id: 'kuber',
+    name: 'Kuber',
+    blurb: 'classic blue',
+    neutralHue: 265,
+    neutralChroma: 3.5,
+    lightSurfaceSink: 0.01,
+    primaryHue: 258,
+    primaryLightness: 0.48,
+    primaryChroma: 0.176,
+    primaryContainerChroma: 0.045,
   );
 
   static const ThemeFamily vellum = ThemeFamily(
@@ -226,7 +236,6 @@ class ThemeFamily {
     primaryLightness: 0.58,
     primaryChroma: 0.10,
     primaryContainerChroma: 0.04,
-    hasAmoled: false,
   );
 
   static const ThemeFamily foxglove = ThemeFamily(
@@ -239,7 +248,6 @@ class ThemeFamily {
     primaryLightness: 0.55,
     primaryChroma: 0.12,
     primaryContainerChroma: 0.04,
-    hasAmoled: false,
   );
 
   static const ThemeFamily slate = ThemeFamily(
@@ -252,7 +260,6 @@ class ThemeFamily {
     primaryLightness: 0.42,
     primaryChroma: 0.012,
     primaryContainerChroma: 0.006,
-    hasAmoled: true,
   );
 
   /// The warm greige behind the pass 02 widget mock-ups. Neutral-led: the
@@ -267,7 +274,6 @@ class ThemeFamily {
     primaryLightness: 0.50,
     primaryChroma: 0.055,
     primaryContainerChroma: 0.02,
-    hasAmoled: false,
     lightSurfaceSink: 0.025,
     darkNeutralChroma: 1.2,
   );
@@ -283,7 +289,6 @@ class ThemeFamily {
     primaryLightness: 0.52,
     primaryChroma: 0.11,
     primaryContainerChroma: 0.04,
-    hasAmoled: true,
   );
 
   static const ThemeFamily ember = ThemeFamily(
@@ -296,7 +301,6 @@ class ThemeFamily {
     primaryLightness: 0.58,
     primaryChroma: 0.11,
     primaryContainerChroma: 0.04,
-    hasAmoled: false,
   );
 
   static const ThemeFamily fern = ThemeFamily(
@@ -309,7 +313,6 @@ class ThemeFamily {
     primaryLightness: 0.54,
     primaryChroma: 0.10,
     primaryContainerChroma: 0.04,
-    hasAmoled: false,
   );
 
   // Dally's accents as families, each keyed by the oklch hue of its light
@@ -325,7 +328,6 @@ class ThemeFamily {
     primaryLightness: 0.52,
     primaryChroma: 0.12,
     primaryContainerChroma: 0.04,
-    hasAmoled: true,
   );
 
   static const ThemeFamily tide = ThemeFamily(
@@ -338,7 +340,6 @@ class ThemeFamily {
     primaryLightness: 0.50,
     primaryChroma: 0.09,
     primaryContainerChroma: 0.04,
-    hasAmoled: true,
   );
 
   static const ThemeFamily meadow = ThemeFamily(
@@ -351,7 +352,6 @@ class ThemeFamily {
     primaryLightness: 0.52,
     primaryChroma: 0.10,
     primaryContainerChroma: 0.04,
-    hasAmoled: false,
   );
 
   static const ThemeFamily blush = ThemeFamily(
@@ -364,7 +364,6 @@ class ThemeFamily {
     primaryLightness: 0.55,
     primaryChroma: 0.12,
     primaryContainerChroma: 0.04,
-    hasAmoled: false,
   );
 
   static const ThemeFamily iris = ThemeFamily(
@@ -377,7 +376,6 @@ class ThemeFamily {
     primaryLightness: 0.55,
     primaryChroma: 0.12,
     primaryContainerChroma: 0.04,
-    hasAmoled: true,
   );
 
   static const ThemeFamily coral = ThemeFamily(
@@ -390,7 +388,6 @@ class ThemeFamily {
     primaryLightness: 0.56,
     primaryChroma: 0.12,
     primaryContainerChroma: 0.04,
-    hasAmoled: false,
   );
 
   static const ThemeFamily citron = ThemeFamily(
@@ -403,7 +400,6 @@ class ThemeFamily {
     primaryLightness: 0.55,
     primaryChroma: 0.10,
     primaryContainerChroma: 0.04,
-    hasAmoled: false,
   );
 
   static const ThemeFamily neon = ThemeFamily(
@@ -416,12 +412,12 @@ class ThemeFamily {
     primaryLightness: 0.60,
     primaryChroma: 0.14,
     primaryContainerChroma: 0.05,
-    hasAmoled: true,
   );
 
   static const List<ThemeFamily> all = <ThemeFamily>[
     saffron,
     mull,
+    kuber,
     vellum,
     foxglove,
     slate,
@@ -441,7 +437,25 @@ class ThemeFamily {
 
   static ThemeFamily byId(String? id) => all.firstWhere((ThemeFamily f) => f.id == id, orElse: () => saffron);
 
-  UnfurlColors colors(Tone tone) => tone == Tone.light ? _light() : _dark(amoled: tone == Tone.amoled);
+  /// [expressive] (Kuber's Expressive colours): the surfaces carry a tint
+  /// of the family; off, every family shares one neutral grey ramp and only
+  /// the accent roles change.
+  UnfurlColors colors(Tone tone, {bool expressive = true}) {
+    final ThemeFamily f = expressive ? this : _neutral;
+    return tone == Tone.light ? f._light() : f._dark(amoled: tone == Tone.amoled);
+  }
+
+  ThemeFamily get _neutral => ThemeFamily(
+    id: id,
+    name: name,
+    blurb: blurb,
+    neutralHue: neutralHue,
+    neutralChroma: 0,
+    primaryHue: primaryHue,
+    primaryLightness: primaryLightness,
+    primaryChroma: primaryChroma,
+    primaryContainerChroma: primaryContainerChroma,
+  );
 
   Color _n(double l, double c) => Oklch(l, c * neutralChroma, neutralHue).toColor();
   Color _nd(double l, double c) => Oklch(l, c * darkNeutralChroma, neutralHue).toColor();

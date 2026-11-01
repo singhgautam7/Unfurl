@@ -4,13 +4,14 @@ import 'palette.dart';
 import 'tokens.dart';
 import 'typography.dart';
 
-/// Builds, and caches, one [ThemeData] per (family, tone). A theme is stable
-/// for the life of a setting, so it is built once and handed out after that.
+/// Builds, and caches, one [ThemeData] per (family, tone, expressive). A theme
+/// is stable for the life of a setting, so it is built once and handed out
+/// after that.
 abstract final class AppTheme {
-  static final Map<(ThemeFamily, Tone), ThemeData> _cache = <(ThemeFamily, Tone), ThemeData>{};
+  static final Map<(ThemeFamily, Tone, bool), ThemeData> _cache = <(ThemeFamily, Tone, bool), ThemeData>{};
 
-  static ThemeData of(ThemeFamily family, Tone tone) =>
-      _cache.putIfAbsent((family, tone), () => _build(family.colors(tone)));
+  static ThemeData of(ThemeFamily family, Tone tone, {bool expressive = true}) =>
+      _cache.putIfAbsent((family, tone, expressive), () => _build(family.colors(tone, expressive: expressive)));
 
   static ThemeData _build(UnfurlColors c) {
     final Brightness brightness = c.isDark ? Brightness.dark : Brightness.light;

@@ -45,30 +45,61 @@ class ProgressTrack extends StatelessWidget {
   }
 }
 
-/// The real extension ("AZW3", not "Kindle") in 9.5 mono on the surface
-/// with an outline ring, readable on any cover colour (board 6, V3 badges).
-/// Top-left on covers, trailing on rows.
+/// The real extension ("AZW3", not "Kindle") in 10.5 mono on the theme's
+/// primary, readable on any preview or surface. Top-left on every file tile,
+/// trailing on rows.
 class FormatBadge extends StatelessWidget {
-  const FormatBadge(this.label, {this.inverse = false, super.key});
+  const FormatBadge(this.label, {this.inverse = false, this.muted = false, super.key});
 
   final String label;
 
-  /// The comic issue badge: inverse surface, no ring.
+  /// The comic issue badge: inverse surface.
   final bool inverse;
+
+  /// A file Unfurl can't open, or a hidden one.
+  final bool muted;
 
   @override
   Widget build(BuildContext context) {
     final UnfurlColors c = context.colors;
+    final (Color fill, Color ink) = inverse
+        ? (c.inverseSurface, c.onInverseSurface)
+        : (muted ? (c.surfaceContainerHigh, c.onSurfaceMuted) : (c.primary, c.onPrimary));
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
       decoration: BoxDecoration(
-        color: inverse ? c.inverseSurface : c.surface,
+        color: fill,
         borderRadius: Radii.badgeR,
-        border: inverse ? null : Border.all(color: c.outline),
+        border: muted ? Border.all(color: c.outline) : null,
       ),
-      child: Text(label, style: UnfurlType.badge.copyWith(color: inverse ? c.onInverseSurface : c.onSurface)),
+      child: Text(label, style: UnfurlType.badge.copyWith(color: ink)),
     );
   }
+}
+
+/// A picture that fills a tile, decoded at the size it is drawn, fading in
+/// over whatever sits beneath it. A file that won't decode draws nothing.
+class PreviewImage extends StatelessWidget {
+  const PreviewImage(this.file, {required this.width, super.key});
+
+  final File file;
+  final double width;
+
+  @override
+  Widget build(BuildContext context) => Image(
+    image: ResizeImage(FileImage(file), width: (width * MediaQuery.devicePixelRatioOf(context)).round()),
+    fit: BoxFit.cover,
+    gaplessPlayback: true,
+    frameBuilder: (BuildContext context, Widget child, int? frame, bool sync) => sync
+        ? child
+        : AnimatedOpacity(
+            opacity: frame == null ? 0 : 1,
+            duration: Motion.of(context, Motion.reveal),
+            curve: Motion.decelerate,
+            child: child,
+          ),
+    errorBuilder: (BuildContext context, Object e, StackTrace? s) => const SizedBox.shrink(),
+  );
 }
 
 /// The face of a book: its own cover art when there is one (EPUB art, a
@@ -94,7 +125,8 @@ class CoverArt extends StatelessWidget {
   final double width;
   final double height;
 
-  /// The extension badge, top-left (grids only).
+  /// The extension badge, top-left (grids only). With it the cover is a
+  /// [FormatTile]: the art filling it, or the format's glyph.
   final String? badge;
 
   /// A comic's issue, top-right.
@@ -102,12 +134,25 @@ class CoverArt extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (badge == null && issue == null) return _face(context);
+    if (badge == null) return _face(context);
+    final Widget tile = ValueListenableBuilder<int>(
+      valueListenable: Covers.changed,
+      builder: (BuildContext context, int _, Widget? child) {
+        final File? art = Covers.fileFor(fingerprint);
+        return FormatTile(
+          label: badge!,
+          icon: format.icon,
+          width: width,
+          height: height,
+          preview: art == null ? null : PreviewImage(art, width: width),
+        );
+      },
+    );
+    if (issue == null) return tile;
     return Stack(
       children: <Widget>[
-        _face(context),
-        if (badge != null) Positioned(left: 6, top: 6, child: FormatBadge(badge!)),
-        if (issue != null) Positioned(right: 6, top: 6, child: FormatBadge(issue!, inverse: true)),
+        tile,
+        Positioned(right: 6, top: 6, child: FormatBadge(issue!, inverse: true)),
       ],
     );
   }
@@ -250,12 +295,14 @@ class CoverArt extends StatelessWidget {
   }
 }
 
-/// A file Unfurl opens that is not a book: a typographic tile with the
-/// format label large (board 2, A6 grid).
+/// Every file in a grid, book or not: its preview filling the tile (a
+/// cover, a PDF's first page, an image) or, with none, the format's glyph
+/// large in the centre; the extension badge top-left either way.
 class FormatTile extends StatelessWidget {
   const FormatTile({
     required this.label,
     required this.icon,
+    this.preview,
     this.width = 96,
     this.height = 136,
     this.muted = false,
@@ -264,6 +311,9 @@ class FormatTile extends StatelessWidget {
 
   final String label;
   final IconData icon;
+
+  /// Drawn over the glyph, so the glyph shows while it decodes or if it fails.
+  final Widget? preview;
   final double width;
   final double height;
   final bool muted;
@@ -274,32 +324,20 @@ class FormatTile extends StatelessWidget {
     final Widget tile = Container(
       width: width,
       height: height,
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: Space.md),
-      decoration: muted
-          ? null
-          : BoxDecoration(
-              color: c.surfaceContainerHigh,
-              borderRadius: Radii.coverR,
-              border: Border.all(color: c.outline),
-            ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      decoration: BoxDecoration(
+        color: muted ? null : c.surfaceContainerHigh,
+        borderRadius: Radii.coverR,
+        border: muted ? null : Border.all(color: c.outline, width: preview == null ? 1 : 0.5),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Stack(
+        fit: StackFit.expand,
         children: <Widget>[
-          AppIcon(icon, size: 20, color: muted ? c.onSurfaceMuted : c.icon),
-          FittedBox(
-            fit: BoxFit.scaleDown,
-            alignment: Alignment.centerLeft,
-            child: Text(
-              label,
-              style: UnfurlType.title.copyWith(
-                fontSize: 24,
-                height: 1,
-                letterSpacing: -0.48,
-                color: muted ? c.onSurfaceMuted : c.onSurface,
-              ),
-            ),
+          Center(
+            child: AppIcon(icon, size: width * IconSpec.tileFraction, color: muted ? c.onSurfaceMuted : c.icon),
           ),
+          ?preview,
+          Positioned(left: 6, top: 6, child: FormatBadge(label, muted: muted)),
         ],
       ),
     );

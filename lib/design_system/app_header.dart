@@ -8,6 +8,7 @@ import '../core/theme/tokens.dart';
 import '../core/theme/typography.dart';
 import 'app_icon.dart';
 import 'buttons.dart';
+import 'search_field.dart';
 
 /// The one top bar. Every tab root and pushed page uses this.
 ///
@@ -67,6 +68,127 @@ class AppHeader extends StatelessWidget {
           ...actions,
         ],
       ),
+    );
+  }
+}
+
+/// Kuber's header search: [builder] draws the header row with the search
+/// button it is handed (null while [enabled] is false). The button turns the
+/// row into a search pill that grows out of the trailing edge, where the
+/// button sat, and collapses back into it. The pill's back button, or the
+/// system back, closes it and clears the query.
+class HeaderSearch extends StatefulWidget {
+  const HeaderSearch({
+    required this.hint,
+    required this.onChanged,
+    required this.builder,
+    this.enabled = true,
+    this.height = 60,
+    super.key,
+  });
+
+  final String hint;
+  final ValueChanged<String> onChanged;
+  final Widget Function(BuildContext context, Widget? searchButton) builder;
+  final bool enabled;
+
+  /// The header row's height, so opening the pill moves nothing below it.
+  final double height;
+
+  @override
+  State<HeaderSearch> createState() => _HeaderSearchState();
+}
+
+class _HeaderSearchState extends State<HeaderSearch> {
+  static const ValueKey<String> _pill = ValueKey<String>('search');
+
+  /// The pill's transition, kept above the row so closing uncovers the row.
+  static const ValueKey<String> _pillTransition = ValueKey<String>('search-transition');
+  final TextEditingController _controller = TextEditingController();
+  bool _open = false;
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _close() {
+    FocusScope.of(context).unfocus();
+    if (_controller.text.isNotEmpty) {
+      _controller.clear();
+      widget.onChanged('');
+    }
+    setState(() => _open = false);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bool reduced = Motion.reduced(context);
+    final Curve curve = Motion.curveOf(context, Motion.decelerate);
+    return AnimatedSwitcher(
+      duration: Motion.of(context, Motion.containerTransform),
+      // The same curve both ways: closing plays the opening backwards.
+      switchInCurve: curve,
+      switchOutCurve: curve,
+      layoutBuilder: (Widget? current, List<Widget> previous) {
+        final List<Widget> all = <Widget>[...previous, ?current];
+        bool pill(Widget w) => w.key == _pillTransition;
+        return Stack(
+          alignment: AlignmentDirectional.centerEnd,
+          children: <Widget>[...all.where((Widget w) => !pill(w)), ...all.where(pill)],
+        );
+      },
+      transitionBuilder: (Widget child, Animation<double> a) {
+        if (reduced || child.key != _pill) return FadeTransition(opacity: a, child: child);
+        return SizeTransition(
+          key: _pillTransition,
+          sizeFactor: a,
+          axis: Axis.horizontal,
+          alignment: AlignmentDirectional.centerEnd,
+          child: FadeTransition(
+            opacity: CurvedAnimation(parent: a, curve: Motion.searchPillFade),
+            child: child,
+          ),
+        );
+      },
+      child: _open && widget.enabled
+          ? PopScope(
+              key: _pill,
+              canPop: false,
+              onPopInvokedWithResult: (bool didPop, Object? _) {
+                if (!didPop) _close();
+              },
+              child: SizedBox(
+                height: widget.height,
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(Space.lg, 0, 14, 0),
+                  child: Center(
+                    child: SearchField(
+                      hint: widget.hint,
+                      controller: _controller,
+                      autofocus: true,
+                      height: IconSpec.tapTarget,
+                      onBack: _close,
+                      onChanged: widget.onChanged,
+                    ),
+                  ),
+                ),
+              ),
+            )
+          : KeyedSubtree(
+              key: const ValueKey<String>('bar'),
+              child: widget.builder(
+                context,
+                widget.enabled
+                    ? AppIconButton(
+                        icon: AppIcons.search,
+                        semanticLabel: widget.hint,
+                        onPressed: () => setState(() => _open = true),
+                      )
+                    : null,
+              ),
+            ),
     );
   }
 }

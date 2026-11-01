@@ -68,7 +68,9 @@ void main() {
   testWidgets('the editor: a live preview that follows the ratio, and the shortened-quote warning', (
     WidgetTester tester,
   ) async {
-    tester.view.physicalSize = const Size(400, 900);
+    // Wide enough that the background toggle keeps one row in the test font
+    // (every glyph a full square), as it does in Instrument Sans at 400.
+    tester.view.physicalSize = const Size(540, 900);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
     SharedPreferences.setMockInitialValues(<String, Object>{});

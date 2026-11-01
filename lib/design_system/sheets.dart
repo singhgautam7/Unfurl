@@ -6,6 +6,7 @@ import '../core/theme/palette.dart';
 import '../core/theme/tokens.dart';
 import '../core/theme/typography.dart';
 import 'app_icon.dart';
+import 'buttons.dart';
 
 /// The one sheet shell (boards 2 and 3): `surfaceContainer`, 28dp top
 /// radius, a 1px `outline` top edge, the 36x4 handle, then an optional icon
@@ -81,6 +82,36 @@ class AppBottomSheet extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// A sheet's title with a close button at the end (Kuber's sheet header):
+/// Reading settings, Page settings, Contents.
+class SheetTitleBar extends StatelessWidget {
+  const SheetTitleBar({required this.title, super.key});
+
+  final String title;
+
+  @override
+  Widget build(BuildContext context) {
+    final UnfurlColors c = context.colors;
+    return Row(
+      spacing: Space.sm,
+      children: <Widget>[
+        Expanded(
+          child: Semantics(
+            header: true,
+            child: Text(
+              title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: UnfurlType.sheetTitle.copyWith(color: c.onSurface),
+            ),
+          ),
+        ),
+        AppIconButton(icon: AppIcons.close, semanticLabel: 'Close', onPressed: () => Navigator.of(context).maybePop()),
+      ],
     );
   }
 }

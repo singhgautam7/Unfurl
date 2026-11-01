@@ -671,6 +671,13 @@ class ReaderScaffoldState extends ConsumerState<ReaderScaffold> with WidgetsBind
   Future<void> _openComfort() =>
       showComfortSheet(context, auto: _auto, timer: _sleep, onSleep: () => unawaited(_openSleep()));
 
+  /// The headphones button: asks first (unless already reading aloud), so a
+  /// book never starts out loud by surprise.
+  Future<void> _confirmReadAloud() async {
+    if (!(_tts?.active ?? false) && !await confirmReadAloud(context)) return;
+    if (mounted) await _readAloud();
+  }
+
   Future<void> _readAloud({int? from}) async {
     final ReadAloud tts = _tts ??= ReadAloud(reading, volume: () => _sleep.volume)..addListener(_onTts);
     final ReadingPrefs p = ref.read(readingPrefsProvider);
@@ -1111,7 +1118,7 @@ class ReaderScaffoldState extends ConsumerState<ReaderScaffold> with WidgetsBind
                                     icon: AppIcons.headphones,
                                     filled: false,
                                     semanticLabel: 'Read aloud',
-                                    onPressed: _readAloud,
+                                    onPressed: _confirmReadAloud,
                                   ),
                                 if (format.annotations && widget.onPageMode != null)
                                   AppIconButton(

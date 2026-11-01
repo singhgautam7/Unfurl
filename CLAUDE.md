@@ -43,8 +43,10 @@ python3 tool/make_fixtures.py                            # regenerate test/fixtu
 ## Key decisions
 
 - **Theme:** Mull's OKLCH role formulas, ported unchanged (`core/theme/palette.dart`), with
-  Unfurl's Saffron family (the HANDOFF decision) as default; Settings › Theme also offers Mull's
-  sixteen families (`ThemeFamily.all`, stored as `theme.family`). Dynamic colour is **off by
+  Unfurl's Saffron family (the HANDOFF decision) as default; Settings › Theme (Kuber's layout,
+  `ThemeControls`, also a welcome page) offers Mull's sixteen families and Kuber's blue
+  (`ThemeFamily.all`, stored as `theme.family`). Expressive colours (`theme.expressive`, on) tints
+  surfaces; off, every family shares one neutral grey ramp. Dynamic colour is **off by
   default** (owner's call, 8 October 2026: on, it replaced Saffron with the wallpaper's hue on
   most phones); when on, it replaces only the primary hue, chroma pinned at 0.11.
   `test/theme/tokens_test.dart` pins every chrome role, reading surface, highlight and cover
