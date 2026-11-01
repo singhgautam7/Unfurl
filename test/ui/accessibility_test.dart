@@ -14,6 +14,7 @@ import 'package:unfurl/core/tracking/session.dart';
 import 'package:unfurl/features/cards/card_editor.dart';
 import 'package:unfurl/features/cards/share_card.dart';
 import 'package:unfurl/features/insights/book_insights.dart';
+import 'package:unfurl/features/settings/more_screen.dart';
 import 'package:unfurl/features/settings/settings_controller.dart';
 
 /// The v3 screens against Flutter's accessibility guidelines: 48dp tap
@@ -97,6 +98,14 @@ void main() {
       final SemanticsHandle h = tester.ensureSemantics();
       await pumpApp(tester, dark: dark);
       await tester.tap(find.bySemanticsLabel('More').first);
+      await tester.pumpAndSettle();
+      // At rest the footer sits behind the floating nav pill (and its shadow),
+      // so the contrast check would measure the pill. Check it where a reader
+      // sees it: at the end of the list, clear of the pill (Space.bottomSafe).
+      await tester.drag(
+        find.descendant(of: find.byType(MoreScreen), matching: find.byType(Scrollable)).first,
+        const Offset(0, -2000),
+      );
       await tester.pumpAndSettle();
       await meetsAll(tester, 'More');
       GoRouter.of(ctx(tester)).push(Routes.insights).ignore();
