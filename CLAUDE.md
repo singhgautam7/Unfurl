@@ -46,8 +46,9 @@ python3 tool/make_fixtures.py                            # regenerate test/fixtu
   Unfurl's Saffron family (the HANDOFF decision) as default; Settings › Theme also offers Mull's
   sixteen families (`ThemeFamily.all`, stored as `theme.family`). Dynamic colour is **off by
   default** (owner's call, 8 October 2026: on, it replaced Saffron with the wallpaper's hue on
-  most phones); when on it replaces only the primary hue, chroma pinned at 0.11. `test/theme/tokens_test.dart` pins every chrome role,
-  reading surface, highlight and cover colour to `tokens.json`.
+  most phones); when on, it replaces only the primary hue, chroma pinned at 0.11.
+  `test/theme/tokens_test.dart` pins every chrome role, reading surface, highlight and cover
+  colour to `tokens.json`.
 - **No WebView.** The earlier plan (foliate-js, docx-preview, SheetJS in a WebView) was dropped:
   a WebView needs a network-capable engine, cold-starts slowly, and can't share Flutter's text
   selection, highlights or motion. Every format is parsed in Dart (`lib/formats/`) on an isolate.
@@ -66,17 +67,19 @@ python3 tool/make_fixtures.py                            # regenerate test/fixtu
   first), keeps an LRU of page images, sharp tiles when zoomed, recolour on an isolate, auto-crop.
   Page view shows the file's own colours; "Recolour pages" is opt-in (`pdf.recolourPages`, off).
   Reader mode for PDF is `formats/pdf/pdf_reflow.dart` (columns, running heads, dehyphenation,
-  headings), with progress shown while it runs.
+  headings), with progress shown while it runs; the result is kept on disk (`core/reflow_cache.dart`,
+  app storage, 300 MB LRU, bump `PdfReflow.version` when the analysis changes), and the laid-out
+  pages are kept while Page view shows (`ReaderLayoutCache`).
 - **File access:** All-files access (`MANAGE_EXTERNAL_STORAGE`) is **off for now**: Play refuses it
   for Unfurl, so it is out of the manifest and `kAllFilesAccess` (`core/explorer.dart`) hides the
   Files tab, the Settings rows and every control that asks for it; folders come through Android's
-  picker. To bring it back, set the flag and restore the manifest line. No INTERNET permission, ever. Without access, files come through the Storage
-  Access Framework (picked folders and files); with it, the Files tab and path-based folders read
-  paths (`file://` URIs) directly, and other apps get a MediaStore or FileProvider content URI, never
-  a `file://` one. Read-only either way. Kotlin hands over a detached descriptor;
-  Dart reads it with `pread64` through `dart:ffi` (`core/files.dart`, `Fd`) and PDFium reads it
-  through `PdfDocument.openCustom`. Never reopen `/proc/self/fd/N` by path: Android's storage
-  layer refuses it to an app without storage permissions.
+  picker. To bring it back, set the flag and restore the manifest line. No INTERNET permission,
+  ever. Without access, files come through the Storage Access Framework (picked folders and files);
+  with it, the Files tab and path-based folders read paths (`file://` URIs) directly, and other apps
+  get a MediaStore or FileProvider content URI, never a `file://` one. Read-only either way. Kotlin
+  hands over a detached descriptor; Dart reads it with `pread64` through `dart:ffi` (`core/files.dart`,
+  `Fd`) and PDFium reads it through `PdfDocument.openCustom`. Never reopen `/proc/self/fd/N` by path:
+  Android's storage layer refuses it to an app without storage permissions.
 - **Positions and marks** are `Locator`s (text-quote anchor plus section/block/offset and
   page/char hints); per-document data is keyed by a fingerprint (size plus FNV-1a of the first
   and last 64 KB).
