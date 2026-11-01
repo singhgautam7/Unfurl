@@ -260,11 +260,42 @@ class ReaderPage {
 class ImageSizes {
   final Map<String, Size> _sizes = <String, Size>{};
 
+  static final Expando<ImageSizes> _shared = Expando<ImageSizes>('ImageSizes');
+
+  /// The sizes of one document's images, shared by every view of it: they are
+  /// read once, however often Reader mode is shown.
+  static ImageSizes of(ReadingDocument doc) => _shared[doc] ??= ImageSizes();
+
   Size? operator [](String key) => _sizes[key];
 
+  /// Reads the sizes of [keys] that can be had from their headers, at once.
+  /// True when every image is now known (nothing is left for [load]).
+  bool loadKnown(Map<String, Uint8List> resources, Iterable<String> keys) {
+    bool all = true;
+    for (final String k in keys) {
+      if (_sizes.containsKey(k)) continue;
+      final Uint8List? bytes = resources[k];
+      if (bytes == null) continue;
+      final Size? s = sniff(bytes);
+      if (s == null) {
+        all = false;
+      } else {
+        _sizes[k] = s;
+      }
+    }
+    return all;
+  }
+
+  /// Reads the sizes of [keys] from their headers, asking the engine only for
+  /// what a header can't tell.
   Future<void> load(Map<String, Uint8List> resources, Iterable<String> keys) async {
     for (final String k in keys) {
       if (_sizes.containsKey(k) || resources[k] == null) continue;
+      final Size? quick = sniff(resources[k]!);
+      if (quick != null) {
+        _sizes[k] = quick;
+        continue;
+      }
       try {
         final ui.ImmutableBuffer buf = await ui.ImmutableBuffer.fromUint8List(resources[k]!);
         final ui.ImageDescriptor d = await ui.ImageDescriptor.encoded(buf);
@@ -276,6 +307,115 @@ class ImageSizes {
       }
     }
   }
+
+  /// The pixel size from an image's header (PNG, GIF, JPEG, WebP, BMP), or
+  /// null when the bytes are another format or cut short. Never throws.
+  static Size? sniff(Uint8List b) {
+    final int n = b.length;
+    int u16be(int i) => (b[i] << 8) | b[i + 1];
+    int u16le(int i) => b[i] | (b[i + 1] << 8);
+    int u32be(int i) => (b[i] << 24) | (b[i + 1] << 16) | (b[i + 2] << 8) | b[i + 3];
+    int i32le(int i) => (b[i] | (b[i + 1] << 8) | (b[i + 2] << 16) | (b[i + 3] << 24)).toSigned(32);
+    bool tag(int at, String t) {
+      if (at + t.length > n) return false;
+      for (int k = 0; k < t.length; k++) {
+        if (b[at + k] != t.codeUnitAt(k)) return false;
+      }
+      return true;
+    }
+
+    Size? size(int w, int h) => w > 0 && h > 0 ? Size(w.toDouble(), h.toDouble()) : null;
+
+    // PNG: signature, then IHDR with width and height.
+    if (n >= 24 && b[0] == 0x89 && tag(1, 'PNG') && b[4] == 0x0D && b[5] == 0x0A && b[6] == 0x1A && b[7] == 0x0A) {
+      return size(u32be(16), u32be(20));
+    }
+    // GIF: little-endian logical screen size.
+    if (n >= 10 && (tag(0, 'GIF87a') || tag(0, 'GIF89a'))) return size(u16le(6), u16le(8));
+    // JPEG: walk the markers to the first start-of-frame.
+    if (n >= 4 && b[0] == 0xFF && b[1] == 0xD8) {
+      int i = 2;
+      while (i + 3 < n) {
+        if (b[i] != 0xFF) {
+          i++;
+          continue;
+        }
+        final int m = b[i + 1];
+        if (m == 0xFF) {
+          i++;
+          continue;
+        }
+        // Markers without a length.
+        if (m == 0x00 || m == 0x01 || (m >= 0xD0 && m <= 0xD9)) {
+          i += 2;
+          continue;
+        }
+        if (m >= 0xC0 && m <= 0xCF && m != 0xC4 && m != 0xC8 && m != 0xCC) {
+          if (i + 9 > n) return null;
+          return size(u16be(i + 7), u16be(i + 5));
+        }
+        i += 2 + u16be(i + 2);
+      }
+      return null;
+    }
+    // WebP: RIFF container with a lossy, lossless or extended chunk.
+    if (n >= 16 && tag(0, 'RIFF') && tag(8, 'WEBP')) {
+      if (tag(12, 'VP8 ') && n >= 30) return size(u16le(26) & 0x3FFF, u16le(28) & 0x3FFF);
+      if (tag(12, 'VP8L') && n >= 25 && b[20] == 0x2F) {
+        final int bits = b[21] | (b[22] << 8) | (b[23] << 16) | (b[24] << 24);
+        return size((bits & 0x3FFF) + 1, ((bits >> 14) & 0x3FFF) + 1);
+      }
+      if (tag(12, 'VP8X') && n >= 30) {
+        final int w = (b[24] | (b[25] << 8) | (b[26] << 16)) + 1;
+        final int h = (b[27] | (b[28] << 8) | (b[29] << 16)) + 1;
+        return size(w, h);
+      }
+      return null;
+    }
+    // BMP: signed 32-bit width and height (a negative height is top-down).
+    if (n >= 26 && tag(0, 'BM')) return size(i32le(18).abs(), i32le(22).abs());
+    return null;
+  }
+}
+
+/// Keeps one laid-out [Layout] alive while Reader mode is hidden, so showing it
+/// again doesn't paginate the book again. The screen that owns the document
+/// creates it and disposes it when it closes.
+class ReaderLayoutCache {
+  Layout? _layout;
+  int _columns = 1;
+
+  /// The parked layout if it was made for this document, style, page size and
+  /// column count (it is handed over and no longer cached); a parked layout
+  /// that doesn't match is disposed.
+  Layout? take({
+    required ReadingDocument doc,
+    required ReaderStyle style,
+    required Size pageSize,
+    required int columns,
+  }) {
+    final Layout? l = _layout;
+    if (l == null) return null;
+    _layout = null;
+    if (identical(l.doc, doc) && l.style == style && l.pageSize == pageSize && _columns == columns) return l;
+    l.dispose();
+    return null;
+  }
+
+  /// Keeps [layout]; disposes any other layout parked before it.
+  void park(Layout layout, {required int columns}) {
+    if (!identical(_layout, layout)) _layout?.dispose();
+    _layout = layout;
+    _columns = columns;
+  }
+
+  void dispose() {
+    _layout?.dispose();
+    _layout = null;
+  }
+
+  @visibleForTesting
+  Layout? get parked => _layout;
 }
 
 /// Lays sections out into pages of a given size and style.

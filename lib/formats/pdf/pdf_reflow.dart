@@ -71,6 +71,10 @@ class _Line {
 /// centring, and keep a character map back to each page. Pure Dart, so it
 /// runs in an isolate.
 abstract final class PdfReflow {
+  /// Bump whenever the analysis changes what it produces: Reader mode kept on
+  /// disk (`ReflowCache`) under an older version is prepared again.
+  static const int version = 1;
+
   static String regionKey(int page, int index) => 'p${page}r$index';
 
   /// Figures and tables on a page, in PDF units (l, t, r, b per region):

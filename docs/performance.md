@@ -176,3 +176,29 @@ recovery, the wallpaper seed and rescans are post-frame.
   (Reader, Insights) over a frame and are not representative of a phone. Insights paints no
   shadows, blurs or opacity layers (a 371-cell heatmap and text). **To confirm on a real device**
   with a DevTools profile run, with the reader frame budget from Phase 0.
+
+## Fixes, 1 November 2026
+
+PDF page view and Reader mode. Host tests only so far (`test/pdf/`, with `PDFIUM_PATH`); **re-run
+`integration_test/v3_perf_test.dart` on a device** for the PDF fling frames and the open times.
+
+- **Page view scrolling** (`features/pdf/pdf_pages.dart`, replacing `InteractiveViewer.builder`):
+  the builder ran every frame, rebuilding every page tile, recomputing highlights (a JSON decode
+  per annotation per page) and asking PDFium for a new sharp tile per frame while zoomed. Now a
+  frame moves one `Transform`; tiles rebuild only when a page enters or leaves range (a test
+  checks a scroll inside a page builds none), each behind a `RepaintBoundary`; sharp tiles and
+  render sizes wait for `Motion.sharpenDelay` of stillness. Fling is `ClampingScrollSimulation`
+  (Android's curve), a pan starts at the device touch slop (the scale recogniser's default is
+  twice that) without jumping, and a touch stops a fling without tapping.
+- **Rendering:** a priority queue in front of PDFium (one worker, so order matters): pages on
+  screen before pages near, a quarter-size preview before each sharp page, two in flight, queued
+  renders dropped when a page leaves. Unrecoloured pages go from PDFium's buffer to the engine
+  (`createImage`) with no 10 MB copy on the UI isolate. Pages drawn at their own size sample
+  bilinear (`FilterQuality.low`), not mipmapped. Text is read for pages on screen only.
+- **Reader mode:** prepared once per book and kept on disk (`ReflowCache`, binary
+  `ReadingDocumentCodec`: a 1M-character test document encodes in 153 ms and decodes in 99 ms on
+  the host, 7.4 MB). A PDF with a kept reflow reads it back in the background when it opens.
+  Switching back to Reader mode reuses the laid-out pages (`ReaderLayoutCache`) and reads image
+  sizes from their headers (`ImageSizes.sniff`) instead of one engine decode per figure, so there
+  is no empty first frame.
+

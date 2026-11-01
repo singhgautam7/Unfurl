@@ -37,6 +37,7 @@ import '../insights/book_insights.dart';
 import '../viewer/document_screen.dart';
 import 'chrome.dart';
 import 'comfort.dart';
+import 'engine/layout.dart' show ReaderLayoutCache;
 import 'engine/reader_style.dart';
 import 'engine/reader_view.dart';
 import 'read_aloud.dart';
@@ -57,6 +58,7 @@ class ReaderScaffold extends ConsumerStatefulWidget {
     this.pageLabel,
     this.overlay,
     this.approximate = false,
+    this.layoutCache,
     super.key,
   });
 
@@ -83,6 +85,9 @@ class ReaderScaffold extends ConsumerStatefulWidget {
 
   /// Office files: "Rendered approximately" in the overflow menu.
   final bool approximate;
+
+  /// Keeps the laid-out pages while Reader mode is hidden (see [ReaderLayoutCache]).
+  final ReaderLayoutCache? layoutCache;
 
   @override
   ConsumerState<ReaderScaffold> createState() => ReaderScaffoldState();
@@ -959,6 +964,7 @@ class ReaderScaffoldState extends ConsumerState<ReaderScaffold> with WidgetsBind
                           layoutMode: prefs.layout,
                           pageTurn: prefs.pageTurn.effective(reduced: Motion.reduced(context)),
                           columns: wide && prefs.layout == ReaderLayout.paged ? 2 : 1,
+                          layoutCache: widget.layoutCache,
                           onCentreTap: _toggleChrome,
                           onLink: _onLink,
                           onMarkTap: (int id, Offset at) => id >= 0 ? _highlightMenu(id, at) : null,
