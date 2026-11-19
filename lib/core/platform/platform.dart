@@ -272,6 +272,16 @@ abstract final class Platform {
 
   static Future<void> closeFd(int fd) => _call<bool>('closeFd', <String, Object?>{'fd': fd});
 
+  /// Total RAM in MB and Android's low-RAM flag, for the one-off device
+  /// class. Null when the platform can't answer.
+  static Future<({int totalMb, bool lowRam})?> deviceMemory() async {
+    final Map<Object?, Object?>? m = await _call<Map<Object?, Object?>>('deviceMemory');
+    final int? totalMb = m?['totalMb'] as int?;
+    // No figure: leave the device unknown rather than cache it as low.
+    if (totalMb == null || totalMb <= 0) return null;
+    return (totalMb: totalMb, lowRam: (m!['lowRam'] as bool?) ?? false);
+  }
+
   /// The file Unfurl was launched with, once.
   static Future<DocRef?> takeLaunchIntent() async {
     final Map<Object?, Object?>? m = await _call<Map<Object?, Object?>>('takeIntent');

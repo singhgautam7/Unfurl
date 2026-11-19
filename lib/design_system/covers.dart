@@ -5,7 +5,7 @@ import 'dart:ui' show PathMetric;
 import 'package:flutter/material.dart';
 
 import '../core/library/enrich.dart';
-import '../core/motion/motion.dart';
+import '../core/motion/kit.dart';
 import '../core/theme/app_theme.dart';
 import '../core/theme/palette.dart';
 import '../core/theme/reading_theme.dart';
@@ -378,7 +378,8 @@ class DashedOutline extends CustomPainter {
 }
 
 /// A tile in a grid of books: the cover, the progress, the state line and
-/// where it lives. Long-press presses it in (scale 0.96, a primary ring).
+/// where it lives. A press scales the cover to 0.96 (Pressable); a long-press
+/// adds a primary ring.
 class CoverTile extends StatefulWidget {
   const CoverTile({
     required this.cover,
@@ -453,6 +454,7 @@ class _CoverTileState extends State<CoverTile> {
             ? null
             : () {
                 setState(() => _pressed = false);
+                Haptics.longPress();
                 widget.onLongPress!();
               },
         onLongPressDown: (_) => setState(() => _pressed = true),
@@ -464,10 +466,9 @@ class _CoverTileState extends State<CoverTile> {
           crossAxisAlignment: CrossAxisAlignment.start,
           spacing: 6,
           children: <Widget>[
-            AnimatedScale(
-              scale: _pressed ? 0.96 : 1,
-              duration: Motion.of(context, Motion.fast),
-              curve: Motion.curveOf(context, Motion.spring),
+            Pressable(
+              kind: PressKind.chip,
+              morphCorners: false,
               child: AnimatedContainer(
                 duration: Motion.of(context, Motion.fast),
                 foregroundDecoration: BoxDecoration(

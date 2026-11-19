@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../../core/motion/kit.dart';
 import '../../core/explorer.dart';
 import '../../core/files.dart';
 import '../../core/open.dart';
@@ -177,19 +178,22 @@ class _ActionRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final UnfurlColors c = context.colors;
-    return InkWell(
-      onTap: onTap,
-      borderRadius: Radii.thumbR,
-      child: SizedBox(
-        height: 52,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: Space.md),
-          child: Row(
-            spacing: Space.lg,
-            children: <Widget>[
-              AppIcon(icon, color: c.icon),
-              Text(label, style: UnfurlType.titleMedium.copyWith(color: c.onSurface).weight(500)),
-            ],
+    return Pressable(
+      kind: PressKind.row,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: Radii.thumbR,
+        child: SizedBox(
+          height: 52,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: Space.md),
+            child: Row(
+              spacing: Space.lg,
+              children: <Widget>[
+                AppIcon(icon, color: c.icon),
+                Text(label, style: UnfurlType.titleMedium.copyWith(color: c.onSurface).weight(500)),
+              ],
+            ),
           ),
         ),
       ),

@@ -2,7 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
-import '../core/motion/motion.dart';
+import '../core/motion/kit.dart';
 import '../core/theme/app_theme.dart';
 import '../core/theme/palette.dart';
 import '../core/theme/tokens.dart';

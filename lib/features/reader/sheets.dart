@@ -6,7 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/db/database.dart';
-import '../../core/motion/motion.dart';
+import '../../core/motion/kit.dart';
 import '../../core/platform/platform.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/theme/palette.dart';
@@ -228,50 +228,53 @@ class ThemeSwatch extends StatelessWidget {
       label: semantic,
       onTap: onTap,
       excludeSemantics: true,
-      child: GestureDetector(
-        onTap: onTap,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          spacing: 6,
-          children: <Widget>[
-            AnimatedContainer(
-              duration: Motion.of(context, Motion.fast),
-              width: size,
-              height: size,
-              // Room for the selection ring, which draws outside the circle.
-              margin: const EdgeInsets.all(4),
-              alignment: Alignment.center,
-              decoration: BoxDecoration(
-                color: theme.paper,
-                shape: BoxShape.circle,
-                border: selected ? null : Border.all(color: c.outline),
-                boxShadow: selected
-                    ? <BoxShadow>[
-                        BoxShadow(color: c.surfaceContainer, spreadRadius: 2),
-                        BoxShadow(color: c.primary, spreadRadius: 4),
-                      ]
+      child: Pressable(
+        kind: PressKind.chip,
+        child: GestureDetector(
+          onTap: onTap,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            spacing: 6,
+            children: <Widget>[
+              AnimatedContainer(
+                duration: Motion.of(context, Motion.fast),
+                width: size,
+                height: size,
+                // Room for the selection ring, which draws outside the circle.
+                margin: const EdgeInsets.all(4),
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: theme.paper,
+                  shape: BoxShape.circle,
+                  border: selected ? null : Border.all(color: c.outline),
+                  boxShadow: selected
+                      ? <BoxShadow>[
+                          BoxShadow(color: c.surfaceContainer, spreadRadius: 2),
+                          BoxShadow(color: c.primary, spreadRadius: 4),
+                        ]
+                      : null,
+                ),
+                child: letters
+                    ? Text(
+                        'Aa',
+                        style: TextStyle(
+                          fontFamily: kLiterata,
+                          fontSize: size * 0.29,
+                          fontWeight: FontWeight.w500,
+                          color: theme.ink,
+                        ),
+                      )
                     : null,
               ),
-              child: letters
-                  ? Text(
-                      'Aa',
-                      style: TextStyle(
-                        fontFamily: kLiterata,
-                        fontSize: size * 0.29,
-                        fontWeight: FontWeight.w500,
-                        color: theme.ink,
-                      ),
-                    )
-                  : null,
-            ),
-            if (label != null)
-              Text(
-                label!,
-                style: UnfurlType.label
-                    .copyWith(fontSize: 11, color: selected ? c.onSurface : c.onSurfaceVariant)
-                    .weight(selected ? 600 : 500),
-              ),
-          ],
+              if (label != null)
+                Text(
+                  label!,
+                  style: UnfurlType.label
+                      .copyWith(fontSize: 11, color: selected ? c.onSurface : c.onSurfaceVariant)
+                      .weight(selected ? 600 : 500),
+                ),
+            ],
+          ),
         ),
       ),
     );
@@ -308,28 +311,31 @@ class _ReadingSettings extends ConsumerWidget {
                     onTap: () => set((ReadingPrefs x) => x.copyWith(font: f)),
                     excludeSemantics: true,
                     // 44 to the eye, 48 to the finger.
-                    child: GestureDetector(
-                      behavior: HitTestBehavior.opaque,
-                      onTap: () => set((ReadingPrefs x) => x.copyWith(font: f)),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 2),
-                        child: Material(
-                          color: f == p.font ? c.primaryContainer : c.surfaceContainerHigh,
-                          shape: const StadiumBorder(),
-                          child: InkWell(
-                            customBorder: const StadiumBorder(),
-                            onTap: () => set((ReadingPrefs x) => x.copyWith(font: f)),
-                            child: Container(
-                              height: 44,
-                              padding: const EdgeInsets.symmetric(horizontal: Space.lg),
-                              alignment: Alignment.center,
-                              child: Text(
-                                f.label,
-                                style: TextStyle(
-                                  fontFamily: f.family,
-                                  fontSize: f == ReaderFont.openDyslexic ? 14 : 15.5,
-                                  fontWeight: FontWeight.w500,
-                                  color: f == p.font ? c.onPrimaryContainer : c.onSurface,
+                    child: Pressable(
+                      kind: PressKind.chip,
+                      child: GestureDetector(
+                        behavior: HitTestBehavior.opaque,
+                        onTap: () => set((ReadingPrefs x) => x.copyWith(font: f)),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 2),
+                          child: Material(
+                            color: f == p.font ? c.primaryContainer : c.surfaceContainerHigh,
+                            shape: const StadiumBorder(),
+                            child: InkWell(
+                              customBorder: const StadiumBorder(),
+                              onTap: () => set((ReadingPrefs x) => x.copyWith(font: f)),
+                              child: Container(
+                                height: 44,
+                                padding: const EdgeInsets.symmetric(horizontal: Space.lg),
+                                alignment: Alignment.center,
+                                child: Text(
+                                  f.label,
+                                  style: TextStyle(
+                                    fontFamily: f.family,
+                                    fontSize: f == ReaderFont.openDyslexic ? 14 : 15.5,
+                                    fontWeight: FontWeight.w500,
+                                    color: f == p.font ? c.onPrimaryContainer : c.onSurface,
+                                  ),
                                 ),
                               ),
                             ),
@@ -678,21 +684,24 @@ class _IconSegments<T> extends StatelessWidget {
               label: labels[i],
               onTap: () => onChanged(values[i]),
               excludeSemantics: true,
-              child: GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onTap: () => onChanged(values[i]),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(vertical: Space.xs),
-                  child: AnimatedContainer(
-                    duration: Motion.of(context, Motion.fast),
-                    width: IconSpec.tapTarget,
-                    height: 40,
-                    decoration: BoxDecoration(
-                      color: values[i] == selected ? c.surface : c.surface.withValues(alpha: 0),
-                      borderRadius: Radii.fullR,
-                      border: Border.all(color: values[i] == selected ? c.outline : c.outline.withValues(alpha: 0)),
+              child: Pressable(
+                kind: PressKind.chip,
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: () => onChanged(values[i]),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: Space.xs),
+                    child: AnimatedContainer(
+                      duration: Motion.of(context, Motion.fast),
+                      width: IconSpec.tapTarget,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        color: values[i] == selected ? c.surface : c.surface.withValues(alpha: 0),
+                        borderRadius: Radii.fullR,
+                        border: Border.all(color: values[i] == selected ? c.outline : c.outline.withValues(alpha: 0)),
+                      ),
+                      child: AppIcon(icons[i], size: 20, color: values[i] == selected ? c.onSurface : c.iconMuted),
                     ),
-                    child: AppIcon(icons[i], size: 20, color: values[i] == selected ? c.onSurface : c.iconMuted),
                   ),
                 ),
               ),
@@ -820,18 +829,25 @@ class BrightnessRow extends ConsumerWidget {
             Semantics(
               button: true,
               label: 'Automatic brightness',
-              child: InkWell(
-                onTap: () {
-                  ref.read(readingPrefsProvider.notifier).update((ReadingPrefs s) => s.copyWith(clearBrightness: true));
-                  if (live) unawaited(Platform.setBrightness(null));
-                },
-                child: SizedBox(
-                  width: 56,
-                  height: IconSpec.tapTarget,
-                  child: Center(
-                    child: Text(
-                      p.brightness == null ? 'Auto' : (percent ? '${(v * 100).round()}%' : 'Auto'),
-                      style: UnfurlType.monoLabel.copyWith(color: p.brightness == null ? c.accent : c.onSurfaceVariant),
+              child: Pressable(
+                kind: PressKind.button,
+                child: InkWell(
+                  onTap: () {
+                    ref
+                        .read(readingPrefsProvider.notifier)
+                        .update((ReadingPrefs s) => s.copyWith(clearBrightness: true));
+                    if (live) unawaited(Platform.setBrightness(null));
+                  },
+                  child: SizedBox(
+                    width: 56,
+                    height: IconSpec.tapTarget,
+                    child: Center(
+                      child: Text(
+                        p.brightness == null ? 'Auto' : (percent ? '${(v * 100).round()}%' : 'Auto'),
+                        style: UnfurlType.monoLabel.copyWith(
+                          color: p.brightness == null ? c.accent : c.onSurfaceVariant,
+                        ),
+                      ),
                     ),
                   ),
                 ),
@@ -987,31 +1003,34 @@ class _ContentsSheetState extends State<ContentsSheet> {
             child: Material(
               color: r.current ? c.primaryContainer : Colors.transparent,
               borderRadius: Radii.cardR,
-              child: InkWell(
-                borderRadius: Radii.cardR,
-                onTap: r.onTap,
-                child: Padding(
-                  padding: EdgeInsets.only(left: Space.screen - 8 + r.level * Space.lg, right: Space.md),
-                  child: Row(
-                    spacing: Space.md,
-                    children: <Widget>[
-                      Expanded(
-                        child: Text(
-                          r.title,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: UnfurlType.body
-                              .copyWith(height: 1.3, color: r.current ? c.onPrimaryContainer : c.onSurface)
-                              .weight(r.current ? 600 : 400),
+              child: Pressable(
+                kind: PressKind.row,
+                child: InkWell(
+                  borderRadius: Radii.cardR,
+                  onTap: r.onTap,
+                  child: Padding(
+                    padding: EdgeInsets.only(left: Space.screen - 8 + r.level * Space.lg, right: Space.md),
+                    child: Row(
+                      spacing: Space.md,
+                      children: <Widget>[
+                        Expanded(
+                          child: Text(
+                            r.title,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: UnfurlType.body
+                                .copyWith(height: 1.3, color: r.current ? c.onPrimaryContainer : c.onSurface)
+                                .weight(r.current ? 600 : 400),
+                          ),
                         ),
-                      ),
-                      Text(
-                        r.where,
-                        style: UnfurlType.monoLabel.copyWith(
-                          color: r.current ? c.onPrimaryContainer : c.onSurfaceVariant,
+                        Text(
+                          r.where,
+                          style: UnfurlType.monoLabel.copyWith(
+                            color: r.current ? c.onPrimaryContainer : c.onSurfaceVariant,
+                          ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
               ),
@@ -1045,35 +1064,44 @@ class _ContentsSheetState extends State<ContentsSheet> {
           children: <Widget>[
             for (int i = 0; i < widget.bookmarks.length; i++) ...<Widget>[
               if (i > 0) Divider(color: c.divider),
-              InkWell(
-                onTap: widget.bookmarks[i].onTap,
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: Space.lg, vertical: Space.md),
-                  child: Row(
-                    spacing: 14,
-                    children: <Widget>[
-                      AppIcon(AppIcons.bookmark, fill: true, color: c.primary),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: <Widget>[
-                            Text(widget.bookmarks[i].label, style: UnfurlType.titleMedium.copyWith(color: c.onSurface)),
-                            Text(
-                              widget.bookmarks[i].annotation.quote,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                fontFamily: kLiterata,
-                                fontSize: 13,
-                                height: 1.5,
-                                color: c.onSurfaceVariant,
+              Pressable(
+                kind: PressKind.row,
+                child: InkWell(
+                  onTap: widget.bookmarks[i].onTap,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: Space.lg, vertical: Space.md),
+                    child: Row(
+                      spacing: 14,
+                      children: <Widget>[
+                        AppIcon(AppIcons.bookmark, fill: true, color: c.primary),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: <Widget>[
+                              Text(
+                                widget.bookmarks[i].label,
+                                style: UnfurlType.titleMedium.copyWith(color: c.onSurface),
                               ),
-                            ),
-                          ],
+                              Text(
+                                widget.bookmarks[i].annotation.quote,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontFamily: kLiterata,
+                                  fontSize: 13,
+                                  height: 1.5,
+                                  color: c.onSurfaceVariant,
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
-                      ),
-                      Text(widget.bookmarks[i].where, style: UnfurlType.monoLabel.copyWith(color: c.onSurfaceVariant)),
-                    ],
+                        Text(
+                          widget.bookmarks[i].where,
+                          style: UnfurlType.monoLabel.copyWith(color: c.onSurfaceVariant),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ),
@@ -1098,16 +1126,19 @@ class _ContentsSheetState extends State<ContentsSheet> {
             Material(
               color: _color == null ? c.primaryContainer : c.surfaceContainerHigh,
               shape: const StadiumBorder(),
-              child: InkWell(
-                customBorder: const StadiumBorder(),
-                onTap: () => setState(() => _color = null),
-                child: Container(
-                  height: 36,
-                  padding: const EdgeInsets.symmetric(horizontal: 14),
-                  alignment: Alignment.center,
-                  child: Text(
-                    'All ${widget.highlights.length}',
-                    style: UnfurlType.titleSmall.copyWith(color: _color == null ? c.onPrimaryContainer : c.onSurface),
+              child: Pressable(
+                kind: PressKind.chip,
+                child: InkWell(
+                  customBorder: const StadiumBorder(),
+                  onTap: () => setState(() => _color = null),
+                  child: Container(
+                    height: 36,
+                    padding: const EdgeInsets.symmetric(horizontal: 14),
+                    alignment: Alignment.center,
+                    child: Text(
+                      'All ${widget.highlights.length}',
+                      style: UnfurlType.titleSmall.copyWith(color: _color == null ? c.onPrimaryContainer : c.onSurface),
+                    ),
                   ),
                 ),
               ),
@@ -1122,16 +1153,19 @@ class _ContentsSheetState extends State<ContentsSheet> {
                 child: Material(
                   color: _color == h.index ? c.primaryContainer : c.surfaceContainerHigh,
                   shape: const CircleBorder(),
-                  child: InkWell(
-                    customBorder: const CircleBorder(),
-                    onTap: () => setState(() => _color = h.index),
-                    child: SizedBox.square(
-                      dimension: IconSpec.tapTarget - 8,
-                      child: Center(
-                        child: Container(
-                          width: 14,
-                          height: 14,
-                          decoration: BoxDecoration(color: widget.theme.highlights[h.index], shape: BoxShape.circle),
+                  child: Pressable(
+                    kind: PressKind.chip,
+                    child: InkWell(
+                      customBorder: const CircleBorder(),
+                      onTap: () => setState(() => _color = h.index),
+                      child: SizedBox.square(
+                        dimension: IconSpec.tapTarget - 8,
+                        child: Center(
+                          child: Container(
+                            width: 14,
+                            height: 14,
+                            decoration: BoxDecoration(color: widget.theme.highlights[h.index], shape: BoxShape.circle),
+                          ),
                         ),
                       ),
                     ),
@@ -1155,34 +1189,40 @@ class _ContentsSheetState extends State<ContentsSheet> {
                       children: <Widget>[
                         for (int i = 0; i < rows.length; i++) ...<Widget>[
                           if (i > 0) Divider(color: c.divider),
-                          InkWell(
-                            onTap: rows[i].onTap,
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: Space.lg, vertical: Space.md),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.stretch,
-                                spacing: 6,
-                                children: <Widget>[
-                                  Text(rows[i].where, style: UnfurlType.monoLabel.copyWith(color: c.onSurfaceVariant)),
-                                  HighlightQuote(
-                                    text: rows[i].annotation.quote,
-                                    color: widget.theme.highlights[rows[i].annotation.color ?? 0],
-                                  ),
-                                  if (rows[i].annotation.note != null)
-                                    Row(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      spacing: 6,
-                                      children: <Widget>[
-                                        AppIcon(AppIcons.editNote, size: 18, color: c.onSurfaceVariant),
-                                        Expanded(
-                                          child: Text(
-                                            rows[i].annotation.note!,
-                                            style: UnfurlType.note.copyWith(color: c.onSurfaceVariant),
-                                          ),
-                                        ),
-                                      ],
+                          Pressable(
+                            kind: PressKind.row,
+                            child: InkWell(
+                              onTap: rows[i].onTap,
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(horizontal: Space.lg, vertical: Space.md),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                                  spacing: 6,
+                                  children: <Widget>[
+                                    Text(
+                                      rows[i].where,
+                                      style: UnfurlType.monoLabel.copyWith(color: c.onSurfaceVariant),
                                     ),
-                                ],
+                                    HighlightQuote(
+                                      text: rows[i].annotation.quote,
+                                      color: widget.theme.highlights[rows[i].annotation.color ?? 0],
+                                    ),
+                                    if (rows[i].annotation.note != null)
+                                      Row(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        spacing: 6,
+                                        children: <Widget>[
+                                          AppIcon(AppIcons.editNote, size: 18, color: c.onSurfaceVariant),
+                                          Expanded(
+                                            child: Text(
+                                              rows[i].annotation.note!,
+                                              style: UnfurlType.note.copyWith(color: c.onSurfaceVariant),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                  ],
+                                ),
                               ),
                             ),
                           ),
@@ -1458,21 +1498,24 @@ class _VoiceSheetState extends ConsumerState<_VoiceSheet> {
               ],
             ),
           ),
-        InkWell(
-          onTap: Platform.openTtsSettings,
-          child: SizedBox(
-            height: IconSpec.tapTarget,
-            child: Row(
-              spacing: Space.md,
-              children: <Widget>[
-                AppIcon(AppIcons.settings, size: 20, color: c.onSurfaceVariant),
-                Expanded(
-                  child: Text(
-                    'More voices in system text-to-speech settings',
-                    style: UnfurlType.note.copyWith(height: 1.5, color: c.onSurfaceVariant),
+        Pressable(
+          kind: PressKind.row,
+          child: InkWell(
+            onTap: Platform.openTtsSettings,
+            child: SizedBox(
+              height: IconSpec.tapTarget,
+              child: Row(
+                spacing: Space.md,
+                children: <Widget>[
+                  AppIcon(AppIcons.settings, size: 20, color: c.onSurfaceVariant),
+                  Expanded(
+                    child: Text(
+                      'More voices in system text-to-speech settings',
+                      style: UnfurlType.note.copyWith(height: 1.5, color: c.onSurfaceVariant),
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ),
@@ -1482,32 +1525,35 @@ class _VoiceSheetState extends ConsumerState<_VoiceSheet> {
 
   Widget _voiceRow(UnfurlColors c, Map<Object?, Object?> v, int i, bool on) {
     final String name = v['name']! as String;
-    return InkWell(
-      onTap: () {
-        ref.read(readingPrefsProvider.notifier).update((ReadingPrefs p) => p.copyWith(ttsVoice: name));
-        unawaited(Platform.setVoice(name));
-      },
-      child: SizedBox(
-        height: 56,
-        child: Padding(
-          padding: const EdgeInsets.only(left: Space.lg, right: Space.xs),
-          child: Row(
-            spacing: Space.md,
-            children: <Widget>[
-              AppIcon(on ? AppIcons.radioOn : AppIcons.radioOff, color: on ? c.primary : c.iconMuted),
-              Expanded(
-                child: Text(
-                  '${v['label']} · Voice ${i + 1}',
-                  style: UnfurlType.titleMedium.copyWith(color: c.onSurface).weight(on ? 600 : 400),
+    return Pressable(
+      kind: PressKind.row,
+      child: InkWell(
+        onTap: () {
+          ref.read(readingPrefsProvider.notifier).update((ReadingPrefs p) => p.copyWith(ttsVoice: name));
+          unawaited(Platform.setVoice(name));
+        },
+        child: SizedBox(
+          height: 56,
+          child: Padding(
+            padding: const EdgeInsets.only(left: Space.lg, right: Space.xs),
+            child: Row(
+              spacing: Space.md,
+              children: <Widget>[
+                AppIcon(on ? AppIcons.radioOn : AppIcons.radioOff, color: on ? c.primary : c.iconMuted),
+                Expanded(
+                  child: Text(
+                    '${v['label']} · Voice ${i + 1}',
+                    style: UnfurlType.titleMedium.copyWith(color: c.onSurface).weight(on ? 600 : 400),
+                  ),
                 ),
-              ),
-              AppIconButton(
-                icon: AppIcons.playCircle,
-                filled: false,
-                semanticLabel: 'Hear this voice',
-                onPressed: () => Platform.previewVoice(name, 'It is a truth universally acknowledged.'),
-              ),
-            ],
+                AppIconButton(
+                  icon: AppIcons.playCircle,
+                  filled: false,
+                  semanticLabel: 'Hear this voice',
+                  onPressed: () => Platform.previewVoice(name, 'It is a truth universally acknowledged.'),
+                ),
+              ],
+            ),
           ),
         ),
       ),

@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../core/motion/motion.dart';
+import '../core/motion/kit.dart';
 import '../core/theme/app_theme.dart';
 import '../core/theme/palette.dart';
 import '../core/theme/tokens.dart';
@@ -116,9 +116,33 @@ class SheetTitleBar extends StatelessWidget {
   }
 }
 
+/// Kuber's sheet motion. Expressive: in on springSlow, out on springStandard
+/// (both clamped, so no gap shows at the overshoot). Subtle: springSubtle
+/// both ways. Off: 90 ms.
+AnimationStyle _sheetStyle(BuildContext context) {
+  final MotionLevel level = Motion.levelOf(context);
+  if (level == MotionLevel.off) {
+    final Curve linear = Motion.curveOf(context, Motion.decelerate);
+    return AnimationStyle(
+      curve: linear,
+      duration: Motion.fxInstant,
+      reverseCurve: linear,
+      reverseDuration: Motion.fxInstant,
+    );
+  }
+  final SpringCurve open = Motion.spatialCurve(level, Motion.slowCurve);
+  final SpringCurve close = level == MotionLevel.subtle ? Motion.subtleCurve : Motion.standardCurve;
+  return AnimationStyle(
+    curve: open.clamped,
+    duration: open.settle,
+    reverseCurve: close.clamped,
+    reverseDuration: close.settle,
+  );
+}
+
 /// Opens [builder] in the shared sheet shell on the root navigator, so a
-/// sheet covers the floating nav. Slides up on `sheet`, decelerating, over
-/// the `scrim`.
+/// sheet covers the floating nav. Slides up on a spring (see [_sheetStyle])
+/// over the `scrim`.
 Future<T?> showAppBottomSheet<T>({
   required BuildContext context,
   required WidgetBuilder builder,
@@ -133,10 +157,7 @@ Future<T?> showAppBottomSheet<T>({
     isScrollControlled: true,
     backgroundColor: Colors.transparent,
     barrierColor: context.colors.scrim,
-    sheetAnimationStyle: AnimationStyle(
-      duration: Motion.of(context, Motion.sheet),
-      curve: Motion.curveOf(context, Motion.decelerate),
-    ),
+    sheetAnimationStyle: _sheetStyle(context),
     builder: (BuildContext context) => Padding(
       padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
       child: AppBottomSheet(

@@ -14,7 +14,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../core/layout.dart';
 import '../../core/library/enrich.dart';
-import '../../core/motion/motion.dart';
+import '../../core/motion/kit.dart';
 import '../../core/platform/platform.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/theme/palette.dart';
@@ -244,9 +244,13 @@ class _CardEditorState extends ConsumerState<CardEditor> {
       if (png == null) return;
       final String? uri = await Platform.saveImage(png, 'Unfurl card ${DateTime.now().millisecondsSinceEpoch}.png');
       if (!mounted) return;
-      uri == null
-          ? AppSnackbar.error(context, 'Couldn’t save the card. Use Share instead.')
-          : AppSnackbar.info(context, 'Saved to Pictures/Unfurl');
+      if (uri == null) {
+        Haptics.reject();
+        AppSnackbar.error(context, 'Couldn’t save the card. Use Share instead.');
+      } else {
+        Haptics.confirm();
+        AppSnackbar.info(context, 'Saved to Pictures/Unfurl');
+      }
     } finally {
       if (mounted) setState(() => _busy = false);
     }

@@ -188,21 +188,13 @@ class _DocxScreenState extends ConsumerState<DocxScreen> {
   void _paginate(double width, ReadingTheme theme) {
     final Docx d = _docx!;
     _scale = width / d.pageWidth;
-    final double textW = (d.pageWidth - d.margin * 2) * _scale;
-    final double textH = (d.pageHeight - d.margin * 2) * _scale;
-    final List<List<int>> pages = <List<int>>[<int>[]];
-    double y = 0;
-    for (int i = 0; i < d.items.length; i++) {
-      final DocxItem it = d.items[i];
-      final double h = _measure(it, textW, theme) + (it.spaceBefore + it.spaceAfter) * _scale;
-      if ((y + h > textH || it.pageBreakBefore) && pages.last.isNotEmpty) {
-        pages.add(<int>[]);
-        y = 0;
-      }
-      pages.last.add(i);
-      y += h;
-    }
-    _pages = pages;
+    final double textW = (d.pageWidth - d.margins.left - d.margins.right) * _scale;
+    final double textH = (d.pageHeight - d.margins.top - d.margins.bottom) * _scale;
+    _pages = docxPages(
+      d,
+      textH,
+      (DocxItem it) => _measure(it, textW, theme) + (it.spaceBefore + it.spaceAfter) * _scale,
+    );
     _laidWidth = width;
     _laidTheme = theme.id;
   }
@@ -249,7 +241,7 @@ class _DocxScreenState extends ConsumerState<DocxScreen> {
       style: TextStyle(
         fontFamily: UnfurlType.sans,
         fontSize: base,
-        height: 1.5,
+        height: it.line.heightFor(base / _scale),
         color: theme.ink,
         fontWeight: it.heading > 0 ? FontWeight.w600 : FontWeight.w400,
         fontVariations: <FontVariation>[FontVariation('wght', it.heading > 0 ? 600 : 400)],
@@ -519,7 +511,7 @@ class _DocxPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final UnfurlColors c = context.colors;
-    final double m = docx.margin * scale;
+    final EdgeInsetsPt m = docx.margins;
     return DecoratedBox(
       decoration: BoxDecoration(
         color: theme.paper,
@@ -527,7 +519,7 @@ class _DocxPage extends StatelessWidget {
       ),
       // The page is the document's own layout, at its own sizes.
       child: Padding(
-        padding: EdgeInsets.fromLTRB(m, m, m, m * 0.5),
+        padding: EdgeInsets.fromLTRB(m.left * scale, m.top * scale, m.right * scale, m.bottom * scale * 0.5),
         // Nothing inherited (the theme's tracking, height or features): the
         // page draws exactly what `_measure` measured.
         child: DefaultTextStyle(
@@ -625,7 +617,14 @@ class _DocxPage extends StatelessWidget {
       padding: pad,
       child: DecoratedBox(
         decoration: BoxDecoration(color: hit ? theme.handle.withValues(alpha: 0.18) : null),
-        child: Text.rich(span(it), textAlign: align),
+        // The span's own style is the paragraph's: an empty paragraph then
+        // draws the line height `_measure` measured, not the default one.
+        child: Builder(
+          builder: (BuildContext context) {
+            final InlineSpan text = span(it);
+            return Text.rich(text, style: text.style, textAlign: align);
+          },
+        ),
       ),
     );
   }

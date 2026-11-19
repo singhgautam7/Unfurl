@@ -3,7 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/layout.dart';
-import '../../core/motion/motion.dart';
+import '../../core/motion/kit.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/theme/palette.dart';
 import '../../core/theme/tokens.dart';
@@ -36,16 +36,13 @@ class InsightsScreen extends ConsumerWidget {
       wide: true,
       onBack: () => context.pop(),
       children: <Widget>[
-        AnimatedSwitcher(
-          duration: Motion.of(context, Motion.fast),
-          switchInCurve: Motion.decelerate,
+        SkeletonCrossFade(
+          loading: data is! AsyncData<InsightsData> && data is! AsyncError<InsightsData>,
+          placeholder: const _Loading(),
           child: switch (data) {
-            AsyncData<InsightsData>(:final InsightsData value) => KeyedSubtree(
-              key: const ValueKey<String>('data'),
-              child: value.empty ? const _NoData() : _Dashboard(data: value, size: size),
-            ),
-            AsyncError<InsightsData>() => const _NoData(key: ValueKey<String>('error')),
-            _ => const _Loading(key: ValueKey<String>('loading')),
+            AsyncData<InsightsData>(:final InsightsData value) =>
+              value.empty ? const _NoData() : _Dashboard(data: value, size: size),
+            _ => const _NoData(),
           },
         ),
       ],
@@ -79,16 +76,26 @@ class _Dashboard extends ConsumerWidget {
     final Widget overview = StatGrid(
       columns: size == SizeClass.compact ? 2 : 4,
       tiles: <StatTile>[
-        StatTile(label: 'Today', value: formatMinutes(data.todayMs)),
-        StatTile(label: 'This week', value: formatMinutes(data.weekMs)),
+        StatTile(
+          label: 'Today',
+          value: formatMinutes(data.todayMs),
+          number: InsightNumber(data.todayMs, formatMinutes),
+        ),
+        StatTile(
+          label: 'This week',
+          value: formatMinutes(data.weekMs),
+          number: InsightNumber(data.weekMs, formatMinutes),
+        ),
         StatTile(
           label: 'This month',
           value: formatMinutes(data.monthMs),
+          number: InsightNumber(data.monthMs, formatMinutes),
           sub: formatRange(DateTime(t.year, t.month), t),
         ),
         StatTile(
           label: 'All time',
           value: formatMinutes(data.allTimeMs),
+          number: InsightNumber(data.allTimeMs, formatMinutes),
           sub: data.firstDay == null
               ? null
               : 'since ${kMonths[dayOfKey(data.firstDay!).month - 1]} ${dayOfKey(data.firstDay!).year}',
@@ -132,6 +139,10 @@ class _Dashboard extends ConsumerWidget {
           pph == null ? 'after 30 min in Page view' : 'median · last 30 days',
         ),
       ],
+      numbers: <InsightNumber?>[
+        if (wpm == null) null else InsightNumber(wpm.round(), (int n) => '$n wpm'),
+        if (pph == null) null else InsightNumber(pph.round(), (int n) => '$n pages/h'),
+      ],
     );
     final (int, DateTime, String?)? longest = data.longest;
     final int? average = data.averageSessionMs;
@@ -167,6 +178,10 @@ class _Dashboard extends ConsumerWidget {
                 ),
                 ('Average session', average == null ? '—' : formatMinutes(average), 'last 90 days'),
               ],
+              numbers: <InsightNumber?>[
+                if (longest == null) null else InsightNumber(longest.$1, formatMinutes),
+                if (average == null) null else InsightNumber(average, formatMinutes),
+              ],
             ),
           ]
         : <Widget>[
@@ -186,6 +201,10 @@ class _Dashboard extends ConsumerWidget {
           items: <(String, String, String?)>[
             ('Listening this month', formatMinutes(data.listenMonthMs), 'read aloud'),
             ('Listening all time', formatMinutes(data.allListenMs), 'read aloud'),
+          ],
+          numbers: <InsightNumber?>[
+            InsightNumber(data.listenMonthMs, formatMinutes),
+            InsightNumber(data.allListenMs, formatMinutes),
           ],
         ),
       ],
@@ -306,7 +325,6 @@ class _ChartModule extends ConsumerWidget {
                         onForward: s.back == 0 ? null : () => ctl.step(-1),
                       ),
                       BarChart(
-                        key: ValueKey<String>('${s.range}:${s.back}'),
                         values: chart.values,
                         labels: chart.labels,
                         highlight: chart.highlight,
@@ -343,47 +361,50 @@ class _MostRead extends StatelessWidget {
         children: <Widget>[
           for (int i = 0; i < books.length; i++) ...<Widget>[
             if (i > 0) Divider(height: 1, color: c.divider),
-            InkWell(
-              onTap: () => showBookInsights(
-                context,
-                fingerprint: books[i].fingerprint,
-                title: books[i].label,
-                name: books[i].name ?? books[i].label,
-              ),
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(minHeight: 64),
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(Space.lg, Space.sm, Space.md, Space.sm),
-                  child: Row(
-                    spacing: 14,
-                    children: <Widget>[
-                      CoverArt(
-                        title: books[i].label,
-                        fingerprint: books[i].fingerprint,
-                        format: Formats.of(books[i].name ?? '') ?? Formats.epub,
-                        width: 32,
-                        height: 46,
-                      ),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          spacing: 3,
-                          children: <Widget>[
-                            Text(
-                              books[i].label,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: UnfurlType.titleMedium.copyWith(color: c.onSurface),
-                            ),
-                            Text(
-                              '${formatMinutes(books[i].ms)} · ${Formats.labelOf(books[i].name ?? '')}',
-                              style: UnfurlType.monoLabel.copyWith(color: c.onSurfaceVariant),
-                            ),
-                          ],
+            Pressable(
+              kind: PressKind.row,
+              child: InkWell(
+                onTap: () => showBookInsights(
+                  context,
+                  fingerprint: books[i].fingerprint,
+                  title: books[i].label,
+                  name: books[i].name ?? books[i].label,
+                ),
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(minHeight: 64),
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(Space.lg, Space.sm, Space.md, Space.sm),
+                    child: Row(
+                      spacing: 14,
+                      children: <Widget>[
+                        CoverArt(
+                          title: books[i].label,
+                          fingerprint: books[i].fingerprint,
+                          format: Formats.of(books[i].name ?? '') ?? Formats.epub,
+                          width: 32,
+                          height: 46,
                         ),
-                      ),
-                      AppIcon(AppIcons.chevronRight, color: c.iconMuted),
-                    ],
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            spacing: 3,
+                            children: <Widget>[
+                              Text(
+                                books[i].label,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: UnfurlType.titleMedium.copyWith(color: c.onSurface),
+                              ),
+                              Text(
+                                '${formatMinutes(books[i].ms)} · ${Formats.labelOf(books[i].name ?? '')}',
+                                style: UnfurlType.monoLabel.copyWith(color: c.onSurfaceVariant),
+                              ),
+                            ],
+                          ),
+                        ),
+                        AppIcon(AppIcons.chevronRight, color: c.iconMuted),
+                      ],
+                    ),
                   ),
                 ),
               ),
@@ -398,7 +419,7 @@ class _MostRead extends StatelessWidget {
 /// First week: nothing yet, and a blank heatmap so the screen still says
 /// what it will show.
 class _NoData extends ConsumerWidget {
-  const _NoData({super.key});
+  const _NoData();
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -454,7 +475,7 @@ class _NoData extends ConsumerWidget {
 
 /// Skeletons in the same layout (board 6, V1 "Loading").
 class _Loading extends StatelessWidget {
-  const _Loading({super.key});
+  const _Loading();
 
   @override
   Widget build(BuildContext context) => Semantics(

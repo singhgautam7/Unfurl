@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../core/motion/motion.dart';
+import '../core/motion/kit.dart';
 import '../core/theme/app_theme.dart';
 import '../core/theme/palette.dart';
 import '../core/theme/tokens.dart';
@@ -103,7 +103,7 @@ class OptionTile extends StatelessWidget {
     // touch target, as v2 did for the boards' 44dp controls (gap v2-13).
     final Widget face = AnimatedContainer(
       duration: Motion.of(context, Motion.fast),
-      curve: Motion.decelerate,
+      curve: Motion.curveOf(context, Motion.decelerate),
       width: width ?? double.infinity,
       height: height,
       decoration: BoxDecoration(
@@ -137,11 +137,17 @@ class OptionTile extends StatelessWidget {
       excludeSemantics: true,
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
-        onTap: onTap,
-        child: SizedBox(
-          width: width == null ? null : (width! < IconSpec.tapTarget ? IconSpec.tapTarget : width),
-          height: height < IconSpec.tapTarget ? IconSpec.tapTarget : height,
-          child: Center(child: face),
+        onTap: () {
+          if (!selected) Haptics.tick();
+          onTap();
+        },
+        child: Pressable(
+          kind: PressKind.card,
+          child: SizedBox(
+            width: width == null ? null : (width! < IconSpec.tapTarget ? IconSpec.tapTarget : width),
+            height: height < IconSpec.tapTarget ? IconSpec.tapTarget : height,
+            child: Center(child: face),
+          ),
         ),
       ),
     );

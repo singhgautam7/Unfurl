@@ -146,9 +146,11 @@ class ReaderView extends StatefulWidget {
   /// Pinch: +1 or -1 font step.
   final void Function(int step) onFontStep;
 
-  /// Running head and footer for a page (paged layout).
+  /// Running head and footer for a page (paged layout). The footer gets the
+  /// spread's first and last positions, so each page states its own place
+  /// (a page built ahead of the reader must not show the current page's).
   final String Function((int, int, int) at)? runningHead;
-  final (String, String) Function((int, int, int) at)? footer;
+  final (String, String) Function((int, int, int) first, (int, int, int) last)? footer;
 
   /// Two columns on a wide screen.
   final int columns;
@@ -1015,7 +1017,7 @@ class _Spread extends StatelessWidget {
   final (int, int)? spoken;
   final Map<String, dynamic> resources;
   final String Function((int, int, int))? head;
-  final (String, String) Function((int, int, int))? foot;
+  final (String, String) Function((int, int, int), (int, int, int))? foot;
   final double headH;
   final double footH;
 
@@ -1030,7 +1032,8 @@ class _Spread extends StatelessWidget {
       fontWeight: FontWeight.w500,
       letterSpacing: 0.44,
     );
-    final (String, String)? f = foot?.call(at);
+    final ReaderPage? lastPage = columns == 2 ? (layout.page(first + 1) ?? page) : page;
+    final (String, String)? f = foot?.call(at, lastPage?.last ?? at);
     return RepaintBoundary(
       child: ColoredBox(
         color: style.theme.paper,

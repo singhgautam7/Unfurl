@@ -100,6 +100,11 @@ class MainActivity : FlutterActivity() {
                 "quickAccess" -> result.success(explorer.quickAccess())
                 "mediaGeneration" -> result.success(Scanner.generation(this))
                 "memoryClass" -> result.success((getSystemService(ACTIVITY_SERVICE) as android.app.ActivityManager).memoryClass)
+                "deviceMemory" -> {
+                    val am = getSystemService(ACTIVITY_SERVICE) as android.app.ActivityManager
+                    val info = android.app.ActivityManager.MemoryInfo().also { am.getMemoryInfo(it) }
+                    result.success(mapOf("totalMb" to (info.totalMem / (1024 * 1024)).toInt(), "lowRam" to am.isLowRamDevice))
+                }
                 "listStart" -> {
                     explorer.start(
                         call.argument<Int>("id")!!,

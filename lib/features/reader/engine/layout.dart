@@ -518,10 +518,20 @@ class Layout {
       y = 0;
     }
 
+    final Set<(int, int)> chapterStarts = doc.chapterBlocks;
     for (int i = 0; i < blocks.length; i++) {
       final Block b = blocks[i];
       final Block? prev = i > 0 ? blocks[i - 1] : before;
       double gap() => cur.isEmpty ? 0 : style.spaceBefore(b, prev);
+      // A chapter that starts inside a section (a TOC entry mid file, a
+      // heading chapter in Markdown) starts on a new page.
+      // (A page holding only headings so far, a book title, keeps them.)
+      if (chapterStarts.contains((s, i)) && cur.any((Fragment f) => f.block.kind != BlockKind.heading)) newPage();
+      // Text with nothing to show never opens a page: no blank last page,
+      // no empty lines at a page's top.
+      final bool blank =
+          b.kind != BlockKind.image && b.kind != BlockKind.rule && b.kind != BlockKind.table && b.text.trim().isEmpty;
+      if (blank && cur.isEmpty) continue;
       switch (b.kind) {
         case BlockKind.image:
           final Size? natural = images[b.image ?? ''];
@@ -569,6 +579,22 @@ class Layout {
             );
             final TextPainter tp = probe.painter!;
             final double ph = tp.height + (b.kind == BlockKind.code ? 20 : 0);
+            // A heading keeps with the next block: it moves to the next page
+            // unless two of that block's lines fit under it.
+            final Block? following = i + 1 < blocks.length ? blocks[i + 1] : null;
+            final bool lonely =
+                _headingLike(b, following) &&
+                first &&
+                cur.isNotEmpty &&
+                following != null &&
+                following.kind != BlockKind.heading &&
+                !chapterStarts.contains((s, i + 1)) &&
+                y + g + ph + style.spaceBefore(following, b) + 2 * style.size * style.lineHeight > h + 0.5;
+            if (lonely) {
+              probe.dispose();
+              newPage();
+              continue;
+            }
             if (y + g + ph <= h + 0.5) {
               cur.add(_place(probe, y + g + (b.kind == BlockKind.code ? 10 : 0)));
               y += g + ph;
@@ -592,6 +618,8 @@ class Layout {
                 fit = lines.length - 2;
               } else if (cur.isNotEmpty) {
                 probe.dispose();
+                // Whitespace that doesn't fit is dropped, not carried onto a page of its own.
+                if (blank) break;
                 newPage();
                 continue;
               } else if (fit == 0) {
@@ -633,6 +661,17 @@ class Layout {
     newPage();
     if (pages.isEmpty) pages.add(ReaderPage(<Fragment>[]));
     return pages;
+  }
+
+  /// A heading, or a line that labels what follows the way Word and Google
+  /// Docs files without heading styles do: short and all in bold, or short,
+  /// starting in bold and introducing a list. It keeps with the next block.
+  static bool _headingLike(Block b, Block? following) {
+    if (b.kind == BlockKind.heading) return true;
+    if (b.kind != BlockKind.paragraph || b.text.trim().isEmpty || b.text.length > 100) return false;
+    final Iterable<Inline> runs = b.runs.where((Inline r) => r.text.trim().isNotEmpty);
+    if (runs.isEmpty || !runs.first.bold) return false;
+    return (b.text.length <= 80 && runs.every((Inline r) => r.bold)) || following?.kind == BlockKind.listItem;
   }
 
   Fragment _place(Fragment f, double y) => Fragment(

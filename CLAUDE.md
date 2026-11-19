@@ -93,6 +93,19 @@ python3 tool/make_fixtures.py                            # regenerate test/fixtu
   (owner-scoped sessions, idle, background, checkpoints every 60 s) and `StatsStore` folding each
   finished session into the aggregates in one transaction. Readers report through `TrackedPages`
   and `TrackActivity`.
+- **Motion (app polish, Nov 2026, Kuber 7.0.0):** `lib/core/motion/kit.dart` exports Kuber's kit
+  under Unfurl names: `Motion` springs and tokens, `MotionScope` levels (Expressive, Subtle, Off;
+  Auto = Off with Remove animations, Subtle under 3584 MB RAM or a low-RAM flag read once after
+  the first frame through the Kotlin channel), `Pressable`, `Haptics` (off by default; never call
+  `HapticFeedback`), `ThemeRipple`, `RollingNumber`, `ChartDrawIn`. Selected chips and segments
+  have 12 dp corners, unselected are pills. Settings › Theme holds Motion, Haptics, Floating
+  header and Show the pill. Notes: `specs/app-polish/` (decisions, performance, bugs).
+- **Floating header:** `AppScaffold` / `HeaderPage` (`design_system/floating_header.dart`): one
+  scroll listener, pill at 32 dp scrolled and back at 8 dp; only the header is sticky (chips scroll).
+- **Chapters:** `ReadingDocument.chapters` come from the TOC (shallowest level with two or more
+  entries), else one per section; a chapter inside a section starts a page; the footer's "End of
+  chapter" is `endsChapter(first, last)` of that page. Headings and bold label lines keep with
+  the next block. Word's on/off flags are read only through `formats/office/ooxml.dart`.
 - **Format registry:** one `FormatModule` per format declares extensions, MIME types, default
   view and capabilities; the UI omits controls a format cannot use.
 - **Icons:** Material Symbols Rounded, variable font bundled, drawn at weight 350 through
@@ -184,6 +197,8 @@ If two elements share a layout they share a widget. One implementation each:
 | A text field in a sheet or dialog (owns its controller) | `TextControllerScope` |
 | Window size, grid columns, side panel | `SizeClass`, `CoverGrid`, `SidePanel` |
 | Content arriving (tiles, toolbars, sections) | `Reveal` (with `index` to stagger) |
+| Press feel on anything tappable (scale, corners, haptic) | `Pressable` (`core/motion/pressable.dart`) |
+| A number or count that changes | `RollingNumber` |
 | Nav | `NavPill` inside `NavShell`; hide with `navHiddenProvider` |
 
 ## Theme rules

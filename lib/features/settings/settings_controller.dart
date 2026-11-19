@@ -2,7 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../core/motion/haptics.dart';
+import '../../core/motion/motion_level.dart';
 import '../../core/theme/palette.dart';
+
+/// When the floating header's pill shows (Settings › Appearance).
+enum PillMode { always, scrollUp, scrollStop }
 
 /// Device-level settings that must be known before the first frame, kept in
 /// SharedPreferences and read synchronously in `main` so the first frame is
@@ -22,6 +27,11 @@ class AppSettings {
     this.librarySort = 'recent',
     this.findOnDevice = false,
     this.showHidden = false,
+    this.motion = MotionPreference.auto,
+    this.haptics = false,
+    this.floatingHeader = true,
+    this.pillMode = PillMode.always,
+    this.deviceClass = DeviceClass.unknown,
   });
 
   final ThemeMode themeMode;
@@ -61,6 +71,19 @@ class AppSettings {
   /// Files: show hidden (dot) files by default; each folder can override.
   final bool showHidden;
 
+  /// How much the app moves (Auto resolves from the device class).
+  final MotionPreference motion;
+
+  /// Haptic feedback (off by default).
+  final bool haptics;
+
+  /// The header floats over the page as a pill; off, it scrolls away.
+  final bool floatingHeader;
+  final PillMode pillMode;
+
+  /// Probed once, ever, after the first frame (RAM and the low-RAM flag).
+  final DeviceClass deviceClass;
+
   ThemeFamily get family =>
       dynamicColor && wallpaperSeed != null ? ThemeFamily.fromSeed(wallpaperSeed!) : ThemeFamily.byId(familyId);
 
@@ -87,6 +110,11 @@ class AppSettings {
     String? librarySort,
     bool? findOnDevice,
     bool? showHidden,
+    MotionPreference? motion,
+    bool? haptics,
+    bool? floatingHeader,
+    PillMode? pillMode,
+    DeviceClass? deviceClass,
   }) => AppSettings(
     themeMode: themeMode ?? this.themeMode,
     amoled: amoled ?? this.amoled,
@@ -100,6 +128,11 @@ class AppSettings {
     librarySort: librarySort ?? this.librarySort,
     findOnDevice: findOnDevice ?? this.findOnDevice,
     showHidden: showHidden ?? this.showHidden,
+    motion: motion ?? this.motion,
+    haptics: haptics ?? this.haptics,
+    floatingHeader: floatingHeader ?? this.floatingHeader,
+    pillMode: pillMode ?? this.pillMode,
+    deviceClass: deviceClass ?? this.deviceClass,
   );
 
   static const String kMode = 'theme.mode';
@@ -114,6 +147,11 @@ class AppSettings {
   static const String kLibrarySort = 'library.sort';
   static const String kFindOnDevice = 'library.findOnDevice';
   static const String kShowHidden = 'files.showHidden';
+  static const String kMotion = 'motion.preference';
+  static const String kHaptics = 'haptics.enabled';
+  static const String kFloatingHeader = 'header.floating';
+  static const String kPillMode = 'header.pill';
+  static const String kDeviceClass = 'motion.deviceClass';
 
   /// Read by `MainActivity` (as `flutter.theme.launch*`) to paint the window
   /// before Flutter's first frame, so a launch never flashes white or black.
@@ -140,9 +178,17 @@ class AppSettings {
       librarySort: prefs.getString(kLibrarySort) ?? 'recent',
       findOnDevice: prefs.getBool(kFindOnDevice) ?? false,
       showHidden: prefs.getBool(kShowHidden) ?? false,
+      motion: _named(MotionPreference.values, prefs.getString(kMotion), MotionPreference.auto),
+      haptics: prefs.getBool(kHaptics) ?? false,
+      floatingHeader: prefs.getBool(kFloatingHeader) ?? true,
+      pillMode: _named(PillMode.values, prefs.getString(kPillMode), PillMode.always),
+      deviceClass: _named(DeviceClass.values, prefs.getString(kDeviceClass), DeviceClass.unknown),
     );
   }
 }
+
+T _named<T extends Enum>(List<T> values, String? name, T fallback) =>
+    values.firstWhere((T v) => v.name == name, orElse: () => fallback);
 
 /// Overridden in `main` with the instance opened during bootstrap.
 final Provider<SharedPreferences> prefsProvider = Provider<SharedPreferences>(
@@ -153,7 +199,11 @@ final Provider<SharedPreferences> prefsProvider = Provider<SharedPreferences>(
 /// and a change repaints only the widgets that selected on it.
 class SettingsController extends Notifier<AppSettings> {
   @override
-  AppSettings build() => AppSettings.read(ref.watch(prefsProvider));
+  AppSettings build() {
+    final AppSettings s = AppSettings.read(ref.watch(prefsProvider));
+    Haptics.enabled = s.haptics;
+    return s;
+  }
 
   SharedPreferences get _prefs => ref.read(prefsProvider);
 
@@ -224,6 +274,33 @@ class SettingsController extends Notifier<AppSettings> {
   Future<void> setShowHidden({required bool value}) async {
     state = state.copyWith(showHidden: value);
     await _prefs.setBool(AppSettings.kShowHidden, value);
+  }
+
+  Future<void> setMotion(MotionPreference value) async {
+    state = state.copyWith(motion: value);
+    await _prefs.setString(AppSettings.kMotion, value.name);
+  }
+
+  Future<void> setHaptics({required bool value}) async {
+    state = state.copyWith(haptics: value);
+    Haptics.enabled = value;
+    await _prefs.setBool(AppSettings.kHaptics, value);
+  }
+
+  Future<void> setFloatingHeader({required bool value}) async {
+    state = state.copyWith(floatingHeader: value);
+    await _prefs.setBool(AppSettings.kFloatingHeader, value);
+  }
+
+  Future<void> setPillMode(PillMode value) async {
+    state = state.copyWith(pillMode: value);
+    await _prefs.setString(AppSettings.kPillMode, value.name);
+  }
+
+  /// The one-off device probe's result, cached so it never runs again.
+  Future<void> setDeviceClass(DeviceClass value) async {
+    state = state.copyWith(deviceClass: value);
+    await _prefs.setString(AppSettings.kDeviceClass, value.name);
   }
 
   Future<void> _cacheLaunchColours() async {

@@ -183,6 +183,10 @@ class BookInsightsView extends ConsumerWidget {
                           ('Highlights', '${b.highlights}', null),
                           ('Bookmarks', '${b.bookmarks}', null),
                         ],
+                        numbers: <InsightNumber?>[
+                          InsightNumber(b.highlights, (int n) => '$n'),
+                          InsightNumber(b.bookmarks, (int n) => '$n'),
+                        ],
                       ),
                       if (b.highlights + b.bookmarks > 0)
                         ExplorerRow(
@@ -271,9 +275,13 @@ class _Figures extends StatelessWidget {
     }
     return StatGrid(
       tiles: <StatTile>[
-        StatTile(label: 'Time spent', value: formatMinutes(b.timeMs)),
-        StatTile(label: 'Sessions', value: '${b.sessions}'),
-        StatTile(label: 'Average session', value: b.sessions == 0 ? '—' : formatMinutes(b.timeMs ~/ b.sessions)),
+        StatTile(label: 'Time spent', value: formatMinutes(b.timeMs), number: InsightNumber(b.timeMs, formatMinutes)),
+        StatTile(label: 'Sessions', value: '${b.sessions}', number: InsightNumber(b.sessions, (int n) => '$n')),
+        StatTile(
+          label: 'Average session',
+          value: b.sessions == 0 ? '—' : formatMinutes(b.timeMs ~/ b.sessions),
+          number: b.sessions == 0 ? null : InsightNumber(b.timeMs ~/ b.sessions, formatMinutes),
+        ),
         StatTile(label: 'Reading speed', value: speed, sub: speedSub),
       ],
     );

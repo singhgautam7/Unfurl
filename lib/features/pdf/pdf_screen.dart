@@ -16,7 +16,7 @@ import '../../core/library/enrich.dart';
 import '../../core/reflow_cache.dart';
 import '../../core/library/library.dart';
 import '../../core/locator.dart';
-import '../../core/motion/motion.dart';
+import '../../core/motion/kit.dart';
 import '../../core/platform/platform.dart';
 import '../../core/providers.dart';
 import '../../core/theme/app_theme.dart';
@@ -676,7 +676,7 @@ class _PdfScreenState extends ConsumerState<PdfScreen> with WidgetsBindingObserv
     final int? i = t.indexAt(fraction);
     if (i == null) return;
     final (int a, int b) = t.wordAt(i);
-    unawaited(HapticFeedback.selectionClick());
+    Haptics.longPress();
     setState(() {
       _selection = (page, a, b);
       _anchor = (a, b);
@@ -1629,92 +1629,92 @@ class _PdfScreenState extends ConsumerState<PdfScreen> with WidgetsBindingObserv
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
-          InkWell(
-            onTap: () => setState(() => _resultsOpen = !_resultsOpen),
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(Space.screen, 0, Space.screen, Space.sm),
-              child: Row(
-                children: <Widget>[
-                  Expanded(
-                    child: Text(
-                      '${_hits.length} ${_hits.length == 1 ? 'RESULT' : 'RESULTS'} · $pages ${pages == 1 ? 'PAGE' : 'PAGES'}',
-                      style: UnfurlType.sectionHeader.copyWith(color: c.onSurfaceVariant),
+          Pressable(
+            kind: PressKind.row,
+            child: InkWell(
+              onTap: () => setState(() => _resultsOpen = !_resultsOpen),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(Space.screen, 0, Space.screen, Space.sm),
+                child: Row(
+                  children: <Widget>[
+                    Expanded(
+                      child: Text(
+                        '${_hits.length} ${_hits.length == 1 ? 'RESULT' : 'RESULTS'} · $pages ${pages == 1 ? 'PAGE' : 'PAGES'}',
+                        style: UnfurlType.sectionHeader.copyWith(color: c.onSurfaceVariant),
+                      ),
                     ),
-                  ),
-                  AppIcon(
-                    _resultsOpen ? AppIcons.expandMore : AppIcons.expandLess,
-                    size: 18,
-                    color: c.onSurfaceVariant,
-                  ),
-                ],
+                    ChevronTurn(expanded: _resultsOpen, openDegrees: 180, size: 18, color: c.onSurfaceVariant),
+                  ],
+                ),
               ),
             ),
           ),
-          AnimatedSize(
-            duration: Motion.of(context, Motion.fast),
-            child: !_resultsOpen
-                ? const SizedBox(width: double.infinity)
-                : ConstrainedBox(
-                    constraints: const BoxConstraints(maxHeight: 220),
-                    child: ListView.builder(
-                      shrinkWrap: true,
-                      padding: EdgeInsets.zero,
-                      itemCount: _hits.length,
-                      itemBuilder: (BuildContext context, int i) {
-                        final (int p, int at) = _hits[i];
-                        final String t = (_texts[p]?.text ?? '').replaceAll(RegExp(r'\s'), ' ');
-                        final int a = math.max(0, at - 24), b = math.min(t.length, at + _query.length + 36);
-                        final bool cur = i == _hit;
-                        return Material(
-                          color: cur ? c.primaryContainer : Colors.transparent,
-                          child: InkWell(
-                            onTap: () => _goToHit(i),
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: Space.screen, vertical: 10),
-                              child: Row(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                spacing: Space.md,
-                                children: <Widget>[
-                                  SizedBox(
-                                    width: 40,
-                                    child: Text(
-                                      'p. $p',
-                                      style: UnfurlType.monoLabel.copyWith(
-                                        color: cur ? c.onPrimaryContainer : c.onSurfaceVariant,
-                                      ),
-                                    ),
+          ExpandCollapse(
+            expanded: _resultsOpen,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: 220),
+              child: ListView.builder(
+                shrinkWrap: true,
+                padding: EdgeInsets.zero,
+                itemCount: _hits.length,
+                itemBuilder: (BuildContext context, int i) {
+                  final (int p, int at) = _hits[i];
+                  final String t = (_texts[p]?.text ?? '').replaceAll(RegExp(r'\s'), ' ');
+                  final int a = math.max(0, at - 24), b = math.min(t.length, at + _query.length + 36);
+                  final bool cur = i == _hit;
+                  return Material(
+                    color: cur ? c.primaryContainer : Colors.transparent,
+                    child: Pressable(
+                      kind: PressKind.row,
+                      child: InkWell(
+                        onTap: () => _goToHit(i),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: Space.screen, vertical: 10),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            spacing: Space.md,
+                            children: <Widget>[
+                              SizedBox(
+                                width: 40,
+                                child: Text(
+                                  'p. $p',
+                                  style: UnfurlType.monoLabel.copyWith(
+                                    color: cur ? c.onPrimaryContainer : c.onSurfaceVariant,
                                   ),
-                                  Expanded(
-                                    child: Text.rich(
-                                      TextSpan(
-                                        children: <TextSpan>[
-                                          TextSpan(text: '…${t.substring(a, at)}'),
-                                          TextSpan(
-                                            text: t.substring(at, math.min(t.length, at + _query.length)),
-                                            style: const TextStyle(
-                                              fontWeight: FontWeight.w700,
-                                              fontVariations: <FontVariation>[FontVariation('wght', 700)],
-                                            ),
-                                          ),
-                                          TextSpan(text: '${t.substring(math.min(t.length, at + _query.length), b)}…'),
-                                        ],
-                                      ),
-                                      maxLines: 2,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: UnfurlType.note.copyWith(
-                                        height: 1.4,
-                                        color: cur ? c.onPrimaryContainer : c.onSurface,
-                                      ),
-                                    ),
-                                  ),
-                                ],
+                                ),
                               ),
-                            ),
+                              Expanded(
+                                child: Text.rich(
+                                  TextSpan(
+                                    children: <TextSpan>[
+                                      TextSpan(text: '…${t.substring(a, at)}'),
+                                      TextSpan(
+                                        text: t.substring(at, math.min(t.length, at + _query.length)),
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.w700,
+                                          fontVariations: <FontVariation>[FontVariation('wght', 700)],
+                                        ),
+                                      ),
+                                      TextSpan(text: '${t.substring(math.min(t.length, at + _query.length), b)}…'),
+                                    ],
+                                  ),
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: UnfurlType.note.copyWith(
+                                    height: 1.4,
+                                    color: cur ? c.onPrimaryContainer : c.onSurface,
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
-                        );
-                      },
+                        ),
+                      ),
                     ),
-                  ),
+                  );
+                },
+              ),
+            ),
           ),
         ],
       ),
@@ -1900,40 +1900,43 @@ class _ThumbnailsState extends State<_Thumbnails> {
                   return Semantics(
                     button: true,
                     label: 'Page $p${cur ? ', current' : ''}',
-                    child: GestureDetector(
-                      onTap: () => Navigator.of(context).pop(p),
-                      child: Column(
-                        spacing: 6,
-                        children: <Widget>[
-                          Expanded(
-                            child: AspectRatio(
-                              aspectRatio: widget.aspect(p),
-                              child: Container(
-                                decoration: BoxDecoration(
-                                  border: Border.all(color: cur ? c.primary : c.outline, width: cur ? 3 : 1),
-                                ),
-                                child: Stack(
-                                  fit: StackFit.expand,
-                                  children: <Widget>[
-                                    _Thumb(renderer: widget.renderer, page: p, look: widget.look, width: 110),
-                                    if (widget.bookmarked.contains(p))
-                                      Positioned(
-                                        top: -2,
-                                        right: 4,
-                                        child: AppIcon(AppIcons.bookmark, fill: true, size: 20, color: c.primary),
-                                      ),
-                                  ],
+                    child: Pressable(
+                      kind: PressKind.card,
+                      child: GestureDetector(
+                        onTap: () => Navigator.of(context).pop(p),
+                        child: Column(
+                          spacing: 6,
+                          children: <Widget>[
+                            Expanded(
+                              child: AspectRatio(
+                                aspectRatio: widget.aspect(p),
+                                child: Container(
+                                  decoration: BoxDecoration(
+                                    border: Border.all(color: cur ? c.primary : c.outline, width: cur ? 3 : 1),
+                                  ),
+                                  child: Stack(
+                                    fit: StackFit.expand,
+                                    children: <Widget>[
+                                      _Thumb(renderer: widget.renderer, page: p, look: widget.look, width: 110),
+                                      if (widget.bookmarked.contains(p))
+                                        Positioned(
+                                          top: -2,
+                                          right: 4,
+                                          child: AppIcon(AppIcons.bookmark, fill: true, size: 20, color: c.primary),
+                                        ),
+                                    ],
+                                  ),
                                 ),
                               ),
                             ),
-                          ),
-                          Text(
-                            '$p',
-                            style: UnfurlType.monoLabel
-                                .copyWith(color: cur ? c.accent : c.onSurfaceVariant)
-                                .copyWith(fontWeight: cur ? FontWeight.w700 : FontWeight.w500),
-                          ),
-                        ],
+                            Text(
+                              '$p',
+                              style: UnfurlType.monoLabel
+                                  .copyWith(color: cur ? c.accent : c.onSurfaceVariant)
+                                  .copyWith(fontWeight: cur ? FontWeight.w700 : FontWeight.w500),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                   );

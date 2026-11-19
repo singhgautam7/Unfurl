@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../core/motion/kit.dart';
 import '../core/theme/app_theme.dart';
 import '../core/theme/palette.dart';
 import '../core/theme/tokens.dart';
@@ -174,6 +175,10 @@ class ListRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final UnfurlColors c = context.colors;
+    // At large text (1.5x and up, Kuber's threshold) the value goes under the
+    // label, so neither is squeezed into a word per line.
+    final bool stacked = trailing == null && value != null && MediaQuery.textScalerOf(context).scale(1) >= 1.5;
+    final TextStyle valueStyle = UnfurlType.monoLabel.copyWith(color: c.onSurfaceVariant);
     final Widget content = ConstrainedBox(
       constraints: BoxConstraints(minHeight: minHeight),
       child: Padding(
@@ -190,11 +195,12 @@ class ListRow extends StatelessWidget {
                   Text(label, style: UnfurlType.titleMedium.copyWith(color: danger ? c.danger : c.onSurface)),
                   if (subtitle != null)
                     Text(subtitle!, style: UnfurlType.bodySmall.copyWith(color: c.onSurfaceVariant)),
+                  if (stacked) Text(value!, style: valueStyle),
                 ],
               ),
             ),
             ?trailing,
-            if (trailing == null && value != null)
+            if (trailing == null && value != null && !stacked)
               // Its own width, up to half the row: the label takes the rest,
               // so the value and chevron sit on the right edge.
               ConstrainedBox(
@@ -204,7 +210,7 @@ class ListRow extends StatelessWidget {
                   textAlign: TextAlign.end,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
-                  style: UnfurlType.monoLabel.copyWith(color: c.onSurfaceVariant),
+                  style: valueStyle,
                 ),
               ),
             if (trailing == null && onTap != null && !danger) AppIcon(AppIcons.chevronRight, color: c.iconMuted),
@@ -219,7 +225,10 @@ class ListRow extends StatelessWidget {
       label: value == null ? label : '$label, $value',
       onTap: onTap,
       excludeSemantics: true,
-      child: InkWell(onTap: onTap, child: content),
+      child: Pressable(
+        kind: PressKind.row,
+        child: InkWell(onTap: onTap, child: content),
+      ),
     );
   }
 }

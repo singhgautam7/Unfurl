@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../../core/motion/motion.dart';
+import '../../core/motion/kit.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/theme/palette.dart';
 import '../../core/theme/tokens.dart';
@@ -209,7 +209,10 @@ class ExplorerRow extends StatelessWidget {
     return Semantics(
       button: true,
       label: semanticLabel,
-      child: InkWell(onTap: onTap, onLongPress: onLongPress, child: body),
+      child: Pressable(
+        kind: PressKind.row,
+        child: InkWell(onTap: onTap, onLongPress: onLongPress, child: body),
+      ),
     );
   }
 }
@@ -337,30 +340,33 @@ class QuickAccessCard extends StatelessWidget {
         side: BorderSide(color: c.outline),
       ),
       clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: onTap,
-        child: SizedBox(
-          width: 128,
-          child: Padding(
-            padding: const EdgeInsets.all(Space.md),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              spacing: Space.sm,
-              children: <Widget>[
-                AppIcon(icon, color: c.icon),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: <Widget>[
-                    Text(
-                      name,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: UnfurlType.titleSmall.copyWith(height: 1.25, color: c.onSurface).weight(600),
-                    ),
-                    Text(meta, style: UnfurlType.monoLabel.copyWith(color: c.onSurfaceVariant)),
-                  ],
-                ),
-              ],
+      child: Pressable(
+        kind: PressKind.card,
+        child: InkWell(
+          onTap: onTap,
+          child: SizedBox(
+            width: 128,
+            child: Padding(
+              padding: const EdgeInsets.all(Space.md),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                spacing: Space.sm,
+                children: <Widget>[
+                  AppIcon(icon, color: c.icon),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      Text(
+                        name,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: UnfurlType.titleSmall.copyWith(height: 1.25, color: c.onSurface).weight(600),
+                      ),
+                      Text(meta, style: UnfurlType.monoLabel.copyWith(color: c.onSurfaceVariant)),
+                    ],
+                  ),
+                ],
+              ),
             ),
           ),
         ),

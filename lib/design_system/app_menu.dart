@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../core/motion/kit.dart';
 import '../core/theme/app_theme.dart';
 import '../core/theme/palette.dart';
 import '../core/theme/tokens.dart';
@@ -125,42 +126,45 @@ class _MenuRow<T> extends StatelessWidget {
   Widget build(BuildContext context) {
     final UnfurlColors c = context.colors;
     final Color fg = entry.danger ? c.danger : (entry.selected ? c.onPrimaryContainer : c.onSurface);
-    return Container(
-      constraints: const BoxConstraints(minHeight: 52),
-      margin: const EdgeInsets.symmetric(horizontal: Space.sm),
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-      decoration: BoxDecoration(
-        color: entry.selected ? c.primaryContainer : c.primaryContainer.withValues(alpha: 0),
-        borderRadius: Radii.fullR,
-      ),
-      child: Row(
-        spacing: Space.lg,
-        children: <Widget>[
-          if (entry.icon != null)
-            AppIcon(
-              entry.icon!,
-              fill: entry.accentIcon,
-              color: entry.accentIcon ? c.accent : (entry.selected || entry.danger ? fg : c.icon),
+    return Pressable(
+      kind: PressKind.row,
+      child: Container(
+        constraints: const BoxConstraints(minHeight: 52),
+        margin: const EdgeInsets.symmetric(horizontal: Space.sm),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+        decoration: BoxDecoration(
+          color: entry.selected ? c.primaryContainer : c.primaryContainer.withValues(alpha: 0),
+          borderRadius: Radii.fullR,
+        ),
+        child: Row(
+          spacing: Space.lg,
+          children: <Widget>[
+            if (entry.icon != null)
+              AppIcon(
+                entry.icon!,
+                fill: entry.accentIcon,
+                color: entry.accentIcon ? c.accent : (entry.selected || entry.danger ? fg : c.icon),
+              ),
+            Expanded(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Text(
+                    entry.label,
+                    style: UnfurlType.body.copyWith(height: 1.3, color: fg).weight(entry.selected ? 600 : 400),
+                  ),
+                  if (entry.subtitle != null)
+                    Text(entry.subtitle!, style: UnfurlType.monoLabel.copyWith(height: 1.5, color: c.onSurfaceVariant)),
+                ],
+              ),
             ),
-          Expanded(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                Text(
-                  entry.label,
-                  style: UnfurlType.body.copyWith(height: 1.3, color: fg).weight(entry.selected ? 600 : 400),
-                ),
-                if (entry.subtitle != null)
-                  Text(entry.subtitle!, style: UnfurlType.monoLabel.copyWith(height: 1.5, color: c.onSurfaceVariant)),
-              ],
-            ),
-          ),
-          if (entry.switchValue != null)
-            IgnorePointer(
-              child: Switch(value: entry.switchValue!, onChanged: (_) {}),
-            ),
-        ],
+            if (entry.switchValue != null)
+              IgnorePointer(
+                child: Switch(value: entry.switchValue!, onChanged: (_) {}),
+              ),
+          ],
+        ),
       ),
     );
   }

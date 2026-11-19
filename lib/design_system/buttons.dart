@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../core/motion/kit.dart';
 import '../core/theme/app_theme.dart';
 import '../core/theme/palette.dart';
 import '../core/theme/tokens.dart';
@@ -54,16 +55,24 @@ class AppIconButton extends StatelessWidget {
         child: SizedBox.square(
           dimension: IconSpec.tapTarget,
           child: Center(
-            child: Material(
-              color: bg,
-              shape: const CircleBorder(),
-              clipBehavior: Clip.antiAlias,
-              child: InkWell(
-                onTap: onPressed,
-                child: SizedBox.square(
-                  dimension: disc,
-                  child: Center(
-                    child: AppIcon(icon, size: filled ? 20 : IconSpec.size, color: fg, fill: fill),
+            // The disc is a circle at rest and squeezes to a squircle under the finger.
+            child: Pressable(
+              kind: PressKind.iconButton,
+              restRadius: disc / 2,
+              enabled: onPressed != null,
+              builder: (BuildContext context, double radius, double pressed) => Material(
+                color: bg,
+                shape: radius == disc / 2
+                    ? const CircleBorder()
+                    : RoundedRectangleBorder(borderRadius: BorderRadius.circular(radius)),
+                clipBehavior: Clip.antiAlias,
+                child: InkWell(
+                  onTap: onPressed,
+                  child: SizedBox.square(
+                    dimension: disc,
+                    child: Center(
+                      child: AppIcon(icon, size: filled ? 20 : IconSpec.size, color: fg, fill: fill),
+                    ),
                   ),
                 ),
               ),
@@ -159,31 +168,38 @@ class AppButton extends StatelessWidget {
       excludeSemantics: true,
       child: ConstrainedBox(
         constraints: BoxConstraints(minHeight: height),
-        child: Material(
-          color: bg,
-          shape: const StadiumBorder(),
-          clipBehavior: Clip.antiAlias,
-          child: InkWell(
-            onTap: onPressed,
-            child: Padding(
-              padding: EdgeInsets.symmetric(horizontal: tight ? Space.md : Space.xl, vertical: Space.xs),
-              // Min-sized: a stretched parent (pinned actions) still centres
-              // it, and it sits naturally in a row.
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                mainAxisAlignment: MainAxisAlignment.center,
-                spacing: Space.sm,
-                children: <Widget>[
-                  if (icon != null) AppIcon(icon!, size: 20, color: fg),
-                  Flexible(
-                    child: Text(
-                      label,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: UnfurlType.titleMedium.copyWith(color: fg),
+        child: Pressable(
+          kind: PressKind.button,
+          restRadius: height / 2,
+          enabled: onPressed != null,
+          builder: (BuildContext context, double radius, double pressed) => Material(
+            color: bg,
+            shape: radius == height / 2
+                ? const StadiumBorder()
+                : RoundedRectangleBorder(borderRadius: BorderRadius.circular(radius)),
+            clipBehavior: Clip.antiAlias,
+            child: InkWell(
+              onTap: onPressed,
+              child: Padding(
+                padding: EdgeInsets.symmetric(horizontal: tight ? Space.md : Space.xl, vertical: Space.xs),
+                // Min-sized: a stretched parent (pinned actions) still centres
+                // it, and it sits naturally in a row.
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  spacing: Space.sm,
+                  children: <Widget>[
+                    if (icon != null) AppIcon(icon!, size: 20, color: fg),
+                    Flexible(
+                      child: Text(
+                        label,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: UnfurlType.titleMedium.copyWith(color: fg),
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           ),

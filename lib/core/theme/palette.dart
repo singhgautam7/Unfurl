@@ -414,6 +414,46 @@ class ThemeFamily {
     primaryContainerChroma: 0.05,
   );
 
+  // Added from Kuber's list (theme_families.dart:356-357), parameters copied exactly.
+  static const ThemeFamily sky = ThemeFamily(
+    id: 'sky',
+    name: 'Sky',
+    blurb: 'light blue',
+    neutralHue: 238,
+    neutralChroma: 1,
+    primaryHue: 238,
+    primaryLightness: 0.56,
+    primaryChroma: 0.11,
+    primaryContainerChroma: 0.04,
+  );
+
+  static const ThemeFamily ruby = ThemeFamily(
+    id: 'ruby',
+    name: 'Ruby',
+    blurb: 'red',
+    neutralHue: 18,
+    neutralChroma: 1.15,
+    primaryHue: 18,
+    primaryLightness: 0.50,
+    primaryChroma: 0.16,
+    primaryContainerChroma: 0.05,
+  );
+
+  /// Kuber Signature: Kuber's blue on near-neutral zinc surfaces (Kuber paints
+  /// them white and black; Mull's role formulas take a very low neutral chroma
+  /// for the same look). Distinct from [kuber], whose surfaces are blue-tinted.
+  static const ThemeFamily signature = ThemeFamily(
+    id: 'signature',
+    name: 'Signature',
+    blurb: 'neutral blue',
+    neutralHue: 265,
+    neutralChroma: 0.15,
+    primaryHue: 258,
+    primaryLightness: 0.48,
+    primaryChroma: 0.176,
+    primaryContainerChroma: 0.045,
+  );
+
   static const List<ThemeFamily> all = <ThemeFamily>[
     saffron,
     mull,
@@ -433,6 +473,9 @@ class ThemeFamily {
     coral,
     citron,
     neon,
+    sky,
+    ruby,
+    signature,
   ];
 
   static ThemeFamily byId(String? id) => all.firstWhere((ThemeFamily f) => f.id == id, orElse: () => saffron);

@@ -55,183 +55,94 @@ class FoldersScreen extends ConsumerWidget {
         .toList();
     final Map<int, int> counts = ref.watch(readableCountsProvider).value ?? const <int, int>{};
     return Scaffold(
-      body: SafeArea(
-        bottom: false,
-        child: Stack(
-          children: <Widget>[
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: <Widget>[
-                _Header(title: 'Folders', onBack: () => context.pop()),
-                Expanded(
-                  child: folders.isEmpty
-                      ? const EmptyState(
-                          icon: AppIcons.folder,
-                          title: 'No folders yet',
-                          message: 'Pick a folder and Unfurl lists what it can open inside it, including subfolders. It only reads them.',
-                        )
-                      : ListView(
-                          padding: const EdgeInsets.fromLTRB(Space.screen, Space.xs, Space.screen, Space.bottomSafe),
+      body: Stack(
+        children: <Widget>[
+          HeaderPage(
+            header: AppHeader(title: 'Folders', onBack: () => context.pop()),
+            body: (BuildContext context, double inset) => folders.isEmpty
+                ? HeaderPage.below(
+                    const EmptyState(
+                      icon: AppIcons.folder,
+                      title: 'No folders yet',
+                      message: 'Pick a folder and Unfurl lists what it can open inside it, including subfolders. It only reads them.',
+                    ),
+                  )
+                : ListView(
+                    clipBehavior: Clip.none,
+                    padding: EdgeInsets.fromLTRB(Space.screen, inset + Space.xs, Space.screen, Space.bottomSafe),
+                    children: <Widget>[
+                      Container(
+                        decoration: BoxDecoration(
+                          color: c.surfaceContainer,
+                          borderRadius: Radii.cardR,
+                          border: Border.all(color: c.outline),
+                        ),
+                        clipBehavior: Clip.antiAlias,
+                        child: Column(
                           children: <Widget>[
-                            Container(
-                              decoration: BoxDecoration(
-                                color: c.surfaceContainer,
-                                borderRadius: Radii.cardR,
-                                border: Border.all(color: c.outline),
+                            for (int i = 0; i < folders.length; i++) ...<Widget>[
+                              if (i > 0) Divider(color: c.divider),
+                              _FolderRow(
+                                name: folders[i].name,
+                                meta: folders[i].accessLost
+                                    ? 'Access lost'
+                                    : '${folders[i].path.isEmpty ? folders[i].name : folders[i].path} · ${readableFiles(counts[folders[i].id] ?? 0)}',
+                                danger: folders[i].accessLost,
+                                trailing: AppIcons.close,
+                                trailingLabel: 'Remove access to ${folders[i].name}',
+                                onTap: () => context.push(Routes.folder(folders[i].id, base: base)),
+                                onTrailing: () {
+                                  final Folder f = folders[i];
+                                  ref.read(libraryProvider).removeWithUndo(f);
+                                  AppSnackbar.undo(
+                                    context,
+                                    'Removed ${f.name}. The folder itself is untouched.',
+                                    () => ref.read(libraryProvider).undoRemove(f.id),
+                                  );
+                                },
                               ),
-                              clipBehavior: Clip.antiAlias,
-                              child: Column(
-                                children: <Widget>[
-                                  for (int i = 0; i < folders.length; i++) ...<Widget>[
-                                    if (i > 0) Divider(color: c.divider),
-                                    _FolderRow(
-                                      name: folders[i].name,
-                                      meta: folders[i].accessLost
-                                          ? 'Access lost'
-                                          : '${folders[i].path.isEmpty ? folders[i].name : folders[i].path} · ${readableFiles(counts[folders[i].id] ?? 0)}',
-                                      danger: folders[i].accessLost,
-                                      trailing: AppIcons.close,
-                                      trailingLabel: 'Remove access to ${folders[i].name}',
-                                      onTap: () => context.push(Routes.folder(folders[i].id, base: base)),
-                                      onTrailing: () {
-                                        final Folder f = folders[i];
-                                        ref.read(libraryProvider).removeWithUndo(f);
-                                        AppSnackbar.undo(
-                                          context,
-                                          'Removed ${f.name}. The folder itself is untouched.',
-                                          () => ref.read(libraryProvider).undoRemove(f.id),
-                                        );
-                                      },
-                                    ),
-                                  ],
-                                ],
-                              ),
-                            ),
+                            ],
                           ],
                         ),
-                ),
-              ],
-            ),
-            Positioned(
-              left: 0,
-              right: 0,
-              bottom: MediaQuery.paddingOf(context).bottom + 28,
-              child: Center(
-                child: Material(
-                  color: c.primary,
-                  shape: const StadiumBorder(),
-                  child: InkWell(
-                    customBorder: const StadiumBorder(),
-                    onTap: () => addFolder(context, ref),
-                    child: Container(
-                      height: 56,
-                      padding: const EdgeInsets.fromLTRB(Space.screen, 0, Space.xl, 0),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        spacing: Space.sm,
-                        children: <Widget>[
-                          AppIcon(AppIcons.createNewFolder, color: c.onPrimary),
-                          Flexible(
-                            child: Text(
-                              'Add folder',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: UnfurlType.body.copyWith(height: 1, color: c.onPrimary).weight(600),
-                            ),
-                          ),
-                        ],
                       ),
-                    ),
+                    ],
                   ),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _Header extends StatelessWidget {
-  const _Header({
-    required this.title,
-    required this.onBack,
-    this.crumb,
-    this.onCrumb,
-    this.actions = const <Widget>[],
-    this.backIcon = AppIcons.back,
-  });
-
-  final String title;
-  final IconData backIcon;
-  final VoidCallback onBack;
-  final String? crumb;
-  final VoidCallback? onCrumb;
-  final List<Widget> actions;
-
-  @override
-  Widget build(BuildContext context) {
-    final UnfurlColors c = context.colors;
-    return ConstrainedBox(
-      constraints: const BoxConstraints(minHeight: 64),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(Space.lg, Space.sm, 14, Space.sm),
-        child: Row(
-          spacing: Space.xs,
-          children: <Widget>[
-            AppIconButton(
-              icon: backIcon,
-              semanticLabel: backIcon == AppIcons.close ? 'Close' : 'Back',
-              onPressed: onBack,
-            ),
-            Expanded(
-              child: Semantics(
-                button: onCrumb != null,
-                label: crumb == null ? title : '$title, in $crumb',
-                onTap: onCrumb,
-                excludeSemantics: true,
+          ),
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: MediaQuery.paddingOf(context).bottom + 28,
+            child: Center(
+              child: Material(
+                color: c.primary,
+                shape: const StadiumBorder(),
                 child: InkWell(
-                  onTap: onCrumb,
-                  borderRadius: Radii.chipR,
-                  child: ConstrainedBox(
-                    constraints: const BoxConstraints(minHeight: 48),
-                    child: Padding(
-                      padding: const EdgeInsets.only(left: Space.xs),
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: <Widget>[
-                          if (crumb != null)
-                            Row(
-                              children: <Widget>[
-                                Flexible(
-                                  child: Text(
-                                    crumb!,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: UnfurlType.monoLabel.copyWith(color: c.onSurfaceVariant),
-                                  ),
-                                ),
-                                AppIcon(AppIcons.expandMore, size: 16, color: c.onSurfaceVariant),
-                              ],
-                            ),
-                          Text(
-                            title,
+                  customBorder: const StadiumBorder(),
+                  onTap: () => addFolder(context, ref),
+                  child: Container(
+                    height: 56,
+                    padding: const EdgeInsets.fromLTRB(Space.screen, 0, Space.xl, 0),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      spacing: Space.sm,
+                      children: <Widget>[
+                        AppIcon(AppIcons.createNewFolder, color: c.onPrimary),
+                        Flexible(
+                          child: Text(
+                            'Add folder',
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: UnfurlType.headerTitle.copyWith(color: c.onSurface),
+                            style: UnfurlType.body.copyWith(height: 1, color: c.onPrimary).weight(600),
                           ),
-                        ],
-                      ),
+                        ),
+                      ],
                     ),
                   ),
                 ),
               ),
             ),
-            ...actions,
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -967,42 +878,42 @@ class _FolderScreenState extends ConsumerState<FolderScreen> {
     Widget? bottom,
     bool closeIcon = false,
   }) => Scaffold(
-    body: SafeArea(
-      bottom: false,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: <Widget>[
-          // Search in the header, Grid and List in the menu (Kuber's Accounts).
-          HeaderSearch(
-            hint: 'Search in $title',
-            onChanged: (String q) => setState(() => _query = q.trim()),
-            enabled: !_picker && actions.isNotEmpty,
-            height: 64,
-            builder: (BuildContext context, Widget? search) => _Header(
-              title: title,
-              crumb: crumb,
-              onCrumb: onCrumb,
-              backIcon: closeIcon ? AppIcons.close : AppIcons.back,
-              onBack: closeIcon ? () => closePicker(context) : () => context.pop(),
-              actions: <Widget>[?search, ...actions],
+    body: Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        Expanded(
+          child: HeaderPage(
+            // Search in the header, Grid and List in the menu (Kuber's Accounts).
+            header: HeaderSearch(
+              hint: 'Search in $title',
+              onChanged: (String q) => setState(() => _query = q.trim()),
+              enabled: !_picker && actions.isNotEmpty,
+              builder: (BuildContext context, Widget? search) => AppHeader(
+                title: title,
+                crumb: crumb,
+                onCrumb: onCrumb,
+                backIcon: closeIcon ? AppIcons.close : AppIcons.back,
+                onBack: closeIcon ? () => closePicker(context) : () => context.pop(),
+                actions: <Widget>[?search, ...actions],
+              ),
             ),
-          ),
-          Expanded(
-            child: AnimatedSwitcher(
+            body: (BuildContext context, double inset) => AnimatedSwitcher(
               duration: Motion.of(context, Motion.fast),
               child: KeyedSubtree(
                 key: ValueKey<Object>('${_grid}_${_group}_${_other}_${_deep}_${_showAll}_$_hidden'),
-                child: body,
+                // An empty state is not a scrollable: it starts below the
+                // header; the lists carry their own gap sliver.
+                child: body is EmptyState ? HeaderPage.below(body) : body,
               ),
             ),
           ),
-          AnimatedSize(
-            duration: Motion.of(context, Motion.containerTransform),
-            curve: Motion.decelerate,
-            child: bottom ?? const SizedBox(width: double.infinity),
-          ),
-        ],
-      ),
+        ),
+        AnimatedSize(
+          duration: Motion.of(context, Motion.containerTransform),
+          curve: Motion.decelerate,
+          child: bottom ?? const SizedBox(width: double.infinity),
+        ),
+      ],
     ),
   );
 
@@ -1023,8 +934,10 @@ class _FolderScreenState extends ConsumerState<FolderScreen> {
     final bool hasOther = _explorer && presentFrom.any((_Item e) => e.format == null);
     final bool anyNonBook = shown.any((_Item e) => !(e.format?.book ?? false));
     return CustomScrollView(
+      clipBehavior: Clip.none,
       controller: _explorer ? _scroll : null,
       slivers: <Widget>[
+        HeaderPage.sliverGap(),
         // One family only: no chip row (board 6, V3 chips).
         if (!_picker && present.length + (hasOther ? 1 : 0) > 1)
           SliverToBoxAdapter(

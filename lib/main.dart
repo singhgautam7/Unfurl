@@ -9,6 +9,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'app.dart';
 import 'core/db/database.dart';
 import 'core/library/enrich.dart';
+import 'core/motion/haptics.dart';
 import 'core/providers.dart';
 import 'features/settings/settings_controller.dart';
 
@@ -22,6 +23,7 @@ Future<void> main() async {
   // opens lazily on its own isolate; nothing waits on it here.
   final SharedPreferences prefs = await SharedPreferences.getInstance();
   final AppDatabase db = AppDatabase();
+  Haptics.enabled = AppSettings.read(prefs).haptics;
   _registerLicences();
 
   runApp(

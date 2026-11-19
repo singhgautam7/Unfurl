@@ -101,172 +101,159 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
     };
 
     return Scaffold(
-      body: SafeArea(
-        bottom: false,
-        child: CollapseOnScroll(
-          builder: (BuildContext context, bool collapsed) => Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: <Widget>[
-              // Search in the header, Grid and List in the menu (Kuber's Accounts).
-              HeaderSearch(
-                hint: 'Search library',
-                onChanged: (String q) => unawaited(_search(q)),
-                enabled: !(folders.isEmpty && all.isEmpty && !device),
-                builder: (BuildContext context, Widget? search) => AppHeader(
-                  title: 'Library',
-                  collapsed: collapsed,
-                  actions: <Widget>[
-                    ?search,
-                    Builder(
-                      builder: (BuildContext b) => AppIconButton(
-                        icon: AppIcons.moreHoriz,
-                        semanticLabel: 'Sort and view',
-                        onPressed: () => _menu(b, s),
-                      ),
-                    ),
-                  ],
+      body: HeaderPage(
+        header: HeaderSearch(
+          hint: 'Search library',
+          onChanged: (String q) => unawaited(_search(q)),
+          enabled: !(folders.isEmpty && all.isEmpty && !device),
+          builder: (BuildContext context, Widget? search) => AppHeader(
+            title: 'Library',
+            actions: <Widget>[
+              ?search,
+              Builder(
+                builder: (BuildContext b) => AppIconButton(
+                  icon: AppIcons.moreHoriz,
+                  semanticLabel: 'Sort and view',
+                  onPressed: () => _menu(b, s),
                 ),
-              ),
-              Expanded(
-                child: folders.isEmpty && all.isEmpty && !device
-                    ? EmptyState(
-                        icon: AppIcons.library,
-                        title: 'No books yet',
-                        aboveNav: true,
-                        message: 'Add a folder and every book inside it, subfolders included, shows up here. Unfurl only reads it.',
-                        actions: <Widget>[
-                          AppButton(
-                            label: 'Add folder',
-                            icon: AppIcons.createNewFolder,
-                            onPressed: () => addFolder(context, ref),
-                          ),
-                        ],
-                      )
-                    : CustomScrollView(
-                        slivers: <Widget>[
-                          const SliverToBoxAdapter(child: SizedBox(height: Space.xs)),
-                          // Families present, in the spec's order; none with
-                          // only one (board 6, V3 chips).
-                          if (families.length > 1)
-                            SliverToBoxAdapter(
-                              child: FormatChips(
-                                present: families.keys.toSet(),
-                                selected: family,
-                                shown: filtered.length,
-                                onSelected: (FormatGroup? g) => setState(() => _family = g),
-                              ),
-                            ),
-                          // The folder row: not while searching or showing
-                          // Unread / Finished; it leaves by size and fade, and
-                          // the grid glides up.
-                          SliverToBoxAdapter(
-                            child: AnimatedSize(
-                              duration: Motion.of(context, Motion.containerTransform),
-                              curve: Motion.decelerate,
-                              child: AnimatedOpacity(
-                                opacity: showFolders ? 1 : 0,
-                                duration: Motion.of(context, Motion.fast),
-                                child: showFolders
-                                    ? _FolderRow(folders: folders, counts: counts)
-                                    : const SizedBox(width: double.infinity),
-                              ),
-                            ),
-                          ),
-                          SliverPadding(
-                            padding: const EdgeInsets.fromLTRB(Space.screen, 14, Space.screen, 14),
-                            sliver: SliverToBoxAdapter(
-                              child: Row(
-                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                children: <Widget>[
-                                  Flexible(
-                                    child: Text(
-                                      _query.isNotEmpty
-                                          ? '${filtered.length} ${filtered.length == 1 ? 'result' : 'results'} for “$_query”${family == null ? '' : ' in ${family.label}'}'
-                                          : '${filtered.length} ${books ? (filtered.length == 1 ? 'book' : 'books') : (filtered.length == 1 ? 'file' : 'files')}${device ? ' on this device' : ''}${switch (_status) {
-                                              _Status.all => unread > 0 ? ' · $unread unread' : '',
-                                              _Status.unread => ' · unread',
-                                              _Status.finished => ' · finished',
-                                            }}',
-                                      style: UnfurlType.monoLabel.copyWith(color: c.onSurfaceVariant),
-                                    ),
-                                  ),
-                                  if (_query.isEmpty)
-                                    Text(
-                                      'Sort: $sortLabel',
-                                      style: UnfurlType.monoLabel.copyWith(color: c.onSurfaceVariant),
-                                    ),
-                                ],
-                              ),
-                            ),
-                          ),
-                          if (filtered.isEmpty)
-                            SliverToBoxAdapter(
-                              child: Padding(
-                                padding: const EdgeInsets.all(Space.screen),
-                                child: Text(
-                                  _query.isNotEmpty
-                                      ? 'Nothing matches “$_query”.'
-                                      : (all.isEmpty ? 'No books found in your folders yet.' : 'Nothing here.'),
-                                  style: UnfurlType.body.copyWith(color: c.onSurfaceVariant),
-                                ),
-                              ),
-                            )
-                          else if (_query.isNotEmpty)
-                            SliverPadding(
-                              padding: const EdgeInsets.fromLTRB(Space.screen, 0, Space.screen, Space.bottomSafe),
-                              sliver: SliverList.separated(
-                                itemCount: filtered.length,
-                                separatorBuilder: (BuildContext context, int i) => const SizedBox(height: Space.row),
-                                itemBuilder: (BuildContext context, int i) =>
-                                    _SearchCard(book: filtered[i], query: _query),
-                              ),
-                            )
-                          else if (s.libraryGrid)
-                            SliverPadding(
-                              padding: const EdgeInsets.fromLTRB(Space.screen, 0, Space.screen, Space.bottomSafe),
-                              sliver: SliverGrid.builder(
-                                // 3 / 5 / 7 columns (board 6, V7).
-                                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                                  crossAxisCount: grid.columns,
-                                  // Other files carry a name line over the meta.
-                                  mainAxisExtent: grid.extent(anyFile ? 72 : 54),
-                                  mainAxisSpacing: 18,
-                                  crossAxisSpacing: grid.columns == 3 ? 0 : 12,
-                                ),
-                                itemCount: filtered.length,
-                                itemBuilder: (BuildContext context, int i) => Align(
-                                  alignment: grid.alignment(i),
-                                  child: SizedBox(
-                                    width: grid.tile,
-                                    child: Reveal(
-                                      index: i < 9 ? i : 0,
-                                      child: _BookTile(book: filtered[i], width: grid.tile, height: grid.cover),
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            )
-                          else
-                            SliverPadding(
-                              padding: const EdgeInsets.fromLTRB(Space.screen, 0, Space.screen, Space.bottomSafe),
-                              sliver: SliverList.builder(
-                                itemCount: filtered.length,
-                                itemBuilder: (BuildContext context, int i) => ListGroupRow(
-                                  first: i == 0,
-                                  last: i == filtered.length - 1,
-                                  child: Reveal(
-                                    index: i < 9 ? i : 0,
-                                    child: _BookRow(book: filtered[i]),
-                                  ),
-                                ),
-                              ),
-                            ),
-                        ],
-                      ),
               ),
             ],
           ),
         ),
+        body: (BuildContext context, double inset) => folders.isEmpty && all.isEmpty && !device
+            ? HeaderPage.below(
+                EmptyState(
+                  icon: AppIcons.library,
+                  title: 'No books yet',
+                  aboveNav: true,
+                  message: 'Add a folder and every book inside it, subfolders included, shows up here. Unfurl only reads it.',
+                  actions: <Widget>[
+                    AppButton(
+                      label: 'Add folder',
+                      icon: AppIcons.createNewFolder,
+                      onPressed: () => addFolder(context, ref),
+                    ),
+                  ],
+                ),
+              )
+            : CustomScrollView(
+                clipBehavior: Clip.none,
+                slivers: <Widget>[
+                  SliverToBoxAdapter(child: SizedBox(height: inset + Space.xs)),
+                  // Families present, in the spec's order; none with
+                  // only one (board 6, V3 chips).
+                  if (families.length > 1)
+                    SliverToBoxAdapter(
+                      child: FormatChips(
+                        present: families.keys.toSet(),
+                        selected: family,
+                        shown: filtered.length,
+                        onSelected: (FormatGroup? g) => setState(() => _family = g),
+                      ),
+                    ),
+                  // The folder row: not while searching or showing
+                  // Unread / Finished; it leaves by size and fade, and
+                  // the grid glides up.
+                  SliverToBoxAdapter(
+                    child: AnimatedSize(
+                      duration: Motion.of(context, Motion.containerTransform),
+                      curve: Motion.decelerate,
+                      child: AnimatedOpacity(
+                        opacity: showFolders ? 1 : 0,
+                        duration: Motion.of(context, Motion.fast),
+                        child: showFolders
+                            ? _FolderRow(folders: folders, counts: counts)
+                            : const SizedBox(width: double.infinity),
+                      ),
+                    ),
+                  ),
+                  SliverPadding(
+                    padding: const EdgeInsets.fromLTRB(Space.screen, 14, Space.screen, 14),
+                    sliver: SliverToBoxAdapter(
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: <Widget>[
+                          Flexible(
+                            child: Text(
+                              _query.isNotEmpty
+                                  ? '${filtered.length} ${filtered.length == 1 ? 'result' : 'results'} for “$_query”${family == null ? '' : ' in ${family.label}'}'
+                                  : '${filtered.length} ${books ? (filtered.length == 1 ? 'book' : 'books') : (filtered.length == 1 ? 'file' : 'files')}${device ? ' on this device' : ''}${switch (_status) {
+                                      _Status.all => unread > 0 ? ' · $unread unread' : '',
+                                      _Status.unread => ' · unread',
+                                      _Status.finished => ' · finished',
+                                    }}',
+                              style: UnfurlType.monoLabel.copyWith(color: c.onSurfaceVariant),
+                            ),
+                          ),
+                          if (_query.isEmpty)
+                            Text('Sort: $sortLabel', style: UnfurlType.monoLabel.copyWith(color: c.onSurfaceVariant)),
+                        ],
+                      ),
+                    ),
+                  ),
+                  if (filtered.isEmpty)
+                    SliverToBoxAdapter(
+                      child: Padding(
+                        padding: const EdgeInsets.all(Space.screen),
+                        child: Text(
+                          _query.isNotEmpty
+                              ? 'Nothing matches “$_query”.'
+                              : (all.isEmpty ? 'No books found in your folders yet.' : 'Nothing here.'),
+                          style: UnfurlType.body.copyWith(color: c.onSurfaceVariant),
+                        ),
+                      ),
+                    )
+                  else if (_query.isNotEmpty)
+                    SliverPadding(
+                      padding: const EdgeInsets.fromLTRB(Space.screen, 0, Space.screen, Space.bottomSafe),
+                      sliver: SliverList.separated(
+                        itemCount: filtered.length,
+                        separatorBuilder: (BuildContext context, int i) => const SizedBox(height: Space.row),
+                        itemBuilder: (BuildContext context, int i) => _SearchCard(book: filtered[i], query: _query),
+                      ),
+                    )
+                  else if (s.libraryGrid)
+                    SliverPadding(
+                      padding: const EdgeInsets.fromLTRB(Space.screen, 0, Space.screen, Space.bottomSafe),
+                      sliver: SliverGrid.builder(
+                        // 3 / 5 / 7 columns (board 6, V7).
+                        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: grid.columns,
+                          // Other files carry a name line over the meta.
+                          mainAxisExtent: grid.extent(anyFile ? 72 : 54),
+                          mainAxisSpacing: 18,
+                          crossAxisSpacing: grid.columns == 3 ? 0 : 12,
+                        ),
+                        itemCount: filtered.length,
+                        itemBuilder: (BuildContext context, int i) => Align(
+                          alignment: grid.alignment(i),
+                          child: SizedBox(
+                            width: grid.tile,
+                            child: Reveal(
+                              index: i < 9 ? i : 0,
+                              child: _BookTile(book: filtered[i], width: grid.tile, height: grid.cover),
+                            ),
+                          ),
+                        ),
+                      ),
+                    )
+                  else
+                    SliverPadding(
+                      padding: const EdgeInsets.fromLTRB(Space.screen, 0, Space.screen, Space.bottomSafe),
+                      sliver: SliverList.builder(
+                        itemCount: filtered.length,
+                        itemBuilder: (BuildContext context, int i) => ListGroupRow(
+                          first: i == 0,
+                          last: i == filtered.length - 1,
+                          child: Reveal(
+                            index: i < 9 ? i : 0,
+                            child: _BookRow(book: filtered[i]),
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
       ),
     );
   }

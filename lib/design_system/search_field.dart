@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../core/motion/motion.dart';
+import '../core/motion/kit.dart';
 import '../core/theme/app_theme.dart';
 import '../core/theme/palette.dart';
 import '../core/theme/typography.dart';
@@ -66,7 +66,8 @@ class _SearchFieldState extends State<SearchField> {
     final UnfurlColors c = context.colors;
     final bool focused = _focus.hasFocus;
     return AnimatedContainer(
-      duration: Motion.of(context, Motion.fast),
+      duration: Motion.isOff(context) ? Duration.zero : Motion.fxFast,
+      curve: Motion.curveEffects,
       constraints: BoxConstraints(minHeight: widget.height),
       padding: EdgeInsets.only(
         left: widget.onBack == null ? 18 : 0,

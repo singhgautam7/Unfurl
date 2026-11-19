@@ -3,7 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 
-import '../../core/motion/motion.dart';
+import '../../core/motion/kit.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/theme/palette.dart';
 import '../../core/theme/tokens.dart';
@@ -291,15 +291,18 @@ class AutoControl extends StatelessWidget {
                       child: Material(
                         color: c.primary,
                         shape: const CircleBorder(),
-                        child: InkWell(
-                          customBorder: const CircleBorder(),
-                          onTap: auto.toggle,
-                          child: SizedBox.square(
-                            dimension: IconSpec.button,
-                            child: AppIcon(
-                              auto.running ? AppIcons.pause : AppIcons.play,
-                              fill: true,
-                              color: c.onPrimary,
+                        child: Pressable(
+                          kind: PressKind.fab,
+                          child: InkWell(
+                            customBorder: const CircleBorder(),
+                            onTap: auto.toggle,
+                            child: SizedBox.square(
+                              dimension: IconSpec.button,
+                              child: AppIcon(
+                                auto.running ? AppIcons.pause : AppIcons.play,
+                                fill: true,
+                                color: c.onPrimary,
+                              ),
                             ),
                           ),
                         ),
@@ -382,30 +385,36 @@ class SleepChip extends StatelessWidget {
               ? 'Sleep timer, ${timer.chapter ? 'end of chapter' : '${timer.label} left'}'
               : 'Sleep timer',
           excludeSemantics: true,
-          child: GestureDetector(
-            onTap: onTap,
-            child: AnimatedContainer(
-              duration: Motion.of(context, Motion.fast),
-              height: 28,
-              padding: const EdgeInsets.symmetric(horizontal: 10),
-              decoration: BoxDecoration(color: fading ? c.primary : c.surfaceContainerHigh, borderRadius: Radii.fullR),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                spacing: Space.xs,
-                children: <Widget>[
-                  AppIcon(
-                    fading ? AppIcons.volumeDown : AppIcons.bedtime,
-                    size: 16,
-                    color: fading ? c.onPrimary : c.onSurface,
-                  ),
-                  if (timer.active)
-                    Text(
-                      timer.label,
-                      style: UnfurlType.monoLabel
-                          .copyWith(fontSize: 12, color: fading ? c.onPrimary : c.onSurface)
-                          .copyWith(fontWeight: FontWeight.w600),
+          child: Pressable(
+            kind: PressKind.chip,
+            child: GestureDetector(
+              onTap: onTap,
+              child: AnimatedContainer(
+                duration: Motion.of(context, Motion.fast),
+                height: 28,
+                padding: const EdgeInsets.symmetric(horizontal: 10),
+                decoration: BoxDecoration(
+                  color: fading ? c.primary : c.surfaceContainerHigh,
+                  borderRadius: Radii.fullR,
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  spacing: Space.xs,
+                  children: <Widget>[
+                    AppIcon(
+                      fading ? AppIcons.volumeDown : AppIcons.bedtime,
+                      size: 16,
+                      color: fading ? c.onPrimary : c.onSurface,
                     ),
-                ],
+                    if (timer.active)
+                      Text(
+                        timer.label,
+                        style: UnfurlType.monoLabel
+                            .copyWith(fontSize: 12, color: fading ? c.onPrimary : c.onSurface)
+                            .copyWith(fontWeight: FontWeight.w600),
+                      ),
+                  ],
+                ),
               ),
             ),
           ),
@@ -434,28 +443,34 @@ Future<void> showSleepTimerSheet(
         checked: on,
         button: true,
         label: label,
-        child: InkWell(
-          onTap: () {
-            onTap();
-            Navigator.of(ctx).pop();
-          },
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(minHeight: 52),
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(Space.xl, Space.sm, Space.lg, Space.sm),
-              child: Row(
-                children: <Widget>[
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: <Widget>[
-                        Text(label, style: UnfurlType.titleMedium.copyWith(color: c.onSurface).weight(on ? 600 : 500)),
-                        if (meta != null) Text(meta, style: UnfurlType.bodySmall.copyWith(color: c.onSurfaceVariant)),
-                      ],
+        child: Pressable(
+          kind: PressKind.row,
+          child: InkWell(
+            onTap: () {
+              onTap();
+              Navigator.of(ctx).pop();
+            },
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(minHeight: 52),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(Space.xl, Space.sm, Space.lg, Space.sm),
+                child: Row(
+                  children: <Widget>[
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: <Widget>[
+                          Text(
+                            label,
+                            style: UnfurlType.titleMedium.copyWith(color: c.onSurface).weight(on ? 600 : 500),
+                          ),
+                          if (meta != null) Text(meta, style: UnfurlType.bodySmall.copyWith(color: c.onSurfaceVariant)),
+                        ],
+                      ),
                     ),
-                  ),
-                  AppIcon(on ? AppIcons.radioOn : AppIcons.radioOff, fill: on, color: on ? c.primary : c.iconMuted),
-                ],
+                    AppIcon(on ? AppIcons.radioOn : AppIcons.radioOff, fill: on, color: on ? c.primary : c.iconMuted),
+                  ],
+                ),
               ),
             ),
           ),

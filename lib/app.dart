@@ -6,7 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import 'core/motion/motion.dart';
+import 'core/motion/kit.dart';
 import 'core/explorer.dart';
 import 'core/open.dart';
 import 'core/platform/platform.dart';
@@ -35,6 +35,7 @@ class _UnfurlAppState extends ConsumerState<UnfurlApp> with WidgetsBindingObserv
     // for afterwards and only repaints (cross-fading) if the wallpaper moved.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       unawaited(_refreshWallpaperSeed());
+      unawaited(_probeDevice());
       unawaited(_startUp());
       // Sessions a crash or a kill left open are folded into Insights.
       unawaited(ref.read(trackerProvider).recover());
@@ -79,6 +80,17 @@ class _UnfurlAppState extends ConsumerState<UnfurlApp> with WidgetsBindingObserv
     unawaited(openDocument(ctx, ref));
   }
 
+  /// RAM and the low-RAM flag decide what Auto motion means; asked once, ever,
+  /// after the first frame, and cached through the settings.
+  Future<void> _probeDevice() async {
+    if (ref.read(settingsProvider).deviceClass != DeviceClass.unknown) return;
+    final ({int totalMb, bool lowRam})? m = await Platform.deviceMemory();
+    if (!mounted) return;
+    // No answer (widget tests, a platform error) is left unknown, not cached.
+    if (m == null) return;
+    await ref.read(settingsProvider.notifier).setDeviceClass(classifyDevice(ramMb: m.totalMb, lowRamFlag: m.lowRam));
+  }
+
   Future<void> _refreshWallpaperSeed() async {
     // dynamic_color still hands the palette back as the deprecated
     // CorePalette; only its primary tone 40 is read, which is the seed
@@ -92,9 +104,6 @@ class _UnfurlAppState extends ConsumerState<UnfurlApp> with WidgetsBindingObserv
   @override
   Widget build(BuildContext context) {
     final AppSettings s = ref.watch(settingsProvider);
-    // No MediaQuery above a MaterialApp, so reduced motion is read from the
-    // platform directly.
-    final bool reduced = WidgetsBinding.instance.platformDispatcher.accessibilityFeatures.disableAnimations;
     return MaterialApp.router(
       title: 'Unfurl',
       debugShowCheckedModeBanner: false,
@@ -102,9 +111,9 @@ class _UnfurlAppState extends ConsumerState<UnfurlApp> with WidgetsBindingObserv
       themeMode: s.themeMode,
       theme: AppTheme.of(s.family, s.toneFor(Brightness.light), expressive: s.expressive),
       darkTheme: AppTheme.of(s.family, s.toneFor(Brightness.dark), expressive: s.expressive),
-      // A theme change (mode, pure black, expressive, a new wallpaper hue) cross-fades.
-      themeAnimationDuration: reduced ? Motion.reducedFade : Motion.background,
-      themeAnimationCurve: reduced ? Curves.linear : Motion.decelerate,
+      // A theme change (mode, pure black, expressive, a new wallpaper hue) is
+      // revealed by the ThemeRipple, which owns the change: no cross-fade.
+      themeAnimationDuration: Duration.zero,
       builder: (BuildContext context, Widget? child) {
         final bool dark = Theme.of(context).brightness == Brightness.dark;
         final Brightness icons = dark ? Brightness.light : Brightness.dark;
@@ -118,9 +127,39 @@ class _UnfurlAppState extends ConsumerState<UnfurlApp> with WidgetsBindingObserv
             systemNavigationBarIconBrightness: icons,
             systemNavigationBarContrastEnforced: false,
           ),
-          child: child!,
+          // No haptic while a list is moving (Kuber's rule): one flag, set from
+          // the scroll notifications that bubble up here anyway.
+          child: NotificationListener<ScrollNotification>(
+            onNotification: (ScrollNotification n) {
+              if (n is ScrollStartNotification) Haptics.scrolling = true;
+              if (n is ScrollEndNotification) Haptics.scrolling = false;
+              return false;
+            },
+            child: MotionScopeHost(child: ThemeRipple(child: child!)),
+          ),
         );
       },
+    );
+  }
+}
+
+/// Puts a [MotionScope] above every route from the preference, the device
+/// class and the phone's own switches. Rebuilds only when one of them changes.
+class MotionScopeHost extends ConsumerWidget {
+  const MotionScopeHost({required this.child, super.key});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final (MotionPreference pref, DeviceClass device) = ref.watch(
+      settingsProvider.select((AppSettings s) => (s.motion, s.deviceClass)),
+    );
+    final bool systemOff = MediaQuery.disableAnimationsOf(context) || MediaQuery.accessibleNavigationOf(context);
+    return MotionScope(
+      level: resolveMotionLevel(pref, device, systemOff: systemOff),
+      systemOff: systemOff,
+      child: child,
     );
   }
 }

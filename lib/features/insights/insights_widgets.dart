@@ -1,8 +1,9 @@
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/material.dart';
 
-import '../../core/motion/motion.dart';
+import '../../core/motion/kit.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/theme/insights_theme.dart';
 import '../../core/theme/palette.dart';
@@ -33,13 +34,24 @@ class InsightsBox extends StatelessWidget {
   );
 }
 
-/// A label, a figure and an optional mono line.
+/// An integer shown through [format] (its text is the tile's value); it
+/// rolls when it changes.
+class InsightNumber {
+  const InsightNumber(this.value, this.format);
+
+  final int value;
+  final String Function(int) format;
+}
+
+/// A label, a figure and an optional mono line. With [number] the figure
+/// rolls (its text is [value]).
 class StatTile extends StatelessWidget {
-  const StatTile({required this.label, required this.value, this.sub, super.key});
+  const StatTile({required this.label, required this.value, this.sub, this.number, super.key});
 
   final String label;
   final String value;
   final String? sub;
+  final InsightNumber? number;
 
   @override
   Widget build(BuildContext context) {
@@ -59,7 +71,13 @@ class StatTile extends StatelessWidget {
             FittedBox(
               fit: BoxFit.scaleDown,
               alignment: Alignment.centerLeft,
-              child: Text(value, maxLines: 1, style: UnfurlType.statValue.copyWith(color: c.onSurface)),
+              child: number == null
+                  ? Text(value, maxLines: 1, style: UnfurlType.statValue.copyWith(color: c.onSurface))
+                  : RollingNumber(
+                      value: number!.value,
+                      format: number!.format,
+                      style: UnfurlType.statValue.copyWith(color: c.onSurface),
+                    ),
             ),
             if (sub != null) Text(sub!, style: UnfurlType.monoSmall.copyWith(color: c.onSurfaceVariant)),
           ],
@@ -108,14 +126,18 @@ class ChartHeader extends StatelessWidget {
       enabled: onTap != null,
       label: label,
       excludeSemantics: true,
-      child: InkResponse(
-        onTap: onTap,
-        radius: 20,
-        child: SizedBox(
-          width: 32,
-          height: IconSpec.tapTarget,
-          child: Center(
-            child: Text(glyph, style: mono.copyWith(color: onTap == null ? c.onSurfaceMuted : c.onSurface)),
+      child: Pressable(
+        kind: PressKind.iconButton,
+        enabled: onTap != null,
+        child: InkResponse(
+          onTap: onTap,
+          radius: 20,
+          child: SizedBox(
+            width: 32,
+            height: IconSpec.tapTarget,
+            child: Center(
+              child: Text(glyph, style: mono.copyWith(color: onTap == null ? c.onSurfaceMuted : c.onSurface)),
+            ),
           ),
         ),
       ),
@@ -137,7 +159,7 @@ class ChartHeader extends StatelessWidget {
 /// Bars with labels under them: a zero is a 2dp outline stub so it still
 /// reads as a day; the highlighted bar (today) is in accent. [showValues]
 /// prints each non-zero value above its bar (finished books).
-class BarChart extends StatelessWidget {
+class BarChart extends StatefulWidget {
   const BarChart({
     required this.values,
     required this.labels,
@@ -162,38 +184,60 @@ class BarChart extends StatelessWidget {
   final String? semanticLabel;
 
   @override
+  State<BarChart> createState() => _BarChartState();
+}
+
+/// Draws in once (ChartDrawIn); a data change springs the bars from the old
+/// heights to the new ones (SpringValue) and never replays the draw-in.
+class _BarChartState extends State<BarChart> {
+  List<int>? _prev; // null: the last change had a different bar count
+  int _version = 0;
+
+  @override
+  void didUpdateWidget(BarChart old) {
+    super.didUpdateWidget(old);
+    if (listEquals(old.values, widget.values)) return;
+    _prev = old.values.length == widget.values.length ? old.values : null;
+    _version++;
+  }
+
+  @override
   Widget build(BuildContext context) {
     final UnfurlColors c = context.colors;
-    final double valueSpace = showValues ? 16 : 0;
+    final double valueSpace = widget.showValues ? 16 : 0;
     return Semantics(
-      container: semanticLabel != null,
-      label: semanticLabel,
-      excludeSemantics: semanticLabel != null,
-      child: TweenAnimationBuilder<double>(
-        tween: Tween<double>(begin: 0, end: 1),
-        duration: Motion.of(context, Motion.reveal),
-        curve: Motion.decelerate,
-        builder: (BuildContext context, double t, Widget? _) => SizedBox(
-          height: height + valueSpace + 16,
-          child: CustomPaint(
-            size: Size.infinite,
-            painter: _BarsPainter(
-              values: values,
-              labels: labels,
-              highlight: highlight,
-              plot: height,
-              valueSpace: valueSpace,
-              barMaxWidth: barMaxWidth,
-              gap: gap,
-              radius: radius,
-              grow: t,
-              bar: c.primary,
-              hi: c.accent,
-              stub: c.outline,
-              label: UnfurlType.monoSmall.copyWith(height: 1, color: c.onSurfaceVariant),
-              labelHi: UnfurlType.monoSmall.copyWith(height: 1, fontWeight: FontWeight.w600, color: c.onSurface),
-              valueStyle: UnfurlType.monoSmall.copyWith(height: 1, fontWeight: FontWeight.w600, color: c.onSurface),
-              direction: Directionality.of(context),
+      container: widget.semanticLabel != null,
+      label: widget.semanticLabel,
+      excludeSemantics: widget.semanticLabel != null,
+      child: ChartDrawIn(
+        kind: ChartKind.bars,
+        count: widget.values.length,
+        builder: (BuildContext context, ChartProgress p) => SpringValue(
+          target: _version.toDouble(),
+          builder: (BuildContext context, double v) => SizedBox(
+            height: widget.height + valueSpace + 16,
+            child: CustomPaint(
+              size: Size.infinite,
+              painter: _BarsPainter(
+                values: widget.values,
+                prev: _prev,
+                morph: (1 + v - _version).clamp(0.0, 1.0),
+                labels: widget.labels,
+                highlight: widget.highlight,
+                plot: widget.height,
+                valueSpace: valueSpace,
+                barMaxWidth: widget.barMaxWidth,
+                gap: widget.gap,
+                radius: widget.radius,
+                progress: p,
+                bar: c.primary,
+                hi: c.accent,
+                stub: c.outline,
+                label: UnfurlType.monoSmall.copyWith(height: 1, color: c.onSurfaceVariant),
+                labelHi: UnfurlType.monoSmall.copyWith(height: 1, fontWeight: FontWeight.w600, color: c.onSurface),
+                valueStyle: UnfurlType.monoSmall.copyWith(height: 1, fontWeight: FontWeight.w600, color: c.onSurface),
+                direction: Directionality.of(context),
+              ),
             ),
           ),
         ),
@@ -212,7 +256,9 @@ class _BarsPainter extends CustomPainter {
     required this.barMaxWidth,
     required this.gap,
     required this.radius,
-    required this.grow,
+    required this.progress,
+    required this.prev,
+    required this.morph,
     required this.bar,
     required this.hi,
     required this.stub,
@@ -230,7 +276,11 @@ class _BarsPainter extends CustomPainter {
   final double barMaxWidth;
   final double gap;
   final double radius;
-  final double grow;
+  final ChartProgress progress;
+  final List<int>? prev;
+
+  /// 0 at the old heights, 1 at the new ones.
+  final double morph;
   final Color bar;
   final Color hi;
   final Color stub;
@@ -262,7 +312,15 @@ class _BarsPainter extends CustomPainter {
     for (int i = 0; i < n; i++) {
       final double cx = i * (slot + gap) + slot / 2;
       final int v = values[i];
-      final double h = v == 0 ? 2 : math.max(3, v / max * plot) * grow;
+      final double now = v == 0 ? 2 : math.max(3, v / max * plot) * progress.item(i);
+      final List<int>? before = prev;
+      double h = now;
+      if (morph < 1) {
+        final int pv = before == null ? 0 : before[i];
+        final int pmax = before == null ? 1 : before.fold<int>(1, math.max);
+        final double was = before == null ? 0 : (pv == 0 ? 2 : math.max(3, pv / pmax * plot));
+        h = was + (now - was) * morph;
+      }
       p.color = v == 0 ? stub : (i == highlight ? hi : bar);
       canvas.drawRRect(
         RRect.fromRectAndCorners(
@@ -283,7 +341,13 @@ class _BarsPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_BarsPainter old) =>
-      old.grow != grow || old.values != values || old.bar != bar || old.highlight != highlight;
+      old.progress.linear != progress.linear ||
+      old.morph != morph ||
+      !listEquals(old.values, values) ||
+      old.bar != bar ||
+      old.hi != hi ||
+      old.highlight != highlight ||
+      old.labels != labels;
 }
 
 /// 53 weeks × 7 days, Monday on top; five levels from the seed's primary.
@@ -313,13 +377,11 @@ class Heatmap extends StatelessWidget {
           child: LayoutBuilder(
             builder: (BuildContext context, BoxConstraints box) {
               final double cell = (box.maxWidth - gap * 52) / 53;
-              return TweenAnimationBuilder<double>(
-                tween: Tween<double>(begin: 0, end: 1),
-                duration: Motion.of(context, Motion.reveal),
-                curve: Motion.decelerate,
-                builder: (BuildContext context, double t, Widget? _) => CustomPaint(
+              return ChartDrawIn(
+                kind: ChartKind.line,
+                builder: (BuildContext context, ChartProgress p) => CustomPaint(
                   size: Size(box.maxWidth, cell * 7 + gap * 6),
-                  painter: _HeatPainter(minutes: minutes, levels: levels, cell: cell, gap: gap, fade: t),
+                  painter: _HeatPainter(minutes: minutes, levels: levels, cell: cell, gap: gap, fade: p.t),
                 ),
               );
             },
@@ -404,14 +466,22 @@ class _HeatPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(_HeatPainter old) => old.fade != fade || old.minutes != minutes || old.levels != levels;
+  bool shouldRepaint(_HeatPainter old) =>
+      old.fade != fade ||
+      old.cell != cell ||
+      old.gap != gap ||
+      !listEquals(old.minutes, minutes) ||
+      !listEquals(old.levels, levels);
 }
 
 /// Pairs of a label, a figure and an optional mono line, in a grid.
 class KeyValueCard extends StatelessWidget {
-  const KeyValueCard({required this.items, this.columns = 2, super.key});
+  const KeyValueCard({required this.items, this.numbers, this.columns = 2, super.key});
 
   final List<(String, String, String?)> items;
+
+  /// Per item (same index): the figure as a rolling number, or null.
+  final List<InsightNumber?>? numbers;
   final int columns;
 
   @override
@@ -426,20 +496,28 @@ class KeyValueCard extends StatelessWidget {
             spacing: 12,
             runSpacing: 14,
             children: <Widget>[
-              for (final (String k, String v, String? sub) in items)
+              for (int i = 0; i < items.length; i++)
                 SizedBox(
                   width: w,
                   child: Semantics(
                     container: true,
-                    label: '$k: $v${sub == null ? '' : ', $sub'}',
+                    label: '${items[i].$1}: ${items[i].$2}${items[i].$3 == null ? '' : ', ${items[i].$3}'}',
                     excludeSemantics: true,
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       spacing: 3,
                       children: <Widget>[
-                        Text(k, style: UnfurlType.label.copyWith(color: c.onSurfaceVariant)),
-                        Text(v, style: UnfurlType.kvValue.copyWith(color: c.onSurface)),
-                        if (sub != null) Text(sub, style: UnfurlType.monoSmall.copyWith(color: c.onSurfaceVariant)),
+                        Text(items[i].$1, style: UnfurlType.label.copyWith(color: c.onSurfaceVariant)),
+                        if (numbers?[i] case final InsightNumber n)
+                          RollingNumber(
+                            value: n.value,
+                            format: n.format,
+                            style: UnfurlType.kvValue.copyWith(color: c.onSurface),
+                          )
+                        else
+                          Text(items[i].$2, style: UnfurlType.kvValue.copyWith(color: c.onSurface)),
+                        if (items[i].$3 != null)
+                          Text(items[i].$3!, style: UnfurlType.monoSmall.copyWith(color: c.onSurfaceVariant)),
                       ],
                     ),
                   ),
@@ -558,57 +636,59 @@ class InsightsCard extends StatelessWidget {
       button: true,
       label: 'Insights. $value. $sub',
       excludeSemantics: true,
-      child: Material(
-        color: c.primaryContainer,
-        borderRadius: Radii.cardR,
-        child: InkWell(
+      child: Pressable(
+        child: Material(
+          color: c.primaryContainer,
           borderRadius: Radii.cardR,
-          onTap: onTap,
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(18, 16, 10, 16),
-            child: Row(
-              spacing: 14,
-              children: <Widget>[
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    spacing: 6,
-                    children: <Widget>[
-                      Row(
-                        spacing: 6,
-                        children: <Widget>[
-                          AppIcon(AppIcons.insights, size: 18, color: c.onPrimaryContainer),
-                          Text(
-                            'Insights',
-                            style: UnfurlType.label.copyWith(fontSize: 13, color: c.onPrimaryContainer).weight(600),
-                          ),
-                        ],
-                      ),
-                      Text(value, style: UnfurlType.cardValue.copyWith(color: c.onPrimaryContainer)),
-                      Text(sub, style: UnfurlType.tableCell.copyWith(height: 1.35, color: c.onPrimaryContainer)),
-                    ],
-                  ),
-                ),
-                SizedBox(
-                  height: 52,
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    spacing: 4,
-                    children: <Widget>[
-                      for (int i = 0; i < week.length; i++)
-                        Container(
-                          width: 8,
-                          height: week[i] == 0 ? 3 : math.max(4, week[i] / max * 52),
-                          decoration: BoxDecoration(
-                            color: week[i] == 0 ? c.outline : (i == today ? c.onPrimaryContainer : c.primary),
-                            borderRadius: BorderRadius.circular(3),
-                          ),
+          child: InkWell(
+            borderRadius: Radii.cardR,
+            onTap: onTap,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(18, 16, 10, 16),
+              child: Row(
+                spacing: 14,
+                children: <Widget>[
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      spacing: 6,
+                      children: <Widget>[
+                        Row(
+                          spacing: 6,
+                          children: <Widget>[
+                            AppIcon(AppIcons.insights, size: 18, color: c.onPrimaryContainer),
+                            Text(
+                              'Insights',
+                              style: UnfurlType.label.copyWith(fontSize: 13, color: c.onPrimaryContainer).weight(600),
+                            ),
+                          ],
                         ),
-                    ],
+                        Text(value, style: UnfurlType.cardValue.copyWith(color: c.onPrimaryContainer)),
+                        Text(sub, style: UnfurlType.tableCell.copyWith(height: 1.35, color: c.onPrimaryContainer)),
+                      ],
+                    ),
                   ),
-                ),
-                AppIcon(AppIcons.chevronRight, color: c.onPrimaryContainer),
-              ],
+                  SizedBox(
+                    height: 52,
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      spacing: 4,
+                      children: <Widget>[
+                        for (int i = 0; i < week.length; i++)
+                          Container(
+                            width: 8,
+                            height: week[i] == 0 ? 3 : math.max(4, week[i] / max * 52),
+                            decoration: BoxDecoration(
+                              color: week[i] == 0 ? c.outline : (i == today ? c.onPrimaryContainer : c.primary),
+                              borderRadius: BorderRadius.circular(3),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                  AppIcon(AppIcons.chevronRight, color: c.onPrimaryContainer),
+                ],
+              ),
             ),
           ),
         ),

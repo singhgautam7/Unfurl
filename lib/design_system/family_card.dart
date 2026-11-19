@@ -1,13 +1,18 @@
 import 'package:flutter/material.dart';
 
+import '../core/motion/kit.dart';
 import '../core/theme/app_theme.dart';
 import '../core/theme/palette.dart';
 import '../core/theme/tokens.dart';
 import '../core/theme/typography.dart';
+import 'app_icon.dart';
+import 'chips.dart' show kSelectedRadius;
 
 /// One colour family as a card, as Mull's Theme page draws it: three swatches
 /// (primary, its container, the raised surface), the name and the blurb.
 /// Each card previews its family under the current switches, as Kuber's do.
+/// Selecting one morphs its corners from 20 to 12dp (fastCurve) and draws a
+/// check in beside its name (standardCurve).
 class FamilyCard extends StatelessWidget {
   const FamilyCard({
     required this.family,
@@ -30,46 +35,80 @@ class FamilyCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final UnfurlColors c = context.colors;
     final UnfurlColors f = family.colors(tone, expressive: expressive);
+    final MotionLevel level = Motion.levelOf(context);
+    final bool off = level == MotionLevel.off;
+    final SpringCurve shape = Motion.spatialCurve(level, Motion.fastCurve);
+    final SpringCurve check = Motion.spatialCurve(level, Motion.standardCurve);
     return Semantics(
       button: true,
       selected: selected,
       label: '${family.name} theme',
       onTap: onTap,
       excludeSemantics: true,
-      child: Material(
-        color: c.surfaceContainer,
-        shape: RoundedRectangleBorder(
-          borderRadius: Radii.cardR,
-          side: BorderSide(color: selected ? c.primary : c.outline, width: selected ? 2 : 1),
-        ),
-        child: InkWell(
-          onTap: onTap,
-          customBorder: const RoundedRectangleBorder(borderRadius: Radii.cardR),
-          child: Container(
-            padding: const EdgeInsets.all(14),
-            constraints: const BoxConstraints(minHeight: 116),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              spacing: Space.md,
-              children: <Widget>[
-                Row(
-                  spacing: 6,
-                  children: <Widget>[
-                    ThemeDot(f.primary),
-                    ThemeDot(f.primaryContainer),
-                    ThemeDot(f.surfaceContainerHigh, border: c.outline),
-                  ],
-                ),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: <Widget>[
-                    Text(family.name, style: UnfurlType.titleMedium.copyWith(color: c.onSurface)),
-                    Text(family.blurb, style: UnfurlType.bodySmall.copyWith(color: c.onSurfaceVariant)),
-                  ],
-                ),
-              ],
+      child: TweenAnimationBuilder<double>(
+        tween: Tween<double>(end: selected ? 1 : 0),
+        duration: off ? Duration.zero : shape.settle,
+        curve: shape.clamped,
+        builder: (BuildContext context, double sq, Widget? child) {
+          final BorderRadius radius = BorderRadius.circular(Radii.card + (kSelectedRadius - Radii.card) * sq);
+          return Material(
+            color: c.surfaceContainer,
+            shape: RoundedRectangleBorder(
+              borderRadius: radius,
+              side: BorderSide(color: selected ? c.primary : c.outline, width: selected ? 2 : 1),
             ),
+            child: InkWell(
+              onTap: onTap,
+              customBorder: RoundedRectangleBorder(borderRadius: radius),
+              child: child,
+            ),
+          );
+        },
+        child: Container(
+          padding: const EdgeInsets.all(14),
+          constraints: const BoxConstraints(minHeight: 116),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            spacing: Space.md,
+            children: <Widget>[
+              Row(
+                spacing: 6,
+                children: <Widget>[
+                  ThemeDot(f.primary),
+                  ThemeDot(f.primaryContainer),
+                  ThemeDot(f.surfaceContainerHigh, border: c.outline),
+                ],
+              ),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Row(
+                    children: <Widget>[
+                      Expanded(
+                        child: Text(family.name, style: UnfurlType.titleMedium.copyWith(color: c.onSurface)),
+                      ),
+                      TweenAnimationBuilder<double>(
+                        tween: Tween<double>(end: selected ? 1 : 0),
+                        duration: off ? Duration.zero : check.settle,
+                        curve: check.clamped,
+                        builder: (BuildContext context, double k, Widget? icon) => k <= 0.001
+                            ? const SizedBox.shrink()
+                            : ClipRect(
+                                child: Align(
+                                  alignment: Alignment.centerRight,
+                                  widthFactor: k,
+                                  child: Opacity(opacity: k, child: icon),
+                                ),
+                              ),
+                        child: AppIcon(AppIcons.check, size: 20, color: c.primary),
+                      ),
+                    ],
+                  ),
+                  Text(family.blurb, style: UnfurlType.bodySmall.copyWith(color: c.onSurfaceVariant)),
+                ],
+              ),
+            ],
           ),
         ),
       ),

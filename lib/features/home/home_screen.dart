@@ -75,206 +75,196 @@ class HomeScreen extends ConsumerWidget {
         .toList();
 
     return Scaffold(
-      body: SafeArea(
-        bottom: false,
-        child: CollapseOnScroll(
-          builder: (BuildContext context, bool collapsed) => Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: <Widget>[
-              AppHeader(
-                title: greeting(DateTime.now()),
-                collapsed: collapsed,
-                actions: <Widget>[
-                  AppIconButton(
-                    icon: AppIcons.fileOpen,
-                    semanticLabel: 'Open file',
-                    onPressed: () => pickAndOpenFile(context),
-                  ),
-                  Builder(
-                    builder: (BuildContext b) => AppIconButton(
-                      icon: AppIcons.moreHoriz,
-                      semanticLabel: 'More options',
-                      onPressed: () async {
-                        final String? choice = await showAppMenu<String>(
-                          context: context,
-                          anchorContext: b,
-                          entries: const <AppMenuEntry<String>>[
-                            AppMenuEntry<String>(
-                              value: 'add',
-                              label: 'Add folder',
-                              icon: AppIcons.createNewFolder,
-                              subtitle: 'read-only access',
-                            ),
-                            AppMenuEntry<String>(value: 'folders', label: 'Folders', icon: AppIcons.folder),
-                            AppMenuEntry<String>.divider(),
-                            AppMenuEntry<String>(value: 'settings', label: 'Settings', icon: AppIcons.settings),
-                          ],
-                        );
-                        if (!context.mounted) return;
-                        switch (choice) {
-                          case 'add':
-                            await addFolder(context, ref);
-                          case 'folders':
-                            await context.push(Routes.folders);
-                          case 'settings':
-                            await context.push(Routes.settings);
-                        }
-                      },
-                    ),
-                  ),
-                ],
+      body: HeaderPage(
+        header: AppHeader(
+          title: greeting(DateTime.now()),
+          actions: <Widget>[
+            AppIconButton(
+              icon: AppIcons.fileOpen,
+              semanticLabel: 'Open file',
+              onPressed: () => pickAndOpenFile(context),
+            ),
+            Builder(
+              builder: (BuildContext b) => AppIconButton(
+                icon: AppIcons.moreHoriz,
+                semanticLabel: 'More options',
+                onPressed: () async {
+                  final String? choice = await showAppMenu<String>(
+                    context: context,
+                    anchorContext: b,
+                    entries: const <AppMenuEntry<String>>[
+                      AppMenuEntry<String>(
+                        value: 'add',
+                        label: 'Add folder',
+                        icon: AppIcons.createNewFolder,
+                        subtitle: 'read-only access',
+                      ),
+                      AppMenuEntry<String>(value: 'folders', label: 'Folders', icon: AppIcons.folder),
+                      AppMenuEntry<String>.divider(),
+                      AppMenuEntry<String>(value: 'settings', label: 'Settings', icon: AppIcons.settings),
+                    ],
+                  );
+                  if (!context.mounted) return;
+                  switch (choice) {
+                    case 'add':
+                      await addFolder(context, ref);
+                    case 'folders':
+                      await context.push(Routes.folders);
+                    case 'settings':
+                      await context.push(Routes.settings);
+                  }
+                },
               ),
-              Expanded(
-                child: ListView(
-                  padding: const EdgeInsets.fromLTRB(Space.screen, 6, Space.screen, Space.bottomSafe),
-                  children: <Widget>[
-                    if (foldersLoaded && folders.isEmpty)
-                      _FolderCard(
-                        icon: AppIcons.folder,
-                        danger: false,
-                        title: 'Add a folder to fill your Library',
-                        body: 'Unfurl lists the books and documents in folders you choose. It only reads them.',
-                        action: 'Add folder',
-                        actionIcon: AppIcons.createNewFolder,
-                        onAction: () => addFolder(context, ref),
-                      ),
-                    for (final Folder f in lost)
-                      _FolderCard(
-                        icon: AppIcons.folderOff,
-                        danger: true,
-                        title: 'Unfurl can’t see ${f.name} anymore',
-                        body: f.source == 'saf_folder'
-                            ? 'Access was removed by Android. Your progress, highlights and notes are kept.'
-                            : kAllFilesAccess
-                            ? 'All files access was turned off. Your progress, highlights and notes are kept.'
-                            : 'Pick it again in Android’s folder picker. Your progress, highlights and notes are kept.',
-                        action: f.source == 'saf_folder' || !kAllFilesAccess ? 'Grant access again' : 'Go to Files',
-                        actionIcon: AppIcons.folderOpen,
-                        onAction: () => regrantFolder(context, ref, f),
-                      ),
-                    if (hero != null) ...<Widget>[
-                      Reveal(
-                        child: _HeroCard(doc: hero, books: books),
-                      ),
-                      const SizedBox(height: Space.section),
-                    ],
-                    if (recentBooks.isNotEmpty) ...<Widget>[
-                      SectionHeader(
-                        label: wide ? 'Continue reading' : 'Recent books',
-                        accent: wide,
-                        action: 'Library',
-                        onAction: () => StatefulNavigationShell.maybeOf(context)?.goBranch(1),
-                      ),
-                      const SizedBox(height: Space.md),
-                      Reveal(
-                        index: 1,
-                        child: _CoverRow(
-                          grid: grid,
-                          count: recentBooks.length,
-                          tile: (int i, double w, double h) {
-                            final Document d = recentBooks[i];
-                            return Builder(
-                              builder: (BuildContext tile) => CoverTile(
-                                onLongPress: () => _bookMenu(
-                                  context,
-                                  tile,
-                                  onOpen: () => _resume(context, d, 'home:${d.fingerprint}'),
-                                  uri: d.uri,
-                                  fingerprint: d.fingerprint,
-                                  title: d.title ?? _stem(d.name),
-                                  author: d.author,
-                                  name: d.name,
-                                ),
-                                heroTag: 'home:${d.fingerprint}',
-                                cover: CoverArt(
-                                  title: d.title ?? _stem(d.name),
-                                  author: d.author,
-                                  width: w,
-                                  height: h,
-                                  fingerprint: d.fingerprint,
-                                  format: Formats.of(d.name) ?? Formats.pdf,
-                                  badge: Formats.labelOf(d.name),
-                                  issue: d.issue,
-                                ),
-                                progress: d.progress,
-                                finished: d.finished,
-                                onTap: () => _resume(context, d, 'home:${d.fingerprint}'),
-                              ),
-                            );
-                          },
+            ),
+          ],
+        ),
+        body: (BuildContext context, double inset) => ListView(
+          clipBehavior: Clip.none,
+          padding: EdgeInsets.fromLTRB(Space.screen, inset + 6, Space.screen, Space.bottomSafe),
+          children: <Widget>[
+            if (foldersLoaded && folders.isEmpty)
+              _FolderCard(
+                icon: AppIcons.folder,
+                danger: false,
+                title: 'Add a folder to fill your Library',
+                body: 'Unfurl lists the books and documents in folders you choose. It only reads them.',
+                action: 'Add folder',
+                actionIcon: AppIcons.createNewFolder,
+                onAction: () => addFolder(context, ref),
+              ),
+            for (final Folder f in lost)
+              _FolderCard(
+                icon: AppIcons.folderOff,
+                danger: true,
+                title: 'Unfurl can’t see ${f.name} anymore',
+                body: f.source == 'saf_folder'
+                    ? 'Access was removed by Android. Your progress, highlights and notes are kept.'
+                    : kAllFilesAccess
+                    ? 'All files access was turned off. Your progress, highlights and notes are kept.'
+                    : 'Pick it again in Android’s folder picker. Your progress, highlights and notes are kept.',
+                action: f.source == 'saf_folder' || !kAllFilesAccess ? 'Grant access again' : 'Go to Files',
+                actionIcon: AppIcons.folderOpen,
+                onAction: () => regrantFolder(context, ref, f),
+              ),
+            if (hero != null) ...<Widget>[
+              Reveal(
+                child: _HeroCard(doc: hero, books: books),
+              ),
+              const SizedBox(height: Space.section),
+            ],
+            if (recentBooks.isNotEmpty) ...<Widget>[
+              SectionHeader(
+                label: wide ? 'Continue reading' : 'Recent books',
+                accent: wide,
+                action: 'Library',
+                onAction: () => StatefulNavigationShell.maybeOf(context)?.goBranch(1),
+              ),
+              const SizedBox(height: Space.md),
+              Reveal(
+                index: 1,
+                child: _CoverRow(
+                  grid: grid,
+                  count: recentBooks.length,
+                  tile: (int i, double w, double h) {
+                    final Document d = recentBooks[i];
+                    return Builder(
+                      builder: (BuildContext tile) => CoverTile(
+                        onLongPress: () => _bookMenu(
+                          context,
+                          tile,
+                          onOpen: () => _resume(context, d, 'home:${d.fingerprint}'),
+                          uri: d.uri,
+                          fingerprint: d.fingerprint,
+                          title: d.title ?? _stem(d.name),
+                          author: d.author,
+                          name: d.name,
                         ),
-                      ),
-                      const SizedBox(height: Space.section),
-                    ],
-                    if (files.isNotEmpty) ...<Widget>[
-                      const SectionHeader(label: 'Recent files'),
-                      const SizedBox(height: Space.md),
-                      Reveal(
-                        index: 2,
-                        child: ListContainer(children: <Widget>[for (final Recent r in files) FileRow(recent: r)]),
-                      ),
-                    ],
-                    if (recentBooks.isEmpty && unopened.isNotEmpty) ...<Widget>[
-                      SectionHeader(
-                        label: 'In your library',
-                        action: 'Library',
-                        onAction: () => StatefulNavigationShell.maybeOf(context)?.goBranch(1),
-                      ),
-                      const SizedBox(height: Space.md),
-                      Reveal(
-                        index: 1,
-                        child: _CoverRow(
-                          grid: grid,
-                          count: math.min(unopened.length, wide ? grid.columns : 8),
-                          tile: (int i, double w, double h) {
-                            final BookItem b = unopened[i];
-                            final String tag = 'home:lib:${b.entry.id}';
-                            return Builder(
-                              builder: (BuildContext tileCtx) => CoverTile(
-                                onLongPress: () => _bookMenu(
-                                  context,
-                                  tileCtx,
-                                  onOpen: () => openBook(context, b, heroTag: tag),
-                                  uri: b.entry.uri,
-                                  fingerprint: b.fingerprint,
-                                  title: b.title,
-                                  author: b.author,
-                                  name: b.entry.name,
-                                ),
-                                heroTag: tag,
-                                cover: CoverArt(
-                                  title: b.title,
-                                  author: b.author,
-                                  width: w,
-                                  height: h,
-                                  fingerprint: b.fingerprint,
-                                  format: b.format,
-                                  badge: Formats.labelOf(b.entry.name),
-                                  issue: b.issue,
-                                ),
-                                progress: b.progress,
-                                finished: b.finished,
-                                onTap: () => openBook(context, b, heroTag: tag),
-                              ),
-                            );
-                          },
+                        heroTag: 'home:${d.fingerprint}',
+                        cover: CoverArt(
+                          title: d.title ?? _stem(d.name),
+                          author: d.author,
+                          width: w,
+                          height: h,
+                          fingerprint: d.fingerprint,
+                          format: Formats.of(d.name) ?? Formats.pdf,
+                          badge: Formats.labelOf(d.name),
+                          issue: d.issue,
                         ),
+                        progress: d.progress,
+                        finished: d.finished,
+                        onTap: () => _resume(context, d, 'home:${d.fingerprint}'),
                       ),
-                      const SizedBox(height: Space.section),
-                    ],
-                    if (hero == null && files.isEmpty && books.isEmpty && folders.isNotEmpty && lost.isEmpty)
-                      Padding(
-                        padding: const EdgeInsets.only(top: Space.xxl),
-                        child: Text(
-                          'Open a book from Library, or a file with Open file. What you read shows up here.',
-                          style: UnfurlType.body.copyWith(color: context.colors.onSurfaceVariant),
-                        ),
-                      ),
-                  ],
+                    );
+                  },
                 ),
               ),
+              const SizedBox(height: Space.section),
             ],
-          ),
+            if (files.isNotEmpty) ...<Widget>[
+              const SectionHeader(label: 'Recent files'),
+              const SizedBox(height: Space.md),
+              Reveal(
+                index: 2,
+                child: ListContainer(children: <Widget>[for (final Recent r in files) FileRow(recent: r)]),
+              ),
+            ],
+            if (recentBooks.isEmpty && unopened.isNotEmpty) ...<Widget>[
+              SectionHeader(
+                label: 'In your library',
+                action: 'Library',
+                onAction: () => StatefulNavigationShell.maybeOf(context)?.goBranch(1),
+              ),
+              const SizedBox(height: Space.md),
+              Reveal(
+                index: 1,
+                child: _CoverRow(
+                  grid: grid,
+                  count: math.min(unopened.length, wide ? grid.columns : 8),
+                  tile: (int i, double w, double h) {
+                    final BookItem b = unopened[i];
+                    final String tag = 'home:lib:${b.entry.id}';
+                    return Builder(
+                      builder: (BuildContext tileCtx) => CoverTile(
+                        onLongPress: () => _bookMenu(
+                          context,
+                          tileCtx,
+                          onOpen: () => openBook(context, b, heroTag: tag),
+                          uri: b.entry.uri,
+                          fingerprint: b.fingerprint,
+                          title: b.title,
+                          author: b.author,
+                          name: b.entry.name,
+                        ),
+                        heroTag: tag,
+                        cover: CoverArt(
+                          title: b.title,
+                          author: b.author,
+                          width: w,
+                          height: h,
+                          fingerprint: b.fingerprint,
+                          format: b.format,
+                          badge: Formats.labelOf(b.entry.name),
+                          issue: b.issue,
+                        ),
+                        progress: b.progress,
+                        finished: b.finished,
+                        onTap: () => openBook(context, b, heroTag: tag),
+                      ),
+                    );
+                  },
+                ),
+              ),
+              const SizedBox(height: Space.section),
+            ],
+            if (hero == null && files.isEmpty && books.isEmpty && folders.isNotEmpty && lost.isEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: Space.xxl),
+                child: Text(
+                  'Open a book from Library, or a file with Open file. What you read shows up here.',
+                  style: UnfurlType.body.copyWith(color: context.colors.onSurfaceVariant),
+                ),
+              ),
+          ],
         ),
       ),
     );

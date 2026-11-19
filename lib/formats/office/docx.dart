@@ -5,6 +5,7 @@ import 'package:archive/archive.dart';
 import 'package:xml/xml.dart';
 
 import '../reading_document.dart';
+import 'ooxml.dart';
 
 /// A run with the document's own formatting, for Page view.
 class DocxRun {
@@ -22,6 +23,39 @@ class DocxRun {
 
 enum DocxAlign { start, center, end, justify }
 
+/// A paragraph's line spacing: a multiple of single (`lineRule` auto, in
+/// 240ths), or a fixed or minimum height in points (`exact`, `atLeast`).
+class DocxLine {
+  const DocxLine({this.multiple = 1, this.points, this.atLeast = false});
+
+  /// From `w:line` and `w:lineRule`; null when the element sets no line.
+  static DocxLine? of(XmlElement? spacing) {
+    final double? twips = double.tryParse(spacing?.getAttribute('w:line') ?? '');
+    if (twips == null || twips <= 0) return null;
+    return switch (spacing?.getAttribute('w:lineRule')) {
+      'exact' => DocxLine(points: twips / 20),
+      'atLeast' => DocxLine(points: twips / 20, atLeast: true),
+      _ => DocxLine(multiple: twips / 240),
+    };
+  }
+
+  /// Word's single line is about 1.15 of the font size (Arial's and Calibri's
+  /// ascent, descent and gap).
+  static const double single = 1.15;
+
+  final double multiple;
+  final double? points;
+  final bool atLeast;
+
+  /// The line height as a multiple of [fontSize] (both in points).
+  double heightFor(double fontSize) {
+    final double auto = single * multiple;
+    final double? pt = points;
+    if (pt == null || fontSize <= 0) return auto;
+    return atLeast ? (pt / fontSize > single ? pt / fontSize : single) : pt / fontSize;
+  }
+}
+
 /// One paragraph, table or image of the body, in order.
 class DocxItem {
   DocxItem.paragraph({
@@ -36,11 +70,13 @@ class DocxItem {
     this.listLevel,
     this.ordinal,
     this.pageBreakBefore = false,
+    this.line = const DocxLine(),
   }) : rows = null,
        image = null;
 
-  DocxItem.table(this.rows)
-    : runs = const <DocxRun>[],
+  DocxItem.table(this.rows, {this.pageBreakBefore = false})
+    : line = const DocxLine(),
+      runs = const <DocxRun>[],
       style = null,
       align = DocxAlign.start,
       size = 9,
@@ -50,11 +86,11 @@ class DocxItem {
       heading = 0,
       listLevel = null,
       ordinal = null,
-      image = null,
-      pageBreakBefore = false;
+      image = null;
 
   DocxItem.image(this.image)
-    : runs = const <DocxRun>[],
+    : line = const DocxLine(),
+      runs = const <DocxRun>[],
       rows = null,
       style = null,
       align = DocxAlign.center,
@@ -85,18 +121,31 @@ class DocxItem {
   final int? ordinal;
   final bool pageBreakBefore;
 
+  /// Line spacing (`w:spacing w:line` / `w:lineRule`).
+  final DocxLine line;
+
   String get text =>
       rows != null ? rows!.map((List<String> r) => r.join('\t')).join('\n') : runs.map((DocxRun r) => r.text).join();
 }
 
 /// A Word document's body, page geometry and images.
-class Docx {
-  Docx._(this.items, this.images, this.title, this.author, this.pageWidth, this.pageHeight, this.margin);
+/// Page margins in points, as the document sets each side.
+class EdgeInsetsPt {
+  const EdgeInsetsPt(this.left, this.top, this.right, this.bottom);
 
-  /// Page size and margin in points.
+  final double left;
+  final double top;
+  final double right;
+  final double bottom;
+}
+
+class Docx {
+  Docx._(this.items, this.images, this.title, this.author, this.pageWidth, this.pageHeight, this.margins);
+
+  /// Page size and margins in points (`w:pgSz`, `w:pgMar`).
   final double pageWidth;
   final double pageHeight;
-  final double margin;
+  final EdgeInsetsPt margins;
   final List<DocxItem> items;
   final Map<String, Uint8List> images;
   final String? title;
@@ -124,10 +173,14 @@ class Docx {
     final Map<String, int> counters = <String, int>{};
     final XmlElement body = doc.descendantElements.firstWhere((XmlElement e) => e.localName == 'body');
 
+    // A section break (other than continuous) starts the next block on a new page.
+    bool sectionBreak = false;
     for (final XmlElement el in body.childElements) {
       if (el.localName == 'tbl') {
+        final bool breakBefore = sectionBreak;
+        sectionBreak = false;
         items.add(
-          DocxItem.table(<List<String>>[
+          DocxItem.table(pageBreakBefore: breakBefore, <List<String>>[
             for (final XmlElement tr in el.childElements.where((XmlElement e) => e.localName == 'tr'))
               <String>[
                 for (final XmlElement tc in tr.childElements.where((XmlElement e) => e.localName == 'tc'))
@@ -138,37 +191,54 @@ class Docx {
         continue;
       }
       if (el.localName != 'p') continue;
-      final XmlElement? ppr = _child(el, 'pPr');
-      final String? styleId = _attr(_child(ppr, 'pStyle'));
+      final XmlElement? ppr = ooxmlChild(el, 'pPr');
+      final String? styleId = ooxmlVal(ooxmlChild(ppr, 'pStyle'));
       final _Style st = styles.of(styleId);
-      final XmlElement? numPr = _child(ppr, 'numPr');
-      final int? level = numPr == null && !st.list ? null : int.tryParse(_attr(_child(numPr, 'ilvl')) ?? '0') ?? 0;
-      final String numId = _attr(_child(numPr, 'numId')) ?? '';
+      final XmlElement? numPr = ooxmlChild(ppr, 'numPr');
+      final int? level = numPr == null && !st.list
+          ? null
+          : int.tryParse(ooxmlVal(ooxmlChild(numPr, 'ilvl')) ?? '0') ?? 0;
+      final String numId = ooxmlVal(ooxmlChild(numPr, 'numId')) ?? '';
       final bool ordered = numPr != null && styles.isOrdered(text('word/numbering.xml'), numId, level ?? 0);
       final int? ordinal = ordered ? (counters[numId] = (counters[numId] ?? 0) + 1) : null;
 
-      final List<DocxRun> runs = <DocxRun>[];
-      bool pageBreak = _child(ppr, 'pageBreakBefore') != null;
+      List<DocxRun> runs = <DocxRun>[];
+      // Only breaks that are on: `pageBreakBefore` read as ST_OnOff (Google
+      // Docs writes `w:val="0"` on most paragraphs), else the style's.
+      bool pageBreak = (ooxmlOn(ooxmlChild(ppr, 'pageBreakBefore')) ?? st.pageBreakBefore) || sectionBreak;
+      final XmlElement? sect = ooxmlChild(ppr, 'sectPr');
+      sectionBreak = sect != null && ooxmlVal(ooxmlChild(sect, 'type')) != 'continuous';
+      // Text before and after each page break run, with whether it starts a page.
+      final List<(List<DocxRun>, bool)> parts = <(List<DocxRun>, bool)>[];
       void addRun(XmlElement r, String? href) {
-        final XmlElement? rpr = _child(r, 'rPr');
+        final XmlElement? rpr = ooxmlChild(r, 'rPr');
         for (final XmlElement part in r.childElements) {
           switch (part.localName) {
             case 't':
               runs.add(
                 DocxRun(
                   part.innerText,
-                  size: _halfPoints(_child(rpr, 'sz')),
-                  bold: _on(_child(rpr, 'b')) ?? st.bold ?? false,
-                  italic: _on(_child(rpr, 'i')) ?? st.italic ?? false,
-                  underline: _child(rpr, 'u') != null,
+                  size: _halfPoints(ooxmlChild(rpr, 'sz')),
+                  bold: ooxmlOn(ooxmlChild(rpr, 'b')) ?? st.bold ?? false,
+                  italic: ooxmlOn(ooxmlChild(rpr, 'i')) ?? st.italic ?? false,
+                  underline: ooxmlUnderline(ooxmlChild(rpr, 'u')) ?? false,
                   href: href,
                 ),
               );
             case 'tab':
               runs.add(const DocxRun('\t'));
             case 'br':
-              if (part.getAttribute('w:type') == 'page' || part.getAttribute('type') == 'page') {
-                pageBreak = runs.isEmpty || pageBreak;
+              final String? type = part.attributes
+                  .where((XmlAttribute a) => a.localName == 'type')
+                  .map((XmlAttribute a) => a.value)
+                  .firstOrNull;
+              if (type == 'page') {
+                // A page break inside a paragraph: what follows starts the next page.
+                if (runs.isNotEmpty) {
+                  parts.add((runs, pageBreak));
+                  runs = <DocxRun>[];
+                }
+                pageBreak = true;
               } else {
                 runs.add(const DocxRun('\n'));
               }
@@ -204,33 +274,38 @@ class Docx {
           }
         }
       }
-      final String jc = _attr(_child(ppr, 'jc')) ?? st.align;
-      final XmlElement? spacing = _child(ppr, 'spacing');
-      items.add(
-        DocxItem.paragraph(
-          runs: runs,
-          style: styleId,
-          align: switch (jc) {
-            'center' => DocxAlign.center,
-            'right' || 'end' => DocxAlign.end,
-            'both' || 'distribute' => DocxAlign.justify,
-            _ => DocxAlign.start,
-          },
-          size: st.size ?? styles.defaultSize,
-          heading: st.heading,
-          spaceBefore: _twips(spacing?.getAttribute('w:before')) ?? st.spaceBefore,
-          spaceAfter: _twips(spacing?.getAttribute('w:after')) ?? st.spaceAfter,
-          indent: _twips(_child(ppr, 'ind')?.getAttribute('w:left')) ?? 0,
-          listLevel: level,
-          ordinal: ordinal,
-          pageBreakBefore: pageBreak,
-        ),
-      );
+      parts.add((runs, pageBreak));
+      final String jc = ooxmlVal(ooxmlChild(ppr, 'jc')) ?? st.align;
+      final XmlElement? spacing = ooxmlChild(ppr, 'spacing');
+      for (final (List<DocxRun> partRuns, bool breakBefore) in parts) {
+        items.add(
+          DocxItem.paragraph(
+            runs: partRuns,
+            style: styleId,
+            align: switch (jc) {
+              'center' => DocxAlign.center,
+              'right' || 'end' => DocxAlign.end,
+              'both' || 'distribute' => DocxAlign.justify,
+              _ => DocxAlign.start,
+            },
+            size: st.size ?? styles.defaultSize,
+            heading: st.heading,
+            spaceBefore: _twips(spacing?.getAttribute('w:before')) ?? st.spaceBefore,
+            spaceAfter: _twips(spacing?.getAttribute('w:after')) ?? st.spaceAfter,
+            line: DocxLine.of(spacing) ?? st.line ?? styles.defaultLine,
+            indent: _twips(ooxmlChild(ppr, 'ind')?.getAttribute('w:left')) ?? 0,
+            listLevel: level,
+            ordinal: ordinal,
+            pageBreakBefore: breakBefore,
+          ),
+        );
+      }
     }
 
     final XmlElement? sect = body.childElements.where((XmlElement e) => e.localName == 'sectPr').firstOrNull;
-    final XmlElement? pgSz = _child(sect, 'pgSz');
-    final XmlElement? pgMar = _child(sect, 'pgMar');
+    final XmlElement? pgSz = ooxmlChild(sect, 'pgSz');
+    final XmlElement? pgMar = ooxmlChild(sect, 'pgMar');
+    double margin(String side) => _twips(pgMar?.getAttribute('w:$side'))?.abs() ?? 72;
     return Docx._(
       items,
       images,
@@ -238,7 +313,7 @@ class Docx {
       coreField('creator'),
       _twips(pgSz?.getAttribute('w:w')) ?? 595,
       _twips(pgSz?.getAttribute('w:h')) ?? 842,
-      _twips(pgMar?.getAttribute('w:left')) ?? 72,
+      EdgeInsetsPt(margin('left'), margin('top'), margin('right'), margin('bottom')),
     );
   }
 
@@ -323,21 +398,8 @@ class Docx {
         };
 }
 
-XmlElement? _child(XmlElement? e, String name) =>
-    e?.childElements.where((XmlElement c) => c.localName == name).firstOrNull;
-
-String? _attr(XmlElement? e) =>
-    e?.attributes.where((XmlAttribute a) => a.localName == 'val').map((XmlAttribute a) => a.value).firstOrNull;
-
-/// `<w:b/>` is on, `<w:b w:val="0"/>` off, absent null.
-bool? _on(XmlElement? e) {
-  if (e == null) return null;
-  final String? v = _attr(e);
-  return v == null || v == '1' || v == 'true' || v == 'on';
-}
-
 double? _halfPoints(XmlElement? e) {
-  final String? v = _attr(e);
+  final String? v = ooxmlVal(e);
   return v == null ? null : (int.tryParse(v) ?? 22) / 2;
 }
 
@@ -353,6 +415,8 @@ class _Style {
     this.spaceBefore = 0,
     this.spaceAfter = 6,
     this.list = false,
+    this.pageBreakBefore = false,
+    this.line,
   });
 
   final double? size;
@@ -363,6 +427,8 @@ class _Style {
   final double spaceBefore;
   final double spaceAfter;
   final bool list;
+  final bool pageBreakBefore;
+  final DocxLine? line;
 }
 
 class _Styles {
@@ -374,6 +440,12 @@ class _Styles {
         .firstOrNull;
     defaultSize =
         _halfPoints(defaults?.descendantElements.where((XmlElement e) => e.localName == 'sz').firstOrNull) ?? 11;
+    final XmlElement? pDefault = doc.descendantElements
+        .where((XmlElement e) => e.localName == 'pPrDefault')
+        .firstOrNull;
+    defaultLine =
+        DocxLine.of(pDefault?.descendantElements.where((XmlElement e) => e.localName == 'spacing').firstOrNull) ??
+        defaultLine;
     for (final XmlElement s in doc.descendantElements.where((XmlElement e) => e.localName == 'style')) {
       final String? id = s.getAttribute('w:styleId');
       if (id == null) continue;
@@ -382,6 +454,9 @@ class _Styles {
   }
 
   double defaultSize = 11;
+
+  /// `w:pPrDefault`'s line spacing, else single.
+  DocxLine defaultLine = const DocxLine();
   final Map<String, XmlElement> _raw = <String, XmlElement>{};
   final Map<String, _Style> _resolved = <String, _Style>{};
 
@@ -393,23 +468,25 @@ class _Styles {
   _Style _resolve(String id, int depth) {
     final XmlElement? s = _raw[id];
     if (s == null || depth > 8) return const _Style();
-    final String name = (_attr(_child(s, 'name')) ?? id).toLowerCase();
-    final _Style base = _attr(_child(s, 'basedOn')) == null
+    final String name = (ooxmlVal(ooxmlChild(s, 'name')) ?? id).toLowerCase();
+    final _Style base = ooxmlVal(ooxmlChild(s, 'basedOn')) == null
         ? const _Style()
-        : _resolve(_attr(_child(s, 'basedOn'))!, depth + 1);
-    final XmlElement? rpr = _child(s, 'rPr');
-    final XmlElement? ppr = _child(s, 'pPr');
+        : _resolve(ooxmlVal(ooxmlChild(s, 'basedOn'))!, depth + 1);
+    final XmlElement? rpr = ooxmlChild(s, 'rPr');
+    final XmlElement? ppr = ooxmlChild(s, 'pPr');
     final RegExpMatch? h = RegExp(r'^heading (\d)').firstMatch(name);
-    final XmlElement? spacing = _child(ppr, 'spacing');
+    final XmlElement? spacing = ooxmlChild(ppr, 'spacing');
     return _Style(
-      size: _halfPoints(_child(rpr, 'sz')) ?? base.size,
-      bold: _on(_child(rpr, 'b')) ?? base.bold,
-      italic: _on(_child(rpr, 'i')) ?? base.italic,
+      size: _halfPoints(ooxmlChild(rpr, 'sz')) ?? base.size,
+      bold: ooxmlOn(ooxmlChild(rpr, 'b')) ?? base.bold,
+      italic: ooxmlOn(ooxmlChild(rpr, 'i')) ?? base.italic,
       heading: name == 'title' ? 1 : (h != null ? int.parse(h[1]!) + (name == 'title' ? 0 : 0) : base.heading),
-      align: _attr(_child(ppr, 'jc')) ?? base.align,
+      align: ooxmlVal(ooxmlChild(ppr, 'jc')) ?? base.align,
       spaceBefore: _twips(spacing?.getAttribute('w:before')) ?? base.spaceBefore,
       spaceAfter: _twips(spacing?.getAttribute('w:after')) ?? base.spaceAfter,
+      line: DocxLine.of(spacing) ?? base.line,
       list: name.contains('list') || base.list,
+      pageBreakBefore: ooxmlOn(ooxmlChild(ppr, 'pageBreakBefore')) ?? base.pageBreakBefore,
     );
   }
 
@@ -421,16 +498,46 @@ class _Styles {
     final XmlElement? num = doc.descendantElements
         .where((XmlElement e) => e.localName == 'num' && e.getAttribute('w:numId') == numId)
         .firstOrNull;
-    final String? abstractId = _attr(_child(num, 'abstractNumId'));
+    final String? abstractId = ooxmlVal(ooxmlChild(num, 'abstractNumId'));
     final XmlElement? abs = doc.descendantElements
         .where((XmlElement e) => e.localName == 'abstractNum' && e.getAttribute('w:abstractNumId') == abstractId)
         .firstOrNull;
     final XmlElement? lvl = abs?.childElements
         .where((XmlElement e) => e.localName == 'lvl' && e.getAttribute('w:ilvl') == '$level')
         .firstOrNull;
-    final String fmt = _attr(_child(lvl, 'numFmt')) ?? 'bullet';
+    final String fmt = ooxmlVal(ooxmlChild(lvl, 'numFmt')) ?? 'bullet';
     return fmt != 'bullet' && fmt != 'none';
   }
 
   XmlDocument? _numbering;
+}
+
+/// Page view: the item indices on each page. A page ends where the next item
+/// would overflow [textHeight], or before an item whose break is on (a page
+/// break run, `pageBreakBefore` on, a section break). A page that would hold
+/// only empty paragraphs is never kept, so empty paragraphs never make a
+/// blank page.
+List<List<int>> docxPages(Docx d, double textHeight, double Function(DocxItem) height) {
+  bool blank(List<int> page) => page.every((int i) {
+    final DocxItem it = d.items[i];
+    return it.rows == null && it.image == null && it.text.trim().isEmpty;
+  });
+  final List<List<int>> pages = <List<int>>[<int>[]];
+  double y = 0;
+  for (int i = 0; i < d.items.length; i++) {
+    final DocxItem it = d.items[i];
+    final double h = height(it);
+    if ((y + h > textHeight || it.pageBreakBefore) && pages.last.isNotEmpty) {
+      if (blank(pages.last)) {
+        pages.last.clear();
+      } else {
+        pages.add(<int>[]);
+      }
+      y = 0;
+    }
+    pages.last.add(i);
+    y += h;
+  }
+  if (pages.length > 1 && blank(pages.last)) pages.removeLast();
+  return pages;
 }
