@@ -80,7 +80,7 @@ class _UnfurlAppState extends ConsumerState<UnfurlApp> with WidgetsBindingObserv
     unawaited(openDocument(ctx, ref));
   }
 
-  /// RAM and the low-RAM flag decide what Auto motion means; asked once, ever,
+  /// RAM and the low-RAM flag decide the motion level; asked once, ever,
   /// after the first frame, and cached through the settings.
   Future<void> _probeDevice() async {
     if (ref.read(settingsProvider).deviceClass != DeviceClass.unknown) return;
@@ -103,7 +103,14 @@ class _UnfurlAppState extends ConsumerState<UnfurlApp> with WidgetsBindingObserv
 
   @override
   Widget build(BuildContext context) {
-    final AppSettings s = ref.watch(settingsProvider);
+    // Only what themes the app: any other setting leaves the root alone.
+    // The family is built per call for a wallpaper, so its parts are watched.
+    ref.watch(
+      settingsProvider.select(
+        (AppSettings s) => (s.themeMode, s.amoled, s.expressive, s.familyId, s.dynamicColor, s.wallpaperSeed),
+      ),
+    );
+    final AppSettings s = ref.read(settingsProvider);
     return MaterialApp.router(
       title: 'Unfurl',
       debugShowCheckedModeBanner: false,
@@ -143,8 +150,8 @@ class _UnfurlAppState extends ConsumerState<UnfurlApp> with WidgetsBindingObserv
   }
 }
 
-/// Puts a [MotionScope] above every route from the preference, the device
-/// class and the phone's own switches. Rebuilds only when one of them changes.
+/// Puts a [MotionScope] above every route from the device class and the
+/// phone's own switches. Rebuilds only when one of them changes.
 class MotionScopeHost extends ConsumerWidget {
   const MotionScopeHost({required this.child, super.key});
 
@@ -152,12 +159,10 @@ class MotionScopeHost extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final (MotionPreference pref, DeviceClass device) = ref.watch(
-      settingsProvider.select((AppSettings s) => (s.motion, s.deviceClass)),
-    );
+    final DeviceClass device = ref.watch(settingsProvider.select((AppSettings s) => s.deviceClass));
     final bool systemOff = MediaQuery.disableAnimationsOf(context) || MediaQuery.accessibleNavigationOf(context);
     return MotionScope(
-      level: resolveMotionLevel(pref, device, systemOff: systemOff),
+      level: resolveMotionLevel(device, systemOff: systemOff),
       systemOff: systemOff,
       child: child,
     );

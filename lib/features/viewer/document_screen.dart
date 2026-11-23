@@ -7,6 +7,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/db/database.dart';
 import '../../core/files.dart';
+import '../../core/library/access.dart';
+import '../../core/library/library.dart';
 import '../../core/locator.dart';
 import '../../core/open.dart';
 import '../../core/platform/platform.dart';
@@ -17,6 +19,7 @@ import '../../core/theme/palette.dart';
 import '../../core/theme/tokens.dart';
 import '../../core/theme/typography.dart';
 import '../../design_system/app_icon.dart';
+import '../../design_system/app_snackbar.dart';
 import '../../design_system/buttons.dart';
 import '../../design_system/covers.dart';
 import '../../design_system/states.dart';
@@ -29,6 +32,7 @@ import '../office/sheet_screen.dart';
 import '../pdf/pdf_screen.dart';
 import '../reader/reader_screen.dart';
 import '../settings/settings_controller.dart';
+import 'access_view.dart';
 
 /// A document as the viewers receive it: the file, its identity, what
 /// Unfurl remembers about it, and where to open it.
@@ -70,63 +74,120 @@ class DocumentScreen extends ConsumerStatefulWidget {
   ConsumerState<DocumentScreen> createState() => _DocumentScreenState();
 }
 
-enum _Failure { missing, unsupported }
-
 class _DocumentScreenState extends ConsumerState<DocumentScreen> {
   OpenedDoc? _doc;
-  _Failure? _failure;
+  bool _unsupported = false;
   FormatProblem? _problem;
+  AccessProblem? _access;
 
   @override
   void initState() {
     super.initState();
-    unawaited(_open());
+    _library = ref.read(libraryProvider);
+    unawaited(_open(widget.request.ref));
   }
 
-  Future<void> _open() async {
-    final DocRef asked = widget.request.ref;
+  late final Library _library;
+
+  @override
+  void dispose() {
+    // The viewer has saved its place by now; Home and Library catch up once.
+    if (_doc != null) _library.documentsChanged();
+    super.dispose();
+  }
+
+  /// Opens [asked]; [relinkFrom] is the URI it was known by before, whose
+  /// Recents row moves with it.
+  Future<void> _open(DocRef asked, {String? relinkFrom}) async {
     final FormatModule? byName = Formats.ofRef(asked);
-    if (byName == null) return setState(() => _failure = _Failure.unsupported);
+    if (byName == null) return setState(() => _unsupported = true);
     FormatModule format = byName;
-    final DocRef? ref = await Platform.stat(asked.uri);
-    final String? fp = ref == null ? null : await Files.fingerprint(ref.uri);
+    DocRef? file = await Platform.stat(asked.uri);
+    if (file == null) {
+      // Not readable here: the same file somewhere Unfurl may read, or why not.
+      final (DocRef? found, AccessProblem? problem) = await _library.locate(asked);
+      if (!mounted) return;
+      if (found == null) return setState(() => _access = problem);
+      file = found;
+      relinkFrom ??= asked.uri;
+    }
+    final DocRef opened = file.withSource(asked.source);
+    final String? fp = await Files.fingerprint(opened.uri);
     if (!mounted) return;
-    if (ref == null || fp == null) return setState(() => _failure = _Failure.missing);
+    if (fp == null) {
+      final (_, AccessProblem? problem) = await _library.locate(asked);
+      if (!mounted) return;
+      return setState(() => _access = problem ?? AccessProblem(state: FileAccess.unknown, ref: asked));
+    }
     // The first bytes decide where the extension misleads (board 6, V3).
     try {
-      final Uint8List head = await Files.withFd<Uint8List>(ref.uri, (Fd fd) async => fd.read(0, 512)) ?? Uint8List(0);
+      final Uint8List head =
+          await Files.withFd<Uint8List>(opened.uri, (Fd fd) async => fd.read(0, 512)) ?? Uint8List(0);
       format = Formats.sniff(head, byName) ?? byName;
     } on FormatProblem catch (p) {
       return setState(() => _problem = p);
     }
-    final Document record = await ref.let((DocRef r) => this.ref.read(libraryProvider).touch(fp, r));
-    await this.ref.read(libraryProvider).addRecent(ref, fp);
-    await this.ref.read(settingsProvider.notifier).setOpenedFile();
     if (!mounted) return;
-    setState(
-      () => _doc = OpenedDoc(
-        ref: ref,
+    final Library library = _library;
+    final SettingsController settings = ref.read(settingsProvider.notifier);
+    final Document record = await library.touch(fp, opened);
+    // Only the same content keeps the old row's place in Recents.
+    if (relinkFrom != null && await library.fingerprintAt(relinkFrom) == fp) {
+      await library.relink(relinkFrom, opened, fp);
+    } else {
+      await library.addRecent(opened, fp);
+      if (relinkFrom != null && mounted) {
+        AppSnackbar.info(context, 'This is a different file. ${widget.request.ref.name} stays in Recents.');
+      }
+    }
+    await settings.setOpenedFile();
+    if (!mounted) return;
+    setState(() {
+      _access = null;
+      _doc = OpenedDoc(
+        ref: opened,
         fingerprint: fp,
         format: format,
         record: record,
         at: widget.request.at,
         mode: widget.request.mode,
         heroTag: widget.request.heroTag,
-      ),
-    );
+      );
+    });
   }
 
   @override
   Widget build(BuildContext context) => AnimatedSwitcher(
     duration: Motion.of(context, Motion.fast),
     switchInCurve: Motion.decelerate,
-    child: KeyedSubtree(key: ValueKey<Object>(_problem ?? _failure ?? _doc?.fingerprint ?? 'opening'), child: _body()),
+    child: KeyedSubtree(
+      key: ValueKey<Object>(_problem ?? (_unsupported ? 'unsupported' : _access ?? _doc?.fingerprint ?? 'opening')),
+      child: _body(),
+    ),
   );
 
   Widget _body() {
     final OpenedDoc? doc = _doc;
     if (_problem != null) return problemState(context, widget.request.ref, _problem!);
-    if (_failure != null) return _FailureView(failure: _failure!, ref: widget.request.ref);
+    if (_unsupported) return _unsupportedState(context, widget.request.ref);
+    final AccessProblem? access = _access;
+    if (access != null) {
+      return AccessView(
+        problem: access,
+        onRelink: (DocRef to) => _open(to, relinkFrom: access.ref.uri),
+        onGone: () => setState(
+          () => _access = AccessProblem(
+            state: FileAccess.gone,
+            ref: access.ref,
+            docId: access.docId,
+            sender: access.sender,
+            exists: false,
+            folderApp: access.folderApp,
+            sdk: access.sdk,
+          ),
+        ),
+      );
+    }
     if (doc == null) return OpeningCard(ref: widget.request.ref);
     return switch (doc.format.view) {
       ViewKind.page when doc.format == Formats.pdf => PdfScreen(doc: doc),
@@ -138,10 +199,6 @@ class _DocumentScreenState extends ConsumerState<DocumentScreen> {
       ViewKind.comics => ComicsScreen(doc: doc),
     };
   }
-}
-
-extension<T> on T {
-  R let<R>(R Function(T it) f) => f(this);
 }
 
 /// Board 4, V5: shown only once opening has taken 250ms.
@@ -249,66 +306,24 @@ class OpeningCard extends StatelessWidget {
   }
 }
 
-class _FailureView extends ConsumerWidget {
-  const _FailureView({required this.failure, required this.ref});
-
-  final _Failure failure;
-  final DocRef ref;
-
-  @override
-  Widget build(BuildContext context, WidgetRef wref) => switch (failure) {
-    _Failure.missing => DocStateScaffold(
-      title: ref.name,
-      state: EmptyState(
-        icon: AppIcons.folderOff,
-        tone: EmptyTone.neutral,
-        small: true,
-        title: 'Can’t find this file',
-        message: 'It may have been moved, renamed or deleted, or Unfurl no longer has access to its folder.',
-        actions: <Widget>[
-          AppButton(
-            label: 'Locate file',
-            icon: AppIcons.search,
-            onPressed: () async {
-              final NavigatorState nav = Navigator.of(context);
-              final DocRef? picked = await Platform.pickFile(Formats.pickerMimes);
-              if (picked == null) return;
-              await wref.read(libraryProvider).removeRecent(ref.uri);
-              nav.pop();
-              if (context.mounted) await openDocument(context, picked);
-            },
-          ),
-          AppButton(
-            label: 'Remove from recents',
-            type: AppButtonType.secondary,
-            onPressed: () async {
-              await wref.read(libraryProvider).removeRecent(ref.uri);
-              if (context.mounted) Navigator.of(context).pop();
-            },
-          ),
-        ],
+Widget _unsupportedState(BuildContext context, DocRef ref) => DocStateScaffold(
+  title: ref.name,
+  state: EmptyState(
+    icon: AppIcons.helpCenter,
+    tone: EmptyTone.neutral,
+    small: true,
+    title: 'Unfurl can’t open this type of file',
+    message:
+        '${ref.extension.toUpperCase()} files aren’t a format Unfurl reads. Another app on your phone may be able to.',
+    actions: <Widget>[
+      AppButton(
+        label: 'Open in another app',
+        icon: AppIcons.openInNew,
+        onPressed: () => Platform.openWith(ref.uri, ref.mime),
       ),
-    ),
-    _Failure.unsupported => DocStateScaffold(
-      title: ref.name,
-      state: EmptyState(
-        icon: AppIcons.helpCenter,
-        tone: EmptyTone.neutral,
-        small: true,
-        title: 'Unfurl can’t open this type of file',
-        message:
-            '${ref.extension.toUpperCase()} files aren’t a format Unfurl reads. Another app on your phone may be able to.',
-        actions: <Widget>[
-          AppButton(
-            label: 'Open in another app',
-            icon: AppIcons.openInNew,
-            onPressed: () => Platform.openWith(ref.uri, ref.mime),
-          ),
-        ],
-      ),
-    ),
-  };
-}
+    ],
+  ),
+);
 
 /// A blocking state inside a viewer: the bare top bar (back, file name) over
 /// [EmptyState] (board 4, V6).

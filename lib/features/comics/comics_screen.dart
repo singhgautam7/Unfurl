@@ -55,7 +55,12 @@ class _ComicsScreenState extends ConsumerState<ComicsScreen> with WidgetsBinding
   ComicPages? _pages;
   FormatProblem? _problem;
   bool _damagedAccepted = false;
-  int _page = 0;
+
+  /// The page on screen. A notifier: only the tracker, bookmark button and scrubber listen, so a swipe does not
+  /// rebuild the screen.
+  final ValueNotifier<int> _pageN = ValueNotifier<int>(0);
+  int get _page => _pageN.value;
+  set _page(int v) => _pageN.value = v;
   bool _chrome = false;
   bool _rtl = false;
   double? _zoomChip;
@@ -157,6 +162,7 @@ class _ComicsScreenState extends ConsumerState<ComicsScreen> with WidgetsBinding
     WidgetsBinding.instance.removeObserver(this);
     unawaited(_save(force: true));
     _saveTimer?.cancel();
+    _pageN.dispose();
     unawaited(_marksSub?.cancel());
     _pages?.dispose();
     _auto.dispose();
@@ -224,7 +230,7 @@ class _ComicsScreenState extends ConsumerState<ComicsScreen> with WidgetsBinding
 
   void _onPage(int page) {
     if (page == _page) return;
-    setState(() => _page = page);
+    _page = page;
     _saveTimer?.cancel();
     _saveTimer = Timer(Motion.saveDelay, _save);
   }
@@ -289,7 +295,7 @@ class _ComicsScreenState extends ConsumerState<ComicsScreen> with WidgetsBinding
         AppMenuEntry<String>(value: 'bookmarks', label: 'Bookmarks', icon: AppIcons.bookmark),
         AppMenuEntry<String>(value: 'share', label: 'Share file', icon: AppIcons.share),
         kInsightsEntry,
-        AppMenuEntry<String>(value: 'auto', label: 'Auto-scroll or page turn', icon: AppIcons.schedule),
+        AppMenuEntry<String>(value: 'auto', label: 'Auto-scroll or page turn', icon: AppIcons.autoplay),
         AppMenuEntry<String>.divider(),
         AppMenuEntry<String>(value: 'other', label: 'Open in another app', icon: AppIcons.openInNew),
       ],
@@ -346,7 +352,6 @@ class _ComicsScreenState extends ConsumerState<ComicsScreen> with WidgetsBinding
     final bool landscape = size.width > size.height;
     final bool spreads =
         prefs.mode == ComicMode.spread || (prefs.mode == ComicMode.single && prefs.spreadInLandscape && landscape);
-    final Annotation? bookmark = _bookmarkHere;
 
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: surround.paper.computeLuminance() > 0.4 && !_chrome || (!c.isDark && _chrome)
@@ -367,11 +372,15 @@ class _ComicsScreenState extends ConsumerState<ComicsScreen> with WidgetsBinding
                       if (_auto.running) _auto.pause(byTouch: true);
                       _sleep.touched();
                     },
-                    child: TrackedPages(
-                      fingerprint: doc.fingerprint,
-                      format: doc.format.id,
-                      mode: 'comics',
-                      page: _page,
+                    child: ValueListenableBuilder<int>(
+                      valueListenable: _pageN,
+                      builder: (BuildContext context, int page, Widget? child) => TrackedPages(
+                        fingerprint: doc.fingerprint,
+                        format: doc.format.id,
+                        mode: 'comics',
+                        page: page,
+                        child: child!,
+                      ),
                       child: AnimatedSwitcher(
                         duration: Motion.of(context, Motion.fast),
                         switchInCurve: Motion.decelerate,
@@ -423,16 +432,22 @@ class _ComicsScreenState extends ConsumerState<ComicsScreen> with WidgetsBinding
                   title: _title,
                   onBack: () => Navigator.of(context).maybePop(),
                   actions: <Widget>[
-                    AppIconButton(
-                      icon: bookmark != null ? AppIcons.bookmark : AppIcons.bookmarkAdd,
-                      fill: bookmark != null,
-                      tint: bookmark != null ? c.primary : null,
-                      filled: false,
-                      semanticLabel: bookmark != null ? 'Remove bookmark' : 'Bookmark this page',
-                      onPressed: _toggleBookmark,
+                    ValueListenableBuilder<int>(
+                      valueListenable: _pageN,
+                      builder: (BuildContext context, int page, Widget? _) {
+                        final Annotation? bookmark = _bookmarkHere;
+                        return AppIconButton(
+                          icon: bookmark != null ? AppIcons.bookmark : AppIcons.bookmarkAdd,
+                          fill: bookmark != null,
+                          tint: bookmark != null ? c.primary : null,
+                          filled: false,
+                          semanticLabel: bookmark != null ? 'Remove bookmark' : 'Bookmark this page',
+                          onPressed: _toggleBookmark,
+                        );
+                      },
                     ),
                     AppIconButton(
-                      icon: AppIcons.tune,
+                      icon: AppIcons.displaySettings,
                       filled: false,
                       semanticLabel: 'Comic settings',
                       onPressed: () => showComicSettings(context, rtl: _rtl, onRtl: _setRtl),
@@ -458,7 +473,13 @@ class _ComicsScreenState extends ConsumerState<ComicsScreen> with WidgetsBinding
                 fromTop: false,
                 child: ReaderBottomBar(
                   padding: const EdgeInsets.only(top: Space.md),
-                  children: <Widget>[ComicScrubber(pages: pages, page: _page, rtl: _rtl, onJump: _jump)],
+                  children: <Widget>[
+                    ValueListenableBuilder<int>(
+                      valueListenable: _pageN,
+                      builder: (BuildContext context, int page, Widget? _) =>
+                          ComicScrubber(pages: pages, page: page, rtl: _rtl, onJump: _jump),
+                    ),
+                  ],
                 ),
               ),
             ),

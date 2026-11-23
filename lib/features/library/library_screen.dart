@@ -10,7 +10,7 @@ import '../../core/files.dart';
 import '../../core/layout.dart';
 import '../../core/library/library.dart';
 import '../../core/locator.dart';
-import '../../core/motion/motion.dart';
+import '../../core/motion/kit.dart';
 import '../../core/open.dart';
 import '../../core/providers.dart';
 import '../../core/router/router.dart';
@@ -54,12 +54,74 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
   String _query = '';
   Set<int>? _matches;
 
-  Future<void> _search(String q) async {
-    setState(() => _query = q.trim());
-    if (_query.isEmpty) return setState(() => _matches = null);
-    final Set<int> ids = await ref.read(libraryProvider).search(_query);
-    if (mounted && q.trim() == _query) setState(() => _matches = ids);
+  Timer? _typing;
+
+  void _search(String q) {
+    _typing?.cancel();
+    final String query = q.trim();
+    if (query.isEmpty) {
+      return setState(() {
+        _query = '';
+        _matches = null;
+      });
+    }
+    _typing = Timer(Motion.searchDelay, () async {
+      final Set<int> ids = await ref.read(libraryProvider).search(query);
+      if (!mounted || _typing?.isActive == true) return;
+      setState(() {
+        _query = query;
+        _matches = ids;
+      });
+    });
   }
+
+  @override
+  void dispose() {
+    _typing?.cancel();
+    super.dispose();
+  }
+
+  /// What is shown, worked out once per change of what it depends on and not
+  /// on every build (500 books filtered and sorted took a frame's time).
+  (List<BookItem>, FormatGroup?, _Status, String, Set<int>?)? _key;
+  late _Shown _shown;
+
+  _Shown _show(List<BookItem> all, String sort) {
+    final key = (all, _family, _status, '$_query/$sort', _matches);
+    final old = _key;
+    if (old != null &&
+        identical(old.$1, all) &&
+        old.$2 == key.$2 &&
+        old.$3 == key.$3 &&
+        old.$4 == key.$4 &&
+        identical(old.$5, key.$5)) {
+      return _shown;
+    }
+    _key = key;
+    final Map<FormatGroup, int> families = <FormatGroup, int>{};
+    for (final BookItem b in all) {
+      families[b.format.group] = (families[b.format.group] ?? 0) + 1;
+    }
+    // A family no longer present (or the only one) falls back to All.
+    final FormatGroup? family = families.length > 1 && families.containsKey(_family) ? _family : null;
+    final List<BookItem> items = sortBooks(
+      all.where((BookItem b) => _keep(b, family) && (_matches == null || _matches!.contains(b.entry.id))).toList(),
+      _query.isNotEmpty ? 'title' : sort,
+    );
+    return _shown = _Shown(
+      items: items,
+      families: families.keys.toSet(),
+      family: family,
+      books: items.every((BookItem b) => b.format.book),
+      unread: items.where((BookItem b) => b.format.book && b.unread).length,
+    );
+  }
+
+  /// Rows already eased in: a filter change eases in only what appears.
+  final Set<Key> _seen = <Key>{};
+
+  Widget _ease(int i, Key key, Widget child) =>
+      StaggeredEntrance(key: key, index: i, animate: i < 9 && _seen.add(key), child: child);
 
   bool _keep(BookItem b, FormatGroup? family) =>
       (family == null || b.format.group == family) &&
@@ -72,29 +134,23 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
   @override
   Widget build(BuildContext context) {
     final UnfurlColors c = context.colors;
-    final AppSettings s = ref.watch(settingsProvider);
+    final (bool asGrid, String sort, bool findOnDevice) = ref.watch(
+      settingsProvider.select((AppSettings s) => (s.libraryGrid, s.librarySort, s.findOnDevice)),
+    );
     final List<BookItem> all = ref.watch(booksProvider).value ?? const <BookItem>[];
     final List<Folder> folders = ref.watch(foldersProvider).value ?? const <Folder>[];
-    final Map<int, int> counts = ref.watch(readableCountsProvider).value ?? const <int, int>{};
-    final Map<FormatGroup, int> families = <FormatGroup, int>{};
-    for (final BookItem b in all) {
-      families[b.format.group] = (families[b.format.group] ?? 0) + 1;
-    }
-    // A family no longer present (or the only one) falls back to All.
-    final FormatGroup? family = families.length > 1 && families.containsKey(_family) ? _family : null;
-    final List<BookItem> filtered = sortBooks(
-      all.where((BookItem b) => _keep(b, family) && (_matches == null || _matches!.contains(b.entry.id))).toList(),
-      _query.isNotEmpty ? 'title' : s.librarySort,
-    );
-    final bool books = filtered.every((BookItem b) => b.format.book);
-    final int unread = filtered.where((BookItem b) => b.format.book && b.unread).length;
+    final _Shown shown = _show(all, sort);
+    final List<BookItem> filtered = shown.items;
+    final FormatGroup? family = shown.family;
+    final bool books = shown.books;
+    final int unread = shown.unread;
     final bool anyFile = !books;
     // "Find books across this device" lists every folder's books, so the
     // folder row would list every folder: it steps away (board 5, X7).
-    final bool device = s.findOnDevice && ref.watch(filesAccessProvider.select((FilesAccess a) => a.granted));
+    final bool device = findOnDevice && ref.watch(filesAccessProvider.select((FilesAccess a) => a.granted));
     final CoverGrid grid = CoverGrid.of(context);
     final bool showFolders = !device && _status == _Status.all && _query.isEmpty && folders.isNotEmpty;
-    final String sortLabel = switch (s.librarySort) {
+    final String sortLabel = switch (sort) {
       'title' => 'Title',
       'progress' => 'Progress',
       _ => 'Recent',
@@ -104,7 +160,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
       body: HeaderPage(
         header: HeaderSearch(
           hint: 'Search library',
-          onChanged: (String q) => unawaited(_search(q)),
+          onChanged: _search,
           enabled: !(folders.isEmpty && all.isEmpty && !device),
           builder: (BuildContext context, Widget? search) => AppHeader(
             title: 'Library',
@@ -114,7 +170,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                 builder: (BuildContext b) => AppIconButton(
                   icon: AppIcons.moreHoriz,
                   semanticLabel: 'Sort and view',
-                  onPressed: () => _menu(b, s),
+                  onPressed: () => _menu(b, asGrid: asGrid, sort: sort),
                 ),
               ),
             ],
@@ -142,10 +198,10 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                   SliverToBoxAdapter(child: SizedBox(height: inset + Space.xs)),
                   // Families present, in the spec's order; none with
                   // only one (board 6, V3 chips).
-                  if (families.length > 1)
+                  if (shown.families.length > 1)
                     SliverToBoxAdapter(
                       child: FormatChips(
-                        present: families.keys.toSet(),
+                        present: shown.families,
                         selected: family,
                         shown: filtered.length,
                         onSelected: (FormatGroup? g) => setState(() => _family = g),
@@ -161,9 +217,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                       child: AnimatedOpacity(
                         opacity: showFolders ? 1 : 0,
                         duration: Motion.of(context, Motion.fast),
-                        child: showFolders
-                            ? _FolderRow(folders: folders, counts: counts)
-                            : const SizedBox(width: double.infinity),
+                        child: showFolders ? _FolderRow(folders: folders) : const SizedBox(width: double.infinity),
                       ),
                     ),
                   ),
@@ -209,10 +263,12 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                       sliver: SliverList.separated(
                         itemCount: filtered.length,
                         separatorBuilder: (BuildContext context, int i) => const SizedBox(height: Space.row),
-                        itemBuilder: (BuildContext context, int i) => _SearchCard(book: filtered[i], query: _query),
+                        findItemIndexCallback: shown.indexOf,
+                        itemBuilder: (BuildContext context, int i) =>
+                            _SearchCard(key: _Shown.keyOf(filtered[i]), book: filtered[i], query: _query),
                       ),
                     )
-                  else if (s.libraryGrid)
+                  else if (asGrid)
                     SliverPadding(
                       padding: const EdgeInsets.fromLTRB(Space.screen, 0, Space.screen, Space.bottomSafe),
                       sliver: SliverGrid.builder(
@@ -225,12 +281,14 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                           crossAxisSpacing: grid.columns == 3 ? 0 : 12,
                         ),
                         itemCount: filtered.length,
-                        itemBuilder: (BuildContext context, int i) => Align(
-                          alignment: grid.alignment(i),
-                          child: SizedBox(
-                            width: grid.tile,
-                            child: Reveal(
-                              index: i < 9 ? i : 0,
+                        findChildIndexCallback: shown.indexOf,
+                        itemBuilder: (BuildContext context, int i) => _ease(
+                          i,
+                          _Shown.keyOf(filtered[i]),
+                          Align(
+                            alignment: grid.alignment(i),
+                            child: SizedBox(
+                              width: grid.tile,
                               child: _BookTile(book: filtered[i], width: grid.tile, height: grid.cover),
                             ),
                           ),
@@ -242,11 +300,13 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                       padding: const EdgeInsets.fromLTRB(Space.screen, 0, Space.screen, Space.bottomSafe),
                       sliver: SliverList.builder(
                         itemCount: filtered.length,
-                        itemBuilder: (BuildContext context, int i) => ListGroupRow(
-                          first: i == 0,
-                          last: i == filtered.length - 1,
-                          child: Reveal(
-                            index: i < 9 ? i : 0,
+                        findChildIndexCallback: shown.indexOf,
+                        itemBuilder: (BuildContext context, int i) => _ease(
+                          i,
+                          _Shown.keyOf(filtered[i]),
+                          ListGroupRow(
+                            first: i == 0,
+                            last: i == filtered.length - 1,
                             child: _BookRow(book: filtered[i]),
                           ),
                         ),
@@ -258,7 +318,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
     );
   }
 
-  Future<void> _menu(BuildContext anchor, AppSettings s) async {
+  Future<void> _menu(BuildContext anchor, {required bool asGrid, required String sort}) async {
     final String? v = await showAppMenu<String>(
       context: context,
       anchorContext: anchor,
@@ -267,19 +327,19 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
           value: 'recent',
           label: 'Sort: Recent',
           icon: AppIcons.schedule,
-          selected: s.librarySort == 'recent',
+          selected: sort == 'recent',
         ),
         AppMenuEntry<String>(
           value: 'title',
           label: 'Sort: Title',
           icon: AppIcons.sortByAlpha,
-          selected: s.librarySort == 'title',
+          selected: sort == 'title',
         ),
         AppMenuEntry<String>(
           value: 'progress',
           label: 'Sort: Progress',
           icon: AppIcons.donutLarge,
-          selected: s.librarySort == 'progress',
+          selected: sort == 'progress',
         ),
         const AppMenuEntry<String>.divider(),
         AppMenuEntry<String>(
@@ -291,7 +351,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
         AppMenuEntry<String>(
           value: 'show:unread',
           label: 'Show: Unread',
-          icon: AppIcons.bookmark,
+          icon: AppIcons.unreadDot,
           selected: _status == _Status.unread,
         ),
         AppMenuEntry<String>(
@@ -301,8 +361,8 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
           selected: _status == _Status.finished,
         ),
         const AppMenuEntry<String>.divider(),
-        AppMenuEntry<String>(value: 'grid', label: 'View: Grid', icon: AppIcons.gridView, selected: s.libraryGrid),
-        AppMenuEntry<String>(value: 'list', label: 'View: List', icon: AppIcons.viewList, selected: !s.libraryGrid),
+        AppMenuEntry<String>(value: 'grid', label: 'View: Grid', icon: AppIcons.gridView, selected: asGrid),
+        AppMenuEntry<String>(value: 'list', label: 'View: List', icon: AppIcons.viewList, selected: !asGrid),
         const AppMenuEntry<String>.divider(),
         const AppMenuEntry<String>(
           value: 'add',
@@ -339,64 +399,76 @@ double _lineHeight(BuildContext context, TextStyle style) {
   return h;
 }
 
-class _FolderRow extends StatelessWidget {
-  const _FolderRow({required this.folders, required this.counts});
+/// What the Library shows now.
+class _Shown {
+  _Shown({
+    required this.items,
+    required this.families,
+    required this.family,
+    required this.books,
+    required this.unread,
+  });
+
+  final List<BookItem> items;
+  final Set<FormatGroup> families;
+  final FormatGroup? family;
+
+  /// Only books (no documents, sheets or images).
+  final bool books;
+  final int unread;
+
+  static Key keyOf(BookItem b) => ValueKey<int>(b.entry.id);
+
+  late final Map<Key, int> _index = <Key, int>{for (int i = 0; i < items.length; i++) keyOf(items[i]): i};
+
+  int? indexOf(Key key) => _index[key];
+}
+
+class _FolderRow extends ConsumerWidget {
+  const _FolderRow({required this.folders});
 
   final List<Folder> folders;
-  final Map<int, int> counts;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final UnfurlColors c = context.colors;
+    final Map<int, int> counts = ref.watch(readableCountsProvider).value ?? const <int, int>{};
     Widget card({
       required IconData icon,
       required String name,
       String? meta,
       Color? tint,
       required VoidCallback onTap,
-    }) => Semantics(
-      button: true,
-      label: meta == null ? name : '$name, $meta',
+    }) => SurfaceCard(
+      semanticLabel: meta == null ? name : '$name, $meta',
       onTap: onTap,
-      excludeSemantics: true,
-      child: Material(
-        color: c.surfaceContainer,
-        shape: RoundedRectangleBorder(
-          borderRadius: Radii.cardR,
-          side: BorderSide(color: c.outline),
-        ),
-        child: InkWell(
-          customBorder: const RoundedRectangleBorder(borderRadius: Radii.cardR),
-          onTap: onTap,
-          child: Container(
-            width: 128,
-            padding: const EdgeInsets.all(Space.md),
-            child: Column(
+      padding: const EdgeInsets.all(Space.md),
+      child: SizedBox(
+        width: 128 - Space.md * 2,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          spacing: Space.sm,
+          children: <Widget>[
+            AppIcon(icon, color: tint ?? c.icon),
+            Column(
               crossAxisAlignment: CrossAxisAlignment.start,
-              spacing: Space.sm,
               children: <Widget>[
-                AppIcon(icon, color: tint ?? c.icon),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: <Widget>[
-                    Text(
-                      name,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: UnfurlType.titleMedium.copyWith(fontSize: 14, height: 1.25, color: tint ?? c.onSurface),
-                    ),
-                    if (meta != null)
-                      Text(
-                        meta,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: UnfurlType.monoLabel.copyWith(color: c.onSurfaceVariant),
-                      ),
-                  ],
+                Text(
+                  name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: UnfurlType.titleMedium.copyWith(fontSize: 14, height: 1.25, color: tint ?? c.onSurface),
                 ),
+                if (meta != null)
+                  Text(
+                    meta,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: UnfurlType.monoLabel.copyWith(color: c.onSurfaceVariant),
+                  ),
               ],
             ),
-          ),
+          ],
         ),
       ),
     );
@@ -519,7 +591,7 @@ class _BookRow extends ConsumerWidget {
     final UnfurlColors c = context.colors;
     final String state = book.finished ? 'Finished' : (book.unread ? 'New' : '${(book.progress * 100).round()}%');
     final bool file = !book.format.book;
-    return InkWell(
+    return PressableRow(
       onTap: () => openBook(context, book),
       onLongPress: () => showBookSheet(context, ref, book),
       child: Padding(
@@ -594,7 +666,7 @@ class _BookRow extends ConsumerWidget {
 
 /// A search result: the match marked the way Mull's search marks it.
 class _SearchCard extends ConsumerWidget {
-  const _SearchCard({required this.book, required this.query});
+  const _SearchCard({required this.book, required this.query, super.key});
 
   final BookItem book;
   final String query;
@@ -630,51 +702,41 @@ class _SearchCard extends ConsumerWidget {
       return TextSpan(style: base, children: out);
     }
 
-    return Material(
-      color: c.surfaceContainer,
-      shape: RoundedRectangleBorder(
-        borderRadius: Radii.cardR,
-        side: BorderSide(color: c.outline),
-      ),
-      child: InkWell(
-        customBorder: const RoundedRectangleBorder(borderRadius: Radii.cardR),
-        onTap: () => openBook(context, book),
-        onLongPress: () => showBookSheet(context, ref, book),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: Space.lg, vertical: 14),
-          child: Row(
-            spacing: 14,
-            children: <Widget>[
-              CoverArt(
-                title: book.title,
-                author: book.author,
-                fingerprint: book.fingerprint,
-                format: book.format,
-                width: 44,
-                height: 62,
-              ),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: <Widget>[
-                    Text.rich(marked(book.title, UnfurlType.titleMedium.copyWith(fontSize: 15, color: c.onSurface))),
-                    if (book.author != null)
-                      Text.rich(
-                        marked(
-                          book.author!,
-                          UnfurlType.note.copyWith(fontSize: 13, height: 1.5, color: c.onSurfaceVariant),
-                        ),
-                      ),
-                    Text(
-                      '${Formats.labelOf(book.entry.name)} · ${book.doc?.where?.toLowerCase() ?? (book.unread ? 'not started' : '${(book.progress * 100).round()}%')}',
-                      style: UnfurlType.monoLabel.copyWith(height: 1.6, color: c.onSurfaceVariant),
-                    ),
-                  ],
-                ),
-              ),
-            ],
+    return SurfaceCard(
+      onTap: () => openBook(context, book),
+      onLongPress: () => showBookSheet(context, ref, book),
+      padding: const EdgeInsets.symmetric(horizontal: Space.lg, vertical: 14),
+      child: Row(
+        spacing: 14,
+        children: <Widget>[
+          CoverArt(
+            title: book.title,
+            author: book.author,
+            fingerprint: book.fingerprint,
+            format: book.format,
+            width: 44,
+            height: 62,
           ),
-        ),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text.rich(marked(book.title, UnfurlType.titleMedium.copyWith(fontSize: 15, color: c.onSurface))),
+                if (book.author != null)
+                  Text.rich(
+                    marked(
+                      book.author!,
+                      UnfurlType.note.copyWith(fontSize: 13, height: 1.5, color: c.onSurfaceVariant),
+                    ),
+                  ),
+                Text(
+                  '${Formats.labelOf(book.entry.name)} · ${book.doc?.where?.toLowerCase() ?? (book.unread ? 'not started' : '${(book.progress * 100).round()}%')}',
+                  style: UnfurlType.monoLabel.copyWith(height: 1.6, color: c.onSurfaceVariant),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -685,18 +747,21 @@ Future<void> showBookSheet(BuildContext context, WidgetRef ref, BookItem book) {
   final String state = book.finished ? 'Finished' : (book.unread ? 'Not started' : '${(book.progress * 100).round()}%');
   return showReaderSheet<void>(context, (BuildContext ctx) {
     final UnfurlColors c = ctx.colors;
-    Widget row(IconData icon, String label, VoidCallback onTap) => InkWell(
+    Widget row(IconData icon, String label, VoidCallback onTap) => PressableRow(
       onTap: onTap,
+      semanticLabel: label,
       borderRadius: Radii.cardR,
-      child: SizedBox(
-        height: 56,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(minHeight: 56),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: Space.lg),
           child: Row(
             spacing: 18,
             children: <Widget>[
               AppIcon(icon, color: c.icon),
-              Text(label, style: UnfurlType.body.copyWith(height: 1.3, color: c.onSurface)),
+              Expanded(
+                child: Text(label, style: UnfurlType.body.copyWith(height: 1.3, color: c.onSurface)),
+              ),
             ],
           ),
         ),
@@ -777,7 +842,7 @@ Future<void> showBookSheet(BuildContext context, WidgetRef ref, BookItem book) {
           }),
         if (book.format.book)
           row(
-            book.finished ? AppIcons.history : AppIcons.taskAlt,
+            book.finished ? AppIcons.history : AppIcons.checkCircle,
             book.finished ? 'Mark as unread' : 'Mark as finished',
             () async {
               Navigator.of(ctx).pop();
@@ -791,7 +856,7 @@ Future<void> showBookSheet(BuildContext context, WidgetRef ref, BookItem book) {
         Container(
           margin: const EdgeInsets.fromLTRB(Space.sm, Space.xs, Space.sm, 0),
           decoration: BoxDecoration(color: c.dangerContainer, borderRadius: Radii.cardR),
-          child: InkWell(
+          child: PressableRow(
             borderRadius: Radii.cardR,
             onTap: () async {
               Navigator.of(ctx).pop();

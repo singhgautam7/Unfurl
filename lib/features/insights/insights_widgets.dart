@@ -129,15 +129,12 @@ class ChartHeader extends StatelessWidget {
       child: Pressable(
         kind: PressKind.iconButton,
         enabled: onTap != null,
-        child: InkResponse(
-          onTap: onTap,
-          radius: 20,
-          child: SizedBox(
-            width: 32,
-            height: IconSpec.tapTarget,
-            child: Center(
-              child: Text(glyph, style: mono.copyWith(color: onTap == null ? c.onSurfaceMuted : c.onSurface)),
-            ),
+        onTap: onTap,
+        child: SizedBox(
+          width: 32,
+          height: IconSpec.tapTarget,
+          child: Center(
+            child: Text(glyph, style: mono.copyWith(color: onTap == null ? c.onSurfaceMuted : c.onSurface)),
           ),
         ),
       ),
@@ -149,7 +146,9 @@ class ChartHeader extends StatelessWidget {
           child: Text(total, style: UnfurlType.chartTotal.copyWith(color: c.onSurface)),
         ),
         if (onBack != null || onForward != null) step('‹', 'Earlier', onBack),
-        Text(range, style: mono),
+        Flexible(
+          child: Text(range, maxLines: 1, overflow: TextOverflow.ellipsis, style: mono),
+        ),
         if (onBack != null || onForward != null) step('›', 'Later', onForward),
       ],
     );
@@ -216,27 +215,29 @@ class _BarChartState extends State<BarChart> {
           target: _version.toDouble(),
           builder: (BuildContext context, double v) => SizedBox(
             height: widget.height + valueSpace + 16,
-            child: CustomPaint(
-              size: Size.infinite,
-              painter: _BarsPainter(
-                values: widget.values,
-                prev: _prev,
-                morph: (1 + v - _version).clamp(0.0, 1.0),
-                labels: widget.labels,
-                highlight: widget.highlight,
-                plot: widget.height,
-                valueSpace: valueSpace,
-                barMaxWidth: widget.barMaxWidth,
-                gap: widget.gap,
-                radius: widget.radius,
-                progress: p,
-                bar: c.primary,
-                hi: c.accent,
-                stub: c.outline,
-                label: UnfurlType.monoSmall.copyWith(height: 1, color: c.onSurfaceVariant),
-                labelHi: UnfurlType.monoSmall.copyWith(height: 1, fontWeight: FontWeight.w600, color: c.onSurface),
-                valueStyle: UnfurlType.monoSmall.copyWith(height: 1, fontWeight: FontWeight.w600, color: c.onSurface),
-                direction: Directionality.of(context),
+            child: RepaintBoundary(
+              child: CustomPaint(
+                size: Size.infinite,
+                painter: _BarsPainter(
+                  values: widget.values,
+                  prev: _prev,
+                  morph: (1 + v - _version).clamp(0.0, 1.0),
+                  labels: widget.labels,
+                  highlight: widget.highlight,
+                  plot: widget.height,
+                  valueSpace: valueSpace,
+                  barMaxWidth: widget.barMaxWidth,
+                  gap: widget.gap,
+                  radius: widget.radius,
+                  progress: p,
+                  bar: c.primary,
+                  hi: c.accent,
+                  stub: c.outline,
+                  label: UnfurlType.monoSmall.copyWith(height: 1, color: c.onSurfaceVariant),
+                  labelHi: UnfurlType.monoSmall.copyWith(height: 1, fontWeight: FontWeight.w600, color: c.onSurface),
+                  valueStyle: UnfurlType.monoSmall.copyWith(height: 1, fontWeight: FontWeight.w600, color: c.onSurface),
+                  direction: Directionality.of(context),
+                ),
               ),
             ),
           ),
@@ -347,7 +348,16 @@ class _BarsPainter extends CustomPainter {
       old.bar != bar ||
       old.hi != hi ||
       old.highlight != highlight ||
-      old.labels != labels;
+      old.plot != plot ||
+      old.valueSpace != valueSpace ||
+      old.barMaxWidth != barMaxWidth ||
+      old.gap != gap ||
+      old.radius != radius ||
+      old.stub != stub ||
+      old.label != label ||
+      old.direction != direction ||
+      !listEquals(old.prev, prev) ||
+      !listEquals(old.labels, labels);
 }
 
 /// 53 weeks × 7 days, Monday on top; five levels from the seed's primary.
@@ -379,9 +389,11 @@ class Heatmap extends StatelessWidget {
               final double cell = (box.maxWidth - gap * 52) / 53;
               return ChartDrawIn(
                 kind: ChartKind.line,
-                builder: (BuildContext context, ChartProgress p) => CustomPaint(
-                  size: Size(box.maxWidth, cell * 7 + gap * 6),
-                  painter: _HeatPainter(minutes: minutes, levels: levels, cell: cell, gap: gap, fade: p.t),
+                builder: (BuildContext context, ChartProgress p) => RepaintBoundary(
+                  child: CustomPaint(
+                    size: Size(box.maxWidth, cell * 7 + gap * 6),
+                    painter: _HeatPainter(minutes: minutes, levels: levels, cell: cell, gap: gap, fade: p.t),
+                  ),
                 ),
               );
             },
@@ -637,37 +649,36 @@ class InsightsCard extends StatelessWidget {
       label: 'Insights. $value. $sub',
       excludeSemantics: true,
       child: Pressable(
-        child: Material(
-          color: c.primaryContainer,
-          borderRadius: Radii.cardR,
-          child: InkWell(
-            borderRadius: Radii.cardR,
-            onTap: onTap,
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(18, 16, 10, 16),
-              child: Row(
-                spacing: 14,
-                children: <Widget>[
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      spacing: 6,
-                      children: <Widget>[
-                        Row(
-                          spacing: 6,
-                          children: <Widget>[
-                            AppIcon(AppIcons.insights, size: 18, color: c.onPrimaryContainer),
-                            Text(
-                              'Insights',
-                              style: UnfurlType.label.copyWith(fontSize: 13, color: c.onPrimaryContainer).weight(600),
-                            ),
-                          ],
-                        ),
-                        Text(value, style: UnfurlType.cardValue.copyWith(color: c.onPrimaryContainer)),
-                        Text(sub, style: UnfurlType.tableCell.copyWith(height: 1.35, color: c.onPrimaryContainer)),
-                      ],
-                    ),
+        onTap: onTap,
+        child: DecoratedBox(
+          decoration: BoxDecoration(color: c.primaryContainer, borderRadius: Radii.cardR),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(18, 16, 10, 16),
+            child: Row(
+              spacing: 14,
+              children: <Widget>[
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    spacing: 6,
+                    children: <Widget>[
+                      Row(
+                        spacing: 6,
+                        children: <Widget>[
+                          AppIcon(AppIcons.insights, size: 18, color: c.onPrimaryContainer),
+                          Text(
+                            'Insights',
+                            style: UnfurlType.label.copyWith(fontSize: 13, color: c.onPrimaryContainer).weight(600),
+                          ),
+                        ],
+                      ),
+                      Text(value, style: UnfurlType.cardValue.copyWith(color: c.onPrimaryContainer)),
+                      Text(sub, style: UnfurlType.tableCell.copyWith(height: 1.35, color: c.onPrimaryContainer)),
+                    ],
                   ),
+                ),
+                // At large text the week gives its room to the words.
+                if (MediaQuery.textScalerOf(context).scale(1) < 1.5)
                   SizedBox(
                     height: 52,
                     child: Row(
@@ -686,9 +697,8 @@ class InsightsCard extends StatelessWidget {
                       ],
                     ),
                   ),
-                  AppIcon(AppIcons.chevronRight, color: c.onPrimaryContainer),
-                ],
-              ),
+                AppIcon(AppIcons.chevronRight, color: c.onPrimaryContainer),
+              ],
             ),
           ),
         ),

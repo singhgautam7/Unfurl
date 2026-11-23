@@ -130,12 +130,12 @@ class _Dashboard extends ConsumerWidget {
       items: <(String, String, String?)>[
         (
           'Reader mode',
-          wpm == null ? '—' : '${wpm.round()} wpm',
+          wpm == null ? 'None yet' : '${wpm.round()} wpm',
           wpm == null ? 'after 30 min in Reader' : 'median · last 30 days',
         ),
         (
           'Page view',
-          pph == null ? '—' : '${pph.round()} pages/h',
+          pph == null ? 'None yet' : '${pph.round()} pages/h',
           pph == null ? 'after 30 min in Page view' : 'median · last 30 days',
         ),
       ],
@@ -171,12 +171,12 @@ class _Dashboard extends ConsumerWidget {
               items: <(String, String, String?)>[
                 (
                   'Longest session',
-                  longest == null ? '—' : formatMinutes(longest.$1),
+                  longest == null ? 'None yet' : formatMinutes(longest.$1),
                   longest == null
                       ? null
                       : '${formatDay(longest.$2, now: t)}${data.longestTitle == null ? '' : ' · ${data.longestTitle}'}',
                 ),
-                ('Average session', average == null ? '—' : formatMinutes(average), 'last 90 days'),
+                ('Average session', average == null ? 'None yet' : formatMinutes(average), 'last 90 days'),
               ],
               numbers: <InsightNumber?>[
                 if (longest == null) null else InsightNumber(longest.$1, formatMinutes),
@@ -361,50 +361,47 @@ class _MostRead extends StatelessWidget {
         children: <Widget>[
           for (int i = 0; i < books.length; i++) ...<Widget>[
             if (i > 0) Divider(height: 1, color: c.divider),
-            Pressable(
-              kind: PressKind.row,
-              child: InkWell(
-                onTap: () => showBookInsights(
-                  context,
-                  fingerprint: books[i].fingerprint,
-                  title: books[i].label,
-                  name: books[i].name ?? books[i].label,
-                ),
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(minHeight: 64),
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(Space.lg, Space.sm, Space.md, Space.sm),
-                    child: Row(
-                      spacing: 14,
-                      children: <Widget>[
-                        CoverArt(
-                          title: books[i].label,
-                          fingerprint: books[i].fingerprint,
-                          format: Formats.of(books[i].name ?? '') ?? Formats.epub,
-                          width: 32,
-                          height: 46,
+            PressableRow(
+              onTap: () => showBookInsights(
+                context,
+                fingerprint: books[i].fingerprint,
+                title: books[i].label,
+                name: books[i].name ?? books[i].label,
+              ),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(minHeight: 64),
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(Space.lg, Space.sm, Space.md, Space.sm),
+                  child: Row(
+                    spacing: 14,
+                    children: <Widget>[
+                      CoverArt(
+                        title: books[i].label,
+                        fingerprint: books[i].fingerprint,
+                        format: Formats.of(books[i].name ?? '') ?? Formats.epub,
+                        width: 32,
+                        height: 46,
+                      ),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          spacing: 3,
+                          children: <Widget>[
+                            Text(
+                              books[i].label,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: UnfurlType.titleMedium.copyWith(color: c.onSurface),
+                            ),
+                            Text(
+                              '${formatMinutes(books[i].ms)} · ${Formats.labelOf(books[i].name ?? '')}',
+                              style: UnfurlType.monoLabel.copyWith(color: c.onSurfaceVariant),
+                            ),
+                          ],
                         ),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            spacing: 3,
-                            children: <Widget>[
-                              Text(
-                                books[i].label,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: UnfurlType.titleMedium.copyWith(color: c.onSurface),
-                              ),
-                              Text(
-                                '${formatMinutes(books[i].ms)} · ${Formats.labelOf(books[i].name ?? '')}',
-                                style: UnfurlType.monoLabel.copyWith(color: c.onSurfaceVariant),
-                              ),
-                            ],
-                          ),
-                        ),
-                        AppIcon(AppIcons.chevronRight, color: c.iconMuted),
-                      ],
-                    ),
+                      ),
+                      AppIcon(AppIcons.chevronRight, color: c.iconMuted),
+                    ],
                   ),
                 ),
               ),

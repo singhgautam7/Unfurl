@@ -2,7 +2,6 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
-import '../../core/motion/kit.dart';
 import '../../core/explorer.dart';
 import '../../core/files.dart';
 import '../../core/open.dart';
@@ -13,6 +12,7 @@ import '../../core/theme/tokens.dart';
 import '../../core/theme/typography.dart';
 import '../../design_system/app_icon.dart';
 import '../../design_system/buttons.dart';
+import '../../design_system/containers.dart';
 import '../../design_system/sheets.dart';
 import '../../formats/format_registry.dart';
 import '../insights/book_insights.dart';
@@ -178,22 +178,19 @@ class _ActionRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final UnfurlColors c = context.colors;
-    return Pressable(
-      kind: PressKind.row,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: Radii.thumbR,
-        child: SizedBox(
-          height: 52,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: Space.md),
-            child: Row(
-              spacing: Space.lg,
-              children: <Widget>[
-                AppIcon(icon, color: c.icon),
-                Text(label, style: UnfurlType.titleMedium.copyWith(color: c.onSurface).weight(500)),
-              ],
-            ),
+    return PressableRow(
+      onTap: onTap,
+      borderRadius: Radii.thumbR,
+      child: SizedBox(
+        height: 52,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: Space.md),
+          child: Row(
+            spacing: Space.lg,
+            children: <Widget>[
+              AppIcon(icon, color: c.icon),
+              Text(label, style: UnfurlType.titleMedium.copyWith(color: c.onSurface).weight(500)),
+            ],
           ),
         ),
       ),

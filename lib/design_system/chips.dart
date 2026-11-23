@@ -10,16 +10,20 @@ import '../core/theme/tokens.dart';
 import '../core/theme/typography.dart';
 import '../formats/format_registry.dart';
 import 'app_icon.dart';
+import 'buttons.dart' show pressedLayer;
 
 /// Corner radius of a selected chip or segment (Kuber decision 26: unselected
 /// is a full pill, selected a 12dp squircle).
 const double kSelectedRadius = 12;
 
-/// A filter chip (board 2): 40dp stadium, `surfaceContainerHigh`; selected,
-/// `primaryContainer` with its count in a `surface` badge and 12dp corners
-/// (the shape morphs on `fastCurve`; Subtle `subtleCurve`; Off snaps). A
-/// toggle chip ("Include subfolders") is outlined on `surface` while off.
-/// Every chip follows the rule, as Kuber's do.
+/// A filter chip (Kuber's `KuberChip`, as Mull ported it): a 32dp pill drawn
+/// in a 48dp tall hit region. Unselected it is a stadium with a 1dp outline
+/// and no fill; selected, a 12dp squircle in `primaryContainer`, with its
+/// count growing in as a `surface` badge. The shape follows the selection
+/// (not the press) on `fastCurve` at Expressive and snaps otherwise; the fill
+/// fades on `fxFast`. Press is a scale only, with a 10% state layer, no ink.
+/// The chip ticks once for its own tap. A [toggle] chip ("Include
+/// subfolders") looks and behaves the same; the flag only names the role.
 class PillChip extends StatelessWidget {
   const PillChip({
     required this.label,
@@ -31,7 +35,12 @@ class PillChip extends StatelessWidget {
     super.key,
   });
 
-  static const double minHeight = 40;
+  /// The drawn height; it grows with the text.
+  static const double height = 32;
+
+  /// `runSpacing` of a wrap of chips: each is [height] drawn in a 48dp tall
+  /// hit region, so this leaves [Space.sm] between the pills, as beside them.
+  static const double runSpacing = Space.sm - (IconSpec.tapTarget - height);
 
   final String label;
   final VoidCallback? onTap;
@@ -50,92 +59,130 @@ class PillChip extends StatelessWidget {
     final MotionLevel level = Motion.levelOf(context);
     final bool off = level == MotionLevel.off;
     final SpringCurve shape = Motion.spatialCurve(level, Motion.fastCurve);
+    final SpringCurve grow = Motion.spatialCurve(level, Motion.standardCurve);
     final Color fg = selected ? c.onPrimaryContainer : c.onSurface;
     final bool showCount = selected && count != null;
-    final Color bg = selected
-        ? c.primaryContainer
-        : toggle
-        ? c.surface
-        : c.surfaceContainerHigh;
-    final BorderSide side = toggle && !selected ? BorderSide(color: c.outline) : BorderSide.none;
-    return Semantics(
-      button: true,
-      selected: selected,
-      child: Pressable(
-        kind: PressKind.chip,
-        morphCorners: false,
-        enabled: onTap != null,
-        child: TweenAnimationBuilder<double>(
-          tween: Tween<double>(end: selected ? 1 : 0),
-          duration: off ? Duration.zero : shape.settle,
-          curve: shape.clamped,
-          builder: (BuildContext context, double sq, Widget? child) => TweenAnimationBuilder<Color?>(
-            tween: ColorTween(end: bg),
-            duration: off ? Motion.fxInstant : Motion.fxFast,
-            curve: Motion.curveEffects,
-            builder: (BuildContext context, Color? fill, Widget? child) {
-              final ShapeBorder border = RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(minHeight / 2 + (kSelectedRadius - minHeight / 2) * sq),
-                side: side,
-              );
-              return ConstrainedBox(
-                constraints: const BoxConstraints(minHeight: minHeight),
-                child: Material(
-                  color: fill,
-                  animationDuration: Duration.zero,
-                  shape: border,
-                  clipBehavior: Clip.antiAlias,
-                  child: InkWell(
-                    onTap: onTap == null
-                        ? null
-                        : () {
-                            Haptics.tick();
-                            onTap!();
-                          },
-                    child: child,
+    final bool tappable = onTap != null;
+    void tap() {
+      Haptics.tick();
+      onTap!();
+    }
+
+    final Widget body = TweenAnimationBuilder<double>(
+      tween: Tween<double>(end: showCount ? 1 : 0),
+      duration: off ? Duration.zero : grow.settle,
+      curve: grow.clamped,
+      builder: (BuildContext context, double k, Widget? _) => Padding(
+        padding: EdgeInsets.only(left: leading != null ? Space.md : Space.lg, right: Space.lg - Space.sm * k),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            if (leading != null)
+              Padding(
+                padding: const EdgeInsets.only(right: Space.sm),
+                child: IconTheme.merge(
+                  data: IconThemeData(color: fg, size: 18),
+                  child: leading!,
+                ),
+              ),
+            AnimatedWeight(
+              label,
+              isActive: selected,
+              rest: 500,
+              active: 650,
+              style: UnfurlType.titleMedium.copyWith(color: fg),
+            ),
+            // Grows and shrinks with the selection: popping it in and out
+            // moved every chip after this one in a single frame.
+            if (count != null && k > 0)
+              ClipRect(
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  widthFactor: k,
+                  child: Opacity(
+                    opacity: k.clamp(0.0, 1.0),
+                    child: Padding(
+                      padding: const EdgeInsets.only(left: Space.sm),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: Space.sm, vertical: Space.xs),
+                        decoration: BoxDecoration(color: c.surface, borderRadius: Radii.fullR),
+                        child: Text('$count', style: UnfurlType.monoLabel.copyWith(fontSize: 12, color: fg)),
+                      ),
+                    ),
                   ),
                 ),
-              );
-            },
-            child: child,
-          ),
-          child: Padding(
-            padding: EdgeInsets.only(
-              left: leading != null ? Space.md : Space.lg,
-              right: showCount ? Space.sm : Space.lg,
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              spacing: Space.sm,
-              children: <Widget>[
-                if (leading != null)
-                  IconTheme.merge(
-                    data: IconThemeData(color: fg, size: 18),
-                    child: leading!,
-                  ),
-                AnimatedWeight(
-                  label,
-                  isActive: selected,
-                  rest: 500,
-                  active: 650,
-                  style: UnfurlType.titleMedium.copyWith(color: fg),
-                ),
-                if (showCount)
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: Space.sm, vertical: Space.xs),
-                    decoration: BoxDecoration(color: c.surface, borderRadius: Radii.fullR),
-                    child: Text('$count', style: UnfurlType.monoLabel.copyWith(fontSize: 12, color: fg)),
-                  ),
-              ],
-            ),
-          ),
+              ),
+          ],
         ),
       ),
     );
+
+    Widget chip = Pressable(
+      kind: PressKind.chip,
+      morphCorners: false,
+      haptic: false,
+      enabled: tappable,
+      child: TweenAnimationBuilder<double>(
+        tween: Tween<double>(end: selected ? 1 : 0),
+        duration: level == MotionLevel.expressive ? shape.settle : Duration.zero,
+        curve: shape.clamped,
+        builder: (BuildContext context, double sq, Widget? child) => TweenAnimationBuilder<Color?>(
+          // Not Colors.transparent: that is black at alpha 0, and the fade
+          // from it went through dark grey.
+          tween: ColorTween(end: c.primaryContainer.withValues(alpha: selected ? 1 : 0)),
+          duration: off ? Motion.fxInstant : Motion.fxFast,
+          curve: Motion.curveEffects,
+          builder: (BuildContext context, Color? fill, Widget? child) => Material(
+            color: fill,
+            animationDuration: Duration.zero,
+            shape: _chipShape(sq, c.outline, selected),
+            clipBehavior: Clip.antiAlias,
+            child: InkWell(
+              // The scale and the fill fade are the feedback; ink over the
+              // new fill read as a flicker.
+              splashFactory: NoSplash.splashFactory,
+              overlayColor: pressedLayer(c),
+              onTap: tappable ? tap : null,
+              child: child,
+            ),
+          ),
+          child: child,
+        ),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minHeight: height),
+          child: Center(widthFactor: 1, heightFactor: 1, child: body),
+        ),
+      ),
+    );
+    if (tappable) {
+      chip = GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: tap,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minHeight: IconSpec.tapTarget),
+          child: Center(widthFactor: 1, heightFactor: 1, child: chip),
+        ),
+      );
+    }
+    return Semantics(button: tappable, selected: selected, child: chip);
   }
 }
 
+/// Unselected: a stadium with a 1dp outline; selected: a 12dp squircle with a
+/// clear border; in between the two morph.
+OutlinedBorder _chipShape(double t, Color outline, bool selected) {
+  final StadiumBorder pill = StadiumBorder(side: BorderSide(color: outline));
+  final RoundedRectangleBorder squircle = RoundedRectangleBorder(
+    borderRadius: BorderRadius.circular(kSelectedRadius),
+    side: BorderSide(color: selected ? outline.withValues(alpha: 0) : outline),
+  );
+  if (t <= 0) return pill;
+  if (t >= 1) return squircle;
+  return ShapeBorder.lerp(pill, squircle, t)! as OutlinedBorder;
+}
+
 /// A row of chips that scrolls sideways off the right edge, as on the boards.
+/// 48dp high: the chips' hit regions.
 class ChipRow extends StatelessWidget {
   const ChipRow({required this.children, super.key});
 
@@ -145,8 +192,23 @@ class ChipRow extends StatelessWidget {
   Widget build(BuildContext context) => SingleChildScrollView(
     scrollDirection: Axis.horizontal,
     padding: const EdgeInsets.symmetric(horizontal: Space.screen),
-    child: Row(spacing: Space.sm, children: children),
+    child: ConstrainedBox(
+      constraints: const BoxConstraints(minHeight: IconSpec.tapTarget),
+      child: Row(spacing: Space.sm, children: children),
+    ),
   );
+}
+
+/// Chips that wrap onto rows, [Space.sm] apart down as well as across (each
+/// chip's 48dp hit region overlaps its neighbours' above and below).
+class ChipWrap extends StatelessWidget {
+  const ChipWrap({required this.children, super.key});
+
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) =>
+      Wrap(spacing: Space.sm, runSpacing: PillChip.runSpacing, alignment: WrapAlignment.start, children: children);
 }
 
 /// The type chips of Library and every folder: All, then each family
@@ -180,10 +242,17 @@ class FormatChips extends StatelessWidget {
     final bool all = allSelected ?? selected == null;
     return ChipRow(
       children: <Widget>[
-        PillChip(label: 'All', selected: all, count: shown, onTap: () => onSelected(null)),
+        PillChip(
+          key: const ValueKey<String>('all'),
+          label: 'All',
+          selected: all,
+          count: shown,
+          onTap: () => onSelected(null),
+        ),
         for (final FormatGroup g in FormatGroup.values)
           if (present.contains(g))
             PillChip(
+              key: ValueKey<FormatGroup>(g),
               label: g.label,
               selected: selected == g,
               count: shown,
@@ -318,7 +387,7 @@ class _SegmentedToggleState<T> extends State<SegmentedToggle<T>> with SingleTick
               padding: const EdgeInsets.symmetric(vertical: (IconSpec.tapTarget - _pillHeight) / 2),
               child: TweenAnimationBuilder<double>(
                 tween: Tween<double>(end: restR),
-                duration: off ? Duration.zero : Motion.fxFast,
+                duration: level == MotionLevel.expressive ? Motion.fxFast : Duration.zero,
                 curve: Motion.curveEffects,
                 builder: (BuildContext context, double rest, _) => AnimatedBuilder(
                   animation: _v,
@@ -335,6 +404,8 @@ class _SegmentedToggleState<T> extends State<SegmentedToggle<T>> with SingleTick
                         borderRadius: BorderRadius.circular(r),
                         clipBehavior: Clip.antiAlias,
                         child: InkWell(
+                          splashFactory: NoSplash.splashFactory,
+                          overlayColor: pressedLayer(c),
                           onTap: () => _select(o.$1),
                           child: SizedBox(
                             height: _pillHeight,

@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:math' as math;
 import 'dart:isolate';
 
+import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -13,7 +14,7 @@ import '../../core/files.dart';
 import '../../core/layout.dart';
 import '../../core/library/library.dart';
 import '../../core/locator.dart';
-import '../../core/motion/motion.dart';
+import '../../core/motion/kit.dart';
 import '../../core/open.dart';
 import '../../core/platform/platform.dart';
 import '../../core/providers.dart';
@@ -113,32 +114,10 @@ class FoldersScreen extends ConsumerWidget {
             right: 0,
             bottom: MediaQuery.paddingOf(context).bottom + 28,
             child: Center(
-              child: Material(
-                color: c.primary,
-                shape: const StadiumBorder(),
-                child: InkWell(
-                  customBorder: const StadiumBorder(),
-                  onTap: () => addFolder(context, ref),
-                  child: Container(
-                    height: 56,
-                    padding: const EdgeInsets.fromLTRB(Space.screen, 0, Space.xl, 0),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      spacing: Space.sm,
-                      children: <Widget>[
-                        AppIcon(AppIcons.createNewFolder, color: c.onPrimary),
-                        Flexible(
-                          child: Text(
-                            'Add folder',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: UnfurlType.body.copyWith(height: 1, color: c.onPrimary).weight(600),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
+              child: AppButton(
+                label: 'Add folder',
+                icon: AppIcons.createNewFolder,
+                onPressed: () => addFolder(context, ref),
               ),
             ),
           ),
@@ -172,7 +151,7 @@ class _FolderRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final UnfurlColors c = context.colors;
-    return InkWell(
+    return PressableRow(
       onTap: onTap,
       child: ConstrainedBox(
         constraints: const BoxConstraints(minHeight: 56),
@@ -232,10 +211,12 @@ enum FolderMode {
   picker,
 }
 
+/// The counts of a folder are a data throttle, not an animation.
+
 /// One entry, whichever source it came from.
 @immutable
 class _Item {
-  const _Item({
+  _Item({
     required this.name,
     required this.isDir,
     required this.uri,
@@ -277,7 +258,43 @@ class _Item {
   bool get protected => enriched == -2;
 
   bool get hidden => name.startsWith('.');
-  FormatModule? get format => Formats.of(name, mime);
+
+  // Looked up once per item, not on every filter, sort and tile build.
+  late final FormatModule? format = Formats.of(name, mime);
+  late final String lower = name.toLowerCase();
+  late final String typeLabel = Formats.labelOf(name);
+
+  /// Rows and tiles are keyed by it, so a filter change keeps the ones that stay.
+  late final Key key = ValueKey<String>(uri);
+}
+
+/// What a filter, sort and search leave on screen, computed once per change.
+class _Shown {
+  _Shown({
+    required this.subdirs,
+    required this.dirs,
+    required this.files,
+    required this.shown,
+    required this.unreadable,
+    required this.readable,
+    required this.present,
+    required this.hasOther,
+    required this.anyNonBook,
+  });
+
+  /// Every subfolder, and those the search leaves.
+  final List<_Item> subdirs;
+  final List<_Item> dirs;
+  final List<_Item> files;
+  final List<_Item> shown;
+  final int unreadable;
+  final int readable;
+  final Set<FormatGroup> present;
+  final bool hasOther;
+  final bool anyNonBook;
+
+  /// Built when the list first changes under its rows, not on open.
+  late final Map<Key, int> indexOfKey = <Key, int>{for (int i = 0; i < shown.length; i++) shown[i].key: i};
 }
 
 /// A folder at any depth (A6, and X4/X8 in v2): subfolders first, then
@@ -319,6 +336,7 @@ class _FolderScreenState extends ConsumerState<FolderScreen> {
   bool _deep = false;
   bool _showAll = false;
   String _query = '';
+  Timer? _debounce;
 
   /// name, modified, size or type.
   String _sort = 'name';
@@ -331,6 +349,15 @@ class _FolderScreenState extends ConsumerState<FolderScreen> {
   StreamSubscription<List<(Entry, Document?)>>? _sub;
   List<(Entry, Document?)> _entries = const <(Entry, Document?)>[];
   bool _loaded = false;
+  Timer? _countTimer;
+  bool _countsRunning = false;
+  bool _countsAgain = false;
+  DateTime _countsAt = DateTime.fromMillisecondsSinceEpoch(0);
+
+  /// While a route covers this screen (its tickers are off) nothing is loaded,
+  /// counted or rebuilt; it catches up when uncovered. Null until first built.
+  bool? _active;
+  bool _stale = false;
 
   // Explorer and picker.
   DirListing? _listing;
@@ -365,10 +392,38 @@ class _FolderScreenState extends ConsumerState<FolderScreen> {
   @override
   void initState() {
     super.initState();
+    if (_explorer) unawaited(_startExplorer());
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final bool on = TickerMode.valuesOf(context).enabled;
+    if (on == _active) return;
+    _active = on;
     if (_explorer) {
-      unawaited(_startExplorer());
-    } else {
+      if (on && _stale) {
+        _stale = false;
+        if (_listing != null) _onListing();
+      }
+    } else if (on) {
       _watch();
+    } else {
+      unawaited(_sub?.cancel());
+      _sub = null;
+      _countTimer?.cancel();
+      _countTimer = null;
+    }
+  }
+
+  /// A change that arrived from a listener: applied now, or when uncovered.
+  void _apply(VoidCallback change) {
+    if (!mounted) return;
+    if (_active ?? true) {
+      setState(change);
+    } else {
+      change();
+      _stale = true;
     }
   }
 
@@ -402,6 +457,10 @@ class _FolderScreenState extends ConsumerState<FolderScreen> {
 
   void _onListing() {
     if (!mounted) return;
+    if (!(_active ?? true)) {
+      _stale = true;
+      return;
+    }
     final DirListing l = _listing!;
     setState(() {});
     // Progress and covers for books already read, once the listing is in.
@@ -414,7 +473,7 @@ class _FolderScreenState extends ConsumerState<FolderScreen> {
       if (uris.isNotEmpty) {
         unawaited(
           ref.read(libraryProvider).documentsByUris(uris).then((Map<String, Document> d) {
-            if (mounted) setState(() => _docs = d);
+            _apply(() => _docs = d);
           }),
         );
       }
@@ -423,6 +482,8 @@ class _FolderScreenState extends ConsumerState<FolderScreen> {
 
   @override
   void dispose() {
+    _debounce?.cancel();
+    _countTimer?.cancel();
     unawaited(_sub?.cancel());
     unawaited(_pinSub?.cancel());
     final DirListing? l = _listing;
@@ -437,18 +498,42 @@ class _FolderScreenState extends ConsumerState<FolderScreen> {
 
   void _watch() {
     unawaited(_sub?.cancel());
-    _sub = ref.read(libraryProvider).watchLevel(widget.folderId!, widget.path, deep: _deep).listen((
-      List<(Entry, Document?)> rows,
-    ) async {
-      final Map<String, (int, int)> counts = await ref.read(libraryProvider).countsUnder(widget.folderId!);
-      if (mounted) {
-        setState(() {
-          _entries = rows;
-          _counts = counts;
-          _loaded = true;
-        });
-      }
-    });
+    _sub = ref.read(libraryProvider).watchLevel(widget.folderId!, widget.path, deep: _deep).listen(_onRows);
+  }
+
+  void _onRows(List<(Entry, Document?)> rows) {
+    if (!mounted) return;
+    // Back from under a route: the same rows change nothing, so nothing rebuilds.
+    if (!_loaded || !listEquals(rows, _entries)) {
+      setState(() {
+        _entries = rows;
+        _loaded = true;
+      });
+    }
+    _scheduleCounts();
+  }
+
+  /// At most one load of the counts per [Motion.coalesce] (a scan emits for every
+  /// batch), never on the way to the rows, always one last after the final emission.
+  void _scheduleCounts() {
+    if (_countTimer != null || _countsRunning) {
+      _countsAgain = true;
+      return;
+    }
+    final Duration wait = Motion.coalesce - DateTime.now().difference(_countsAt);
+    _countTimer = Timer(wait.isNegative ? Duration.zero : wait, () => unawaited(_loadCounts()));
+  }
+
+  Future<void> _loadCounts() async {
+    _countTimer = null;
+    _countsRunning = true;
+    _countsAgain = false;
+    _countsAt = DateTime.now();
+    final Map<String, (int, int)> counts = await ref.read(libraryProvider).countsUnder(widget.folderId!);
+    _countsRunning = false;
+    if (!mounted) return;
+    _apply(() => _counts = counts);
+    if (_countsAgain && (_active ?? true)) _scheduleCounts();
   }
 
   /// Include subfolders in Files: every file below, walked off the UI isolate.
@@ -477,7 +562,18 @@ class _FolderScreenState extends ConsumerState<FolderScreen> {
 
   // ------------------------------------------------------------ items
 
+  List<_Item>? _itemsMemo;
+  Object? _itemsKey;
+
+  /// Built once per change of the source, not per read.
   List<_Item> get _items {
+    final Object key = _explorer ? (_deep, _deepItems, _listing, _listing?.entries.length, _docs) : _entries;
+    if (_itemsMemo != null && key == _itemsKey) return _itemsMemo!;
+    _itemsKey = key;
+    return _itemsMemo = _buildItems();
+  }
+
+  List<_Item> _buildItems() {
     if (!_explorer) {
       return <_Item>[
         for (final (Entry e, Document? d) in _entries)
@@ -519,19 +615,20 @@ class _FolderScreenState extends ConsumerState<FolderScreen> {
   // ------------------------------------------------------------ library
 
   Widget _buildLibrary(BuildContext context) {
-    final List<Folder> folders = ref.watch(foldersProvider).value ?? const <Folder>[];
-    final Folder? folder = folders.where((Folder f) => f.id == widget.folderId).firstOrNull;
-    final ScanState? scan = ref.watch(_scansProvider)[widget.folderId];
+    final Folder? folder = ref.watch(
+      foldersProvider.select(
+        (AsyncValue<List<Folder>> v) => v.value?.where((Folder f) => f.id == widget.folderId).firstOrNull,
+      ),
+    );
+    // Only whether it is scanning: the card alone follows each batch.
+    final bool scanning = ref.watch(_scansProvider.select((Map<int, ScanState> m) => m.containsKey(widget.folderId)));
     if (folder == null) return const Scaffold();
     final String title = widget.path.isEmpty ? folder.name : _name;
     final List<String> parts = <String>[folder.name, if (widget.path.isNotEmpty) ...widget.path.split('/')];
-    final List<_Item> all = _items;
-    final List<_Item> subdirs = _deep
-        ? const <_Item>[]
-        : (all.where((_Item e) => e.isDir).toList()
-            ..sort((_Item a, _Item b) => a.name.toLowerCase().compareTo(b.name.toLowerCase())));
-    final List<_Item> files = all.where((_Item e) => !e.isDir).toList();
-    final int unreadable = files.where((_Item e) => e.format == null).length;
+    final _Shown v = _shownOf(showUnsupported: _showAll);
+    final List<_Item> subdirs = v.subdirs;
+    final List<_Item> files = v.files;
+    final int unreadable = v.unreadable;
 
     Widget body;
     if (folder.accessLost) {
@@ -561,7 +658,7 @@ class _FolderScreenState extends ConsumerState<FolderScreen> {
           ),
         ],
       );
-    } else if (_loaded && files.isEmpty && subdirs.isEmpty && scan == null) {
+    } else if (_loaded && files.isEmpty && subdirs.isEmpty && !scanning) {
       body = EmptyState(
         icon: AppIcons.folderOpen,
         tone: EmptyTone.neutral,
@@ -585,26 +682,24 @@ class _FolderScreenState extends ConsumerState<FolderScreen> {
         ],
       );
     } else {
-      final List<_Item> shown = _filter(files, showUnsupported: _showAll);
-      final int folderCount = <String>{for (final _Item e in shown) e.rel}.length;
+      final List<_Item> shown = v.shown;
+      final int folderCount = _deep ? <String>{for (final _Item e in shown) e.rel}.length : 0;
       body = _list(
         title: title,
-        subdirs: _filterDirs(subdirs),
-        shown: shown,
-        presentFrom: files,
-        scanCard: scan == null ? null : _ScanCard(name: folder.name, scan: scan),
+        shown: v,
+        scanCard: scanning ? _ScanCard(folderId: folder.id, name: folder.name) : null,
         subdirRow: (_Item d) {
           final (int readable, int _) = _counts[d.path] ?? (0, 0);
           return _FolderRow(
             name: d.name,
-            meta: scan != null && !_counts.containsKey(d.path)
+            meta: scanning && !_counts.containsKey(d.path)
                 ? 'Counting…'
                 : (readable == 0 ? 'No readable files' : '$readable readable ${readable == 1 ? 'file' : 'files'}'),
             muted: readable == 0,
             onTap: () => context.push(Routes.folder(widget.folderId!, path: d.path, base: widget.base)),
           );
         },
-        metaLeft: scan != null
+        metaLeft: scanning
             ? 'Found so far'
             : _deep
             ? '${shown.length} ${shown.length == 1 ? 'file' : 'files'} in $folderCount ${folderCount == 1 ? 'folder' : 'folders'}'
@@ -636,11 +731,9 @@ class _FolderScreenState extends ConsumerState<FolderScreen> {
     final List<String> parts = PathNames.parts(widget.root);
     final String title = parts.last;
     final List<String> ancestors = parts.sublist(0, parts.length - 1);
-    final List<_Item> all = _items;
-    final List<_Item> subdirs = _deep ? const <_Item>[] : all.where((_Item e) => e.isDir).toList();
-    final List<_Item> files = all.where((_Item e) => !e.isDir).toList();
-    final int readable = files.where((_Item e) => e.format != null && !e.hidden).length;
-    final int total = _deep ? files.length : ((l?.total ?? 0) - (l?.dirs ?? 0));
+    final _Shown v = _shownOf(showUnsupported: !_picker);
+    final int readable = v.readable;
+    final int total = _deep ? v.files.length : ((l?.total ?? 0) - (l?.dirs ?? 0));
 
     Widget? bottom;
     Widget body;
@@ -701,13 +794,10 @@ class _FolderScreenState extends ConsumerState<FolderScreen> {
         neutral: true,
       );
     } else {
-      final List<_Item> shown = _filter(files, showUnsupported: !_picker);
       final bool loading = _deep ? _deepItems == null : (l == null || l.total == null);
       body = _list(
         title: title,
-        subdirs: _filterDirs(subdirs),
-        shown: shown,
-        presentFrom: files,
+        shown: v,
         skeleton: loading,
         loadingMore: !_deep && l != null && l.total != null && !l.done ? (l.entries.length, l.total!) : null,
         subdirRow: _explorerDirRow,
@@ -797,32 +887,69 @@ class _FolderScreenState extends ConsumerState<FolderScreen> {
 
   // ------------------------------------------------------------ shared
 
-  List<_Item> _filter(List<_Item> files, {required bool showUnsupported}) {
+  Object? _shownKey;
+  late _Shown _shownMemo;
+  final Set<Key> _seen = <Key>{};
+
+  /// The items split, filtered and sorted; recomputed only when the source,
+  /// a chip, the sort or the search changes.
+  _Shown _shownOf({required bool showUnsupported}) {
+    final List<_Item> all = _items;
+    final Object key = (all, _group, _other, _query, _sort, showUnsupported, _deep);
+    if (key == _shownKey) return _shownMemo;
+    _shownKey = key;
     final String q = _query.toLowerCase();
-    final List<_Item> out = files.where((_Item e) {
+    final List<_Item> subdirs = _deep ? const <_Item>[] : all.where((_Item e) => e.isDir).toList();
+    // Files arrives sorted from the platform.
+    if (!_explorer) subdirs.sort((_Item a, _Item b) => a.lower.compareTo(b.lower));
+    final List<_Item> files = all.where((_Item e) => !e.isDir).toList();
+    final List<_Item> shown = files.where((_Item e) {
       final FormatModule? m = e.format;
       if (m == null && !showUnsupported) return false;
       if (_other && m != null) return false;
       if (_group != null && m?.group != _group) return false;
-      if (q.isNotEmpty && !e.name.toLowerCase().contains(q)) return false;
+      if (q.isNotEmpty && !e.lower.contains(q)) return false;
       return true;
     }).toList();
     // The library sorts here; Files arrives sorted from the platform.
     if (!_explorer || _deep) {
-      out.sort(
+      shown.sort(
         (_Item a, _Item b) => switch (_sort) {
           'modified' => b.modified.compareTo(a.modified),
           'size' => b.size.compareTo(a.size),
-          'type' => Formats.labelOf(a.name).compareTo(Formats.labelOf(b.name)),
-          _ => a.name.toLowerCase().compareTo(b.name.toLowerCase()),
+          'type' => a.typeLabel.compareTo(b.typeLabel),
+          _ => a.lower.compareTo(b.lower),
         },
       );
     }
-    return out;
+    final _Shown out = _Shown(
+      subdirs: subdirs,
+      dirs: q.isEmpty ? subdirs : subdirs.where((_Item d) => d.lower.contains(q)).toList(),
+      files: files,
+      shown: shown,
+      unreadable: files.where((_Item e) => e.format == null).length,
+      readable: files.where((_Item e) => e.format != null && !e.hidden).length,
+      present: <FormatGroup>{for (final _Item e in files) ?e.format?.group},
+      hasOther: _explorer && files.any((_Item e) => e.format == null),
+      anyNonBook: shown.any((_Item e) => !(e.format?.book ?? false)),
+    );
+    // A row that left the list eases in again if it comes back.
+    if (_seen.isNotEmpty) _seen.retainWhere(out.indexOfKey.containsKey);
+    return _shownMemo = out;
   }
 
-  List<_Item> _filterDirs(List<_Item> dirs) =>
-      _query.isEmpty ? dirs : dirs.where((_Item d) => d.name.toLowerCase().contains(_query.toLowerCase())).toList();
+  /// The search waits for the typing to pause; clearing it is immediate.
+  void _search(String q) {
+    _debounce?.cancel();
+    final String t = q.trim();
+    if (t.isEmpty) {
+      setState(() => _query = '');
+      return;
+    }
+    _debounce = Timer(Motion.searchDelay, () {
+      if (mounted) setState(() => _query = t);
+    });
+  }
 
   String? _crumbOf(List<String> ancestors) => ancestors.isEmpty
       ? null
@@ -886,7 +1013,7 @@ class _FolderScreenState extends ConsumerState<FolderScreen> {
             // Search in the header, Grid and List in the menu (Kuber's Accounts).
             header: HeaderSearch(
               hint: 'Search in $title',
-              onChanged: (String q) => setState(() => _query = q.trim()),
+              onChanged: _search,
               enabled: !_picker && actions.isNotEmpty,
               builder: (BuildContext context, Widget? search) => AppHeader(
                 title: title,
@@ -897,10 +1024,12 @@ class _FolderScreenState extends ConsumerState<FolderScreen> {
                 actions: <Widget>[?search, ...actions],
               ),
             ),
+            // Keyed on the kind of body only: a filter change keeps the chips and
+            // the rows that stay; a new kind (list, grid, a message) cross-fades.
             body: (BuildContext context, double inset) => AnimatedSwitcher(
               duration: Motion.of(context, Motion.fast),
               child: KeyedSubtree(
-                key: ValueKey<Object>('${_grid}_${_group}_${_other}_${_deep}_${_showAll}_$_hidden'),
+                key: ValueKey<Object>('${_grid}_${body is EmptyState}'),
                 // An empty state is not a scrollable: it starts below the
                 // header; the lists carry their own gap sliver.
                 child: body is EmptyState ? HeaderPage.below(body) : body,
@@ -919,9 +1048,7 @@ class _FolderScreenState extends ConsumerState<FolderScreen> {
 
   Widget _list({
     required String title,
-    required List<_Item> subdirs,
-    required List<_Item> shown,
-    required List<_Item> presentFrom,
+    required _Shown shown,
     required Widget Function(_Item) subdirRow,
     required String metaLeft,
     String? metaRight,
@@ -930,9 +1057,12 @@ class _FolderScreenState extends ConsumerState<FolderScreen> {
     (int, int)? loadingMore,
   }) {
     final UnfurlColors c = context.colors;
-    final Set<FormatGroup> present = <FormatGroup>{for (final _Item e in presentFrom) ?e.format?.group};
-    final bool hasOther = _explorer && presentFrom.any((_Item e) => e.format == null);
-    final bool anyNonBook = shown.any((_Item e) => !(e.format?.book ?? false));
+    final Set<FormatGroup> present = shown.present;
+    final bool hasOther = shown.hasOther;
+    final bool anyNonBook = shown.anyNonBook;
+    final List<_Item> subdirs = shown.dirs;
+    final List<_Item> items = shown.shown;
+    // Always these slivers, each keyed, so a chip or filter change keeps them mounted.
     return CustomScrollView(
       clipBehavior: Clip.none,
       controller: _explorer ? _scroll : null,
@@ -941,11 +1071,12 @@ class _FolderScreenState extends ConsumerState<FolderScreen> {
         // One family only: no chip row (board 6, V3 chips).
         if (!_picker && present.length + (hasOther ? 1 : 0) > 1)
           SliverToBoxAdapter(
+            key: const ValueKey<String>('chips'),
             child: FormatChips(
               present: present,
               selected: _group,
               allSelected: _group == null && !_other,
-              shown: loadingMore == null && !skeleton ? shown.length : null,
+              shown: loadingMore == null && !skeleton ? items.length : null,
               onSelected: (FormatGroup? g) => setState(() {
                 _group = g;
                 _other = false;
@@ -955,7 +1086,7 @@ class _FolderScreenState extends ConsumerState<FolderScreen> {
                   PillChip(
                     label: 'Other',
                     selected: _other,
-                    count: shown.length,
+                    count: items.length,
                     onTap: () => setState(() {
                       _other = !_other;
                       _group = null;
@@ -980,11 +1111,13 @@ class _FolderScreenState extends ConsumerState<FolderScreen> {
           ),
         if (scanCard != null)
           SliverPadding(
+            key: const ValueKey<String>('scan'),
             padding: const EdgeInsets.fromLTRB(Space.screen, 14, Space.screen, 0),
             sliver: SliverToBoxAdapter(child: scanCard),
           ),
         if (subdirs.isNotEmpty)
           SliverPadding(
+            key: const ValueKey<String>('dirs'),
             padding: const EdgeInsets.fromLTRB(Space.screen, 14, Space.screen, 0),
             sliver: SliverToBoxAdapter(
               child: Container(
@@ -1006,6 +1139,7 @@ class _FolderScreenState extends ConsumerState<FolderScreen> {
             ),
           ),
         SliverPadding(
+          key: const ValueKey<String>('meta'),
           padding: const EdgeInsets.fromLTRB(Space.screen, 14, Space.screen, 14),
           sliver: SliverToBoxAdapter(
             child: Row(
@@ -1020,6 +1154,7 @@ class _FolderScreenState extends ConsumerState<FolderScreen> {
           ),
         ),
         SliverPadding(
+          key: const ValueKey<String>('items'),
           padding: EdgeInsets.fromLTRB(
             Space.screen,
             0,
@@ -1032,29 +1167,41 @@ class _FolderScreenState extends ConsumerState<FolderScreen> {
                     crossAxisCount: _gridGeometry.columns,
                     // Rows fit their tiles: books carry a track, other
                     // files a name line.
-                    mainAxisExtent: _gridGeometry.extent(skeleton || anyNonBook ? 52 : 34),
+                    mainAxisExtent: _gridGeometry.extent(
+                      MediaQuery.textScalerOf(context).scale(skeleton || anyNonBook ? 52 : 34),
+                    ),
                     mainAxisSpacing: 18,
                     crossAxisSpacing: _gridGeometry.columns == 3 ? 0 : 12,
                   ),
-                  itemCount: skeleton ? 9 : shown.length + (loadingMore != null ? 3 : 0),
-                  itemBuilder: (BuildContext context, int i) => Align(
-                    alignment: _gridGeometry.alignment(i),
-                    child: SizedBox(
-                      width: _gridGeometry.tile,
-                      child: skeleton || i >= shown.length
-                          ? const SkeletonTile()
-                          : Reveal(index: i < 9 ? i : 0, child: _tile(shown[i])),
-                    ),
-                  ),
+                  itemCount: skeleton ? 9 : items.length + (loadingMore != null ? 3 : 0),
+                  findChildIndexCallback: (Key k) => shown.indexOfKey[k],
+                  itemBuilder: (BuildContext context, int i) {
+                    final bool real = !skeleton && i < items.length;
+                    return Align(
+                      key: real ? items[i].key : null,
+                      alignment: _gridGeometry.alignment(i),
+                      child: SizedBox(
+                        width: _gridGeometry.tile,
+                        child: real
+                            ? StaggeredEntrance(index: i, animate: _eases(items[i], i), child: _tile(items[i]))
+                            : const SkeletonTile(),
+                      ),
+                    );
+                  },
                 )
               : SliverList.builder(
-                  itemCount: skeleton ? 9 : shown.length,
+                  itemCount: skeleton ? 9 : items.length,
+                  findChildIndexCallback: (Key k) => shown.indexOfKey[k],
                   itemBuilder: (BuildContext context, int i) {
-                    final bool first = i == 0, last = i == (skeleton ? 8 : shown.length - 1);
+                    final bool first = i == 0, last = i == (skeleton ? 8 : items.length - 1);
                     final Widget row = skeleton
                         ? SkeletonRow(index: i)
-                        : Reveal(index: i < 9 ? i : 0, child: _explorer ? _explorerRow(shown[i]) : _row(shown[i]));
-                    return ListGroupRow(first: first, last: last, child: row);
+                        : StaggeredEntrance(
+                            index: i,
+                            animate: _eases(items[i], i),
+                            child: _explorer ? _explorerRow(items[i]) : _row(items[i]),
+                          );
+                    return ListGroupRow(key: skeleton ? null : items[i].key, first: first, last: last, child: row);
                   },
                 ),
         ),
@@ -1068,6 +1215,9 @@ class _FolderScreenState extends ConsumerState<FolderScreen> {
       ],
     );
   }
+
+  /// Only the first screenful, and only a row new to the list, eases in.
+  bool _eases(_Item e, int i) => i < 6 && _seen.add(e.key);
 
   void _toggleDeep() => setState(() {
     _deep = !_deep;
@@ -1202,7 +1352,7 @@ class _FolderScreenState extends ConsumerState<FolderScreen> {
     final String rel = widget.path.isEmpty
         ? e.rel
         : (e.rel.length > widget.path.length ? e.rel.substring(widget.path.length + 1) : '');
-    return InkWell(
+    return PressableRow(
       onTap: () => _open(e),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: Space.lg, vertical: 10),
@@ -1481,14 +1631,17 @@ final Provider<Map<int, ScanState>> _scansProvider = Provider<Map<int, ScanState
   return lib.scans.value;
 });
 
-class _ScanCard extends StatelessWidget {
-  const _ScanCard({required this.name, required this.scan});
+class _ScanCard extends ConsumerWidget {
+  const _ScanCard({required this.folderId, required this.name});
 
+  final int folderId;
   final String name;
-  final ScanState scan;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    // The one widget that follows each scan batch.
+    final ScanState? scan = ref.watch(_scansProvider.select((Map<int, ScanState> m) => m[folderId]));
+    if (scan == null) return const SizedBox.shrink();
     final UnfurlColors c = context.colors;
     final bool known = scan.expected > 0;
     return Container(
@@ -1583,10 +1736,12 @@ class _PathTreeState extends State<_PathTree> {
       label: folded ? '$hidden more folders' : widget.parts[index],
       onTap: folded ? () => setState(() => _all = true) : () => widget.onPick(index),
       excludeSemantics: true,
-      child: Material(
-        color: here ? c.primaryContainer : Colors.transparent,
-        borderRadius: BorderRadius.circular(Space.lg),
-        child: InkWell(
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: here ? c.primaryContainer : c.primaryContainer.withAlpha(0),
+          borderRadius: BorderRadius.circular(Space.lg),
+        ),
+        child: PressableRow(
           borderRadius: BorderRadius.circular(Space.lg),
           onTap: folded ? () => setState(() => _all = true) : () => widget.onPick(index),
           child: ConstrainedBox(

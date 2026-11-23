@@ -91,6 +91,8 @@ class HeaderPreviewCard extends StatelessWidget {
           child: InkWell(
             onTap: enabled ? onTap : null,
             customBorder: shape,
+            splashFactory: NoSplash.splashFactory,
+            overlayColor: pressedLayer(c),
             child: Padding(
               padding: const EdgeInsets.fromLTRB(Space.md, Space.xs, Space.md, Space.md),
               child: Column(

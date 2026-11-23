@@ -109,6 +109,10 @@ class ReadingDocument {
       for (final Block b in s.blocks) b.text,
   ].join('\n');
 
+  /// [plainText] in lower case, made once (in-book search scans it on every
+  /// query; lower-casing a book's text each time is the cost it avoids).
+  late final String lowerText = plainText.toLowerCase();
+
   /// The block and offset holding global character index [index] of
   /// [plainText].
   (int, int, int) positionOfIndex(int index) {
@@ -223,7 +227,7 @@ class ReadingDocument {
     final int i = _blockAt(from);
     if (i >= _flat.length) return 0;
     final Block b = _flat[i];
-    final int partial = _countWords(b.text.substring((from - b.start).clamp(0, b.text.length)));
+    final int partial = _countWords(b.text, (from - b.start).clamp(0, b.text.length));
     final int j = _blockAt(end); // the next chapter's first block, or the end
     return partial + (j > i + 1 ? _wordsBefore[j] - _wordsBefore[i + 1] : 0);
   }
@@ -231,8 +235,8 @@ class ReadingDocument {
   late final List<Block> _flat = <Block>[for (final Section s in sections) ...s.blocks];
 
   /// Words in the flat blocks before index i (length + 1 entries).
-  // ponytail: counted once on the UI isolate (tens of ms for a very large
-  // TXT); move to an isolate if the first footer ever janks.
+  // ponytail: counted once on the UI isolate (a few ms for a very large book);
+  // move to an isolate if the first footer ever janks.
   late final List<int> _wordsBefore = () {
     final List<int> out = <int>[0];
     for (final Block b in _flat) {
@@ -255,8 +259,34 @@ class ReadingDocument {
     return lo;
   }
 
-  static final RegExp _word = RegExp(r'\S+');
-  static int _countWords(String s) => _word.allMatches(s).length;
+  /// Runs of non-whitespace in [s] from [from] to [to]: a scan, not a RegExp
+  /// (a tenth of the time, and it runs in a frame).
+  static int _countWords(String s, [int from = 0, int? to]) {
+    int n = 0;
+    bool inWord = false;
+    final int end = to ?? s.length;
+    for (int i = from; i < end; i++) {
+      final bool space = _isSpace(s.codeUnitAt(i));
+      if (!space && !inWord) n++;
+      inWord = !space;
+    }
+    return n;
+  }
+
+  /// RegExp's `\s`.
+  static bool _isSpace(int c) =>
+      c == 0x20 ||
+      (c >= 0x09 && c <= 0x0D) ||
+      (c >= 0xA0 &&
+          (c == 0xA0 ||
+              c == 0x1680 ||
+              (c >= 0x2000 && c <= 0x200A) ||
+              c == 0x2028 ||
+              c == 0x2029 ||
+              c == 0x202F ||
+              c == 0x205F ||
+              c == 0x3000 ||
+              c == 0xFEFF));
 
   /// Blocks that open a chapter inside a section: pagination starts a page there.
   late final Set<(int, int)> chapterBlocks = <(int, int)>{
@@ -266,11 +296,8 @@ class ReadingDocument {
 
   /// Words, for the time-left estimate.
   int wordsBetween(int fromGlobal, int toGlobal) {
-    final String slice = plainText.substring(
-      fromGlobal.clamp(0, plainText.length),
-      toGlobal.clamp(0, plainText.length),
-    );
-    return slice.split(RegExp(r'\s+')).where((String w) => w.isNotEmpty).length;
+    final int n = plainText.length;
+    return _countWords(plainText, fromGlobal.clamp(0, n), toGlobal.clamp(0, n));
   }
 }
 

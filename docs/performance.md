@@ -202,3 +202,7 @@ PDF page view and Reader mode. Host tests only so far (`test/pdf/`, with `PDFIUM
   sizes from their headers (`ImageSizes.sniff`) instead of one engine decode per figure, so there
   is no empty first frame.
 
+## Polish pass 2 (November 2026)
+
+Harness: `integration_test/perf_test.dart` (setup in its header), on the app's own binding; before and after numbers,
+every cause and the fixes: `specs/app-polish-2/performance.md`. The rules are in `CLAUDE.md`, "Performance guidelines".

@@ -98,9 +98,9 @@ void main() {
     // Background swatches are 40dp circles (board 6, V5), not stretched to the touch height.
     final Finder swatch = find.descendant(
       of: find.byWidgetPredicate((Widget w) => w is OptionTile && w.round).first,
-      matching: find.byType(AnimatedContainer),
+      matching: find.byWidgetPredicate((Widget w) => w is Container && w.decoration is BoxDecoration),
     );
-    expect(tester.getSize(swatch), const Size(40, 40));
+    expect(tester.getSize(swatch.first), const Size(40, 40));
     final Size square = tester.getSize(find.byType(FittedBox));
     expect(square.width, closeTo(square.height, 1));
     await tester.tap(find.text('9:16'));

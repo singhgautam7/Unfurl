@@ -11,10 +11,14 @@ abstract final class AppIcons {
   static const IconData home = IconData(0xe9b2, fontFamily: _family); // home
   static const IconData library = IconData(0xf53e, fontFamily: _family); // book_2
   static const IconData notes = IconData(0xe6d1, fontFamily: _family); // ink_highlighter
-  static const IconData more = IconData(0xe429, fontFamily: _family); // tune
+  // The one overflow glyph, as Kuber (more_vert_rounded): `more`, `moreVert` and `moreHoriz` are all it.
+  static const IconData more = IconData(0xe5d4, fontFamily: _family); // more_vert
   static const IconData tune = IconData(0xe429, fontFamily: _family); // tune
   static const IconData fileOpen = IconData(0xeaf3, fontFamily: _family); // file_open
-  static const IconData moreHoriz = IconData(0xe5d3, fontFamily: _family); // more_horiz
+  static const IconData moreHoriz = IconData(
+    0xe5d4,
+    fontFamily: _family,
+  ); // more_vert (same glyph as moreVert, so every call site agrees)
   static const IconData moreVert = IconData(0xe5d4, fontFamily: _family); // more_vert
   static const IconData back = IconData(0xe5c4, fontFamily: _family); // arrow_back
   static const IconData close = IconData(0xe5cd, fontFamily: _family); // close
@@ -81,7 +85,7 @@ abstract final class AppIcons {
   static const IconData radioOff = IconData(0xe836, fontFamily: _family); // radio_button_unchecked
   static const IconData playCircle = IconData(0xe1c4, fontFamily: _family); // play_circle
   static const IconData settings = IconData(0xe8b8, fontFamily: _family); // settings
-  static const IconData share = IconData(0xe6b8, fontFamily: _family); // ios_share
+  static const IconData share = IconData(0xe80d, fontFamily: _family); // share (Kuber: share_rounded)
   static const IconData swapVert = IconData(0xe8d5, fontFamily: _family); // swap_vert
   static const IconData swapHoriz = IconData(0xe8d4, fontFamily: _family); // swap_horiz
   static const IconData brightness = IconData(0xe1ad, fontFamily: _family); // brightness_low
@@ -139,6 +143,14 @@ abstract final class AppIcons {
   static const IconData tableChart = IconData(0xe265, fontFamily: _family); // table_chart
   static const IconData audioFile = IconData(0xeb82, fontFamily: _family); // audio_file
   static const IconData movie = IconData(0xe404, fontFamily: _family); // movie
+  // App polish 2: Kuber's shared actions and the L9 look-alike fixes.
+  static const IconData edit = IconData(0xf097, fontFamily: _family); // edit
+  static const IconData filter = IconData(0xe152, fontFamily: _family); // filter_list
+  static const IconData fileExport = IconData(0xf3b2, fontFamily: _family); // file_export
+  static const IconData autoplay = IconData(0xf6b5, fontFamily: _family); // autoplay
+  static const IconData displaySettings = IconData(0xeb97, fontFamily: _family); // display_settings
+  static const IconData unreadDot = IconData(0xe061, fontFamily: _family); // fiber_manual_record
+  static const IconData editOff = IconData(0xe950, fontFamily: _family); // edit_off
   // v3 (board 6).
   static const IconData insights = IconData(0xf092, fontFamily: _family); // insights
   static const IconData comic = IconData(0xf5dd, fontFamily: _family); // comic_bubble

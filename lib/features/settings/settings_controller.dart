@@ -27,7 +27,6 @@ class AppSettings {
     this.librarySort = 'recent',
     this.findOnDevice = false,
     this.showHidden = false,
-    this.motion = MotionPreference.auto,
     this.haptics = false,
     this.floatingHeader = true,
     this.pillMode = PillMode.always,
@@ -71,9 +70,6 @@ class AppSettings {
   /// Files: show hidden (dot) files by default; each folder can override.
   final bool showHidden;
 
-  /// How much the app moves (Auto resolves from the device class).
-  final MotionPreference motion;
-
   /// Haptic feedback (off by default).
   final bool haptics;
 
@@ -110,7 +106,6 @@ class AppSettings {
     String? librarySort,
     bool? findOnDevice,
     bool? showHidden,
-    MotionPreference? motion,
     bool? haptics,
     bool? floatingHeader,
     PillMode? pillMode,
@@ -128,7 +123,6 @@ class AppSettings {
     librarySort: librarySort ?? this.librarySort,
     findOnDevice: findOnDevice ?? this.findOnDevice,
     showHidden: showHidden ?? this.showHidden,
-    motion: motion ?? this.motion,
     haptics: haptics ?? this.haptics,
     floatingHeader: floatingHeader ?? this.floatingHeader,
     pillMode: pillMode ?? this.pillMode,
@@ -147,7 +141,6 @@ class AppSettings {
   static const String kLibrarySort = 'library.sort';
   static const String kFindOnDevice = 'library.findOnDevice';
   static const String kShowHidden = 'files.showHidden';
-  static const String kMotion = 'motion.preference';
   static const String kHaptics = 'haptics.enabled';
   static const String kFloatingHeader = 'header.floating';
   static const String kPillMode = 'header.pill';
@@ -178,7 +171,6 @@ class AppSettings {
       librarySort: prefs.getString(kLibrarySort) ?? 'recent',
       findOnDevice: prefs.getBool(kFindOnDevice) ?? false,
       showHidden: prefs.getBool(kShowHidden) ?? false,
-      motion: _named(MotionPreference.values, prefs.getString(kMotion), MotionPreference.auto),
       haptics: prefs.getBool(kHaptics) ?? false,
       floatingHeader: prefs.getBool(kFloatingHeader) ?? true,
       pillMode: _named(PillMode.values, prefs.getString(kPillMode), PillMode.always),
@@ -274,11 +266,6 @@ class SettingsController extends Notifier<AppSettings> {
   Future<void> setShowHidden({required bool value}) async {
     state = state.copyWith(showHidden: value);
     await _prefs.setBool(AppSettings.kShowHidden, value);
-  }
-
-  Future<void> setMotion(MotionPreference value) async {
-    state = state.copyWith(motion: value);
-    await _prefs.setString(AppSettings.kMotion, value.name);
   }
 
   Future<void> setHaptics({required bool value}) async {

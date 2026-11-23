@@ -43,10 +43,6 @@ abstract final class FloatingHeaderSpec {
   /// Show this long after the page stops (Kuber :564, 300 ms = 2 x fast).
   static final Duration stopDelay = Motion.fast * 2;
 
-  /// After search closes, wait this long before turning back into the pill
-  /// (Kuber :567, 160 ms = `navHide`).
-  static const Duration searchFoldDelay = Motion.navHide;
-
   /// Title 22 to 16 dp in the pill (Kuber :570); the pill drops a title with
   /// less than [minTitle] dp, or at text scale [dropAtScale] and up.
   static const double titleScale = 16 / 22;
@@ -179,7 +175,6 @@ class _HeaderPageState extends ConsumerState<HeaderPage> with TickerProviderStat
   double _up = 0;
   double _moved = 0;
   Timer? _showTimer;
-  Timer? _foldTimer;
   MotionLevel _level = MotionLevel.expressive;
   PillMode _mode = PillMode.always;
   bool _floating = true;
@@ -196,7 +191,6 @@ class _HeaderPageState extends ConsumerState<HeaderPage> with TickerProviderStat
   @override
   void dispose() {
     _showTimer?.cancel();
-    _foldTimer?.cancel();
     for (final AnimationController c in <AnimationController>[_p, _a0, _a1, _shift, _h, _scrim]) {
       c.dispose();
     }
@@ -277,7 +271,7 @@ class _HeaderPageState extends ConsumerState<HeaderPage> with TickerProviderStat
   void _snap() {
     _showTimer?.cancel();
     _down = _up = _moved = 0;
-    _pill = _floating && !_searching && _pixels >= FloatingHeaderSpec.toPill;
+    _pill = _floating && _pixels >= FloatingHeaderSpec.toPill;
     final double t = _pill ? 1.0 : 0.0;
     _p.value = t;
     _a0.value = 1 - t;
@@ -291,19 +285,16 @@ class _HeaderPageState extends ConsumerState<HeaderPage> with TickerProviderStat
     _away.value = _floating ? 0 : _pixels.clamp(0.0, _extent);
   }
 
+  /// Search opened or closed. The open search bar is the header's content, so
+  /// it morphs into the pill like any header: nothing else changes.
   void _onSearch(bool open) {
-    _foldTimer?.cancel();
     _searching = open;
     if (open) {
       _showTimer?.cancel();
       _setHidden(false);
-      _setPill(false, slow: true);
-      return;
+    } else {
+      _queueMeasure();
     }
-    _queueMeasure();
-    _foldTimer = Timer(_level == MotionLevel.off ? Duration.zero : FloatingHeaderSpec.searchFoldDelay, () {
-      if (mounted && !_searching && _floating && _pixels >= FloatingHeaderSpec.toPill) _setPill(true);
-    });
   }
 
   bool _keyboardOpen() => View.of(context).viewInsets.bottom > 0;
@@ -319,7 +310,6 @@ class _HeaderPageState extends ConsumerState<HeaderPage> with TickerProviderStat
       _setScrolled(px > 0);
       return false;
     }
-    if (_searching) return false;
     if (!_pill && px >= FloatingHeaderSpec.toPill) {
       _setPill(true);
     } else if (_pill && px <= FloatingHeaderSpec.toHeader) {

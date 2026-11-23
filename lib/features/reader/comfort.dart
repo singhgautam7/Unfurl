@@ -9,6 +9,7 @@ import '../../core/theme/palette.dart';
 import '../../core/theme/tokens.dart';
 import '../../core/theme/typography.dart';
 import '../../design_system/app_icon.dart';
+import '../../design_system/buttons.dart';
 import '../../design_system/option_tiles.dart';
 import '../files/files_widgets.dart';
 import 'sheets.dart';
@@ -288,14 +289,19 @@ class AutoControl extends StatelessWidget {
                       button: true,
                       label: auto.running ? 'Pause' : (auto.paged ? 'Start auto page turn' : 'Start auto-scroll'),
                       excludeSemantics: true,
-                      child: Material(
-                        color: c.primary,
-                        shape: const CircleBorder(),
-                        child: Pressable(
-                          kind: PressKind.fab,
+                      // A circle that squares to 12 dp while held (Expressive).
+                      child: Pressable(
+                        kind: PressKind.fab,
+                        restRadius: IconSpec.button / 2,
+                        builder: (BuildContext context, double radius, double pressed) => Material(
+                          color: c.primary,
+                          animationDuration: Duration.zero,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(radius)),
+                          clipBehavior: Clip.antiAlias,
                           child: InkWell(
-                            customBorder: const CircleBorder(),
                             onTap: auto.toggle,
+                            overlayColor: pressedLayer(c),
+                            splashFactory: NoSplash.splashFactory,
                             child: SizedBox.square(
                               dimension: IconSpec.button,
                               child: AppIcon(
@@ -348,20 +354,8 @@ class _Step extends StatelessWidget {
   final VoidCallback onTap;
 
   @override
-  Widget build(BuildContext context) => Semantics(
-    button: true,
-    label: label,
-    excludeSemantics: true,
-    child: InkResponse(
-      onTap: onTap,
-      radius: 22,
-      child: SizedBox(
-        width: 40,
-        height: IconSpec.tapTarget,
-        child: AppIcon(icon, color: context.colors.icon),
-      ),
-    ),
-  );
+  Widget build(BuildContext context) =>
+      AppIconButton(icon: icon, filled: false, semanticLabel: label, onPressed: onTap);
 }
 
 /// The mini player's time-left chip (board 6, V6 `mini`): the bedtime glyph

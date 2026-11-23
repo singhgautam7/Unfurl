@@ -54,7 +54,7 @@ void main() {
 
   test('schema 1 to 3: annotations and positions survive; v3 columns and tables work', () async {
     final AppDatabase db = AppDatabase(v1WithData());
-    expect(db.schemaVersion, 4);
+    expect(db.schemaVersion, 5);
     final Annotation a = (await db.select(db.annotations).get()).single;
     expect((a.quote, a.note), ('truth', 'a note'));
     final Document d = (await db.select(db.documents).get()).single;
@@ -133,11 +133,67 @@ void main() {
     await v3.into(v3.bookStats).insert(BookStatsCompanion.insert(fingerprint: 'fp', readingMs: const Value<int>(5000)));
     await v3.customStatement('ALTER TABLE book_stats DROP COLUMN total_words');
     await v3.customStatement('ALTER TABLE book_stats DROP COLUMN words_left');
+    for (final String column in <String>['authority', 'doc_id', 'sender', 'sender_package', 'persisted']) {
+      await v3.customStatement('ALTER TABLE recents DROP COLUMN $column');
+    }
+    await v3.customStatement('DROP INDEX recents_fp');
     await v3.customStatement('PRAGMA user_version = 3');
     await v3.close();
     final AppDatabase db = AppDatabase(NativeDatabase(f));
     final BookStat b = (await db.select(db.bookStats).get()).single;
     expect((b.readingMs, b.totalWords), (5000, null));
+    await db.close();
+  });
+
+  test('schema 4 to 5: recents learn where they came from; rows, places and highlights survive', () async {
+    final File f = File('${Directory.systemTemp.createTempSync('unfurl').path}/v4.db');
+    final AppDatabase v4 = AppDatabase(NativeDatabase(f));
+    await v4
+        .into(v4.recents)
+        .insert(
+          RecentsCompanion.insert(
+            uri: 'content://a/1',
+            fingerprint: const Value<String?>('fp'),
+            name: 'abc.pdf',
+            openedAt: DateTime(2026),
+          ),
+        );
+    await v4
+        .into(v4.documents)
+        .insert(
+          DocumentsCompanion.insert(
+            fingerprint: 'fp',
+            uri: 'content://a/1',
+            name: 'abc.pdf',
+            format: 'pdf',
+            position: const Value<String?>('{"s":1}'),
+            addedAt: DateTime(2026),
+          ),
+        );
+    await v4
+        .into(v4.annotations)
+        .insert(
+          AnnotationsCompanion.insert(
+            fingerprint: 'fp',
+            kind: 'highlight',
+            locator: '{}',
+            quote: const Value<String>('kept'),
+            createdAt: DateTime(2026),
+          ),
+        );
+    for (final String column in <String>['authority', 'doc_id', 'sender', 'sender_package', 'persisted']) {
+      await v4.customStatement('ALTER TABLE recents DROP COLUMN $column');
+    }
+    await v4.customStatement('DROP INDEX recents_fp');
+    await v4.customStatement('PRAGMA user_version = 4');
+    await v4.close();
+    final AppDatabase db = AppDatabase(NativeDatabase(f));
+    final Recent r = (await db.select(db.recents).get()).single;
+    expect((r.uri, r.fingerprint, r.docId, r.sender, r.persisted), ('content://a/1', 'fp', null, null, false));
+    expect((await db.select(db.documents).get()).single.position, '{"s":1}');
+    expect((await db.select(db.annotations).get()).single.quote, 'kept');
+    await (db.update(db.recents)).write(const RecentsCompanion(docId: Value<String?>('primary:Docs/abc.pdf')));
+    expect((await db.select(db.recents).get()).single.docId, 'primary:Docs/abc.pdf');
     await db.close();
   });
 }

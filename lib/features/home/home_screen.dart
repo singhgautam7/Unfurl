@@ -47,33 +47,6 @@ class HomeScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final List<Folder> folders = ref.watch(foldersProvider).value ?? const <Folder>[];
-    final bool foldersLoaded = ref.watch(foldersProvider).hasValue;
-    final List<Document> opened = ref.watch(openedDocumentsProvider).value ?? const <Document>[];
-    final List<Recent> recents = ref.watch(recentsProvider).value ?? const <Recent>[];
-    final List<BookItem> books = (ref.watch(booksProvider).value ?? const <BookItem>[])
-        .where((BookItem b) => b.format.book)
-        .toList();
-    final List<Folder> lost = folders.where((Folder f) => f.accessLost).toList();
-
-    final List<Document> reading = opened
-        .where((Document d) => (Formats.of(d.name)?.book ?? false) && !d.finished)
-        .toList();
-    // Tablets show Continue reading as a row of covers (board 6, V7).
-    final CoverGrid grid = CoverGrid.of(context);
-    final bool wide = grid.columns > 3;
-    final Document? hero = wide ? null : reading.firstOrNull;
-    final List<Document> recentBooks = (wide ? reading : reading.skip(1)).take(wide ? grid.columns : 8).toList();
-    // Until a few books have been read, suggest ones not opened yet.
-    final List<BookItem> unopened = books.where((BookItem b) => b.doc == null).toList();
-    final List<Recent> files = recents
-        .where((Recent r) {
-          final FormatModule? m = Formats.of(r.name, r.mime);
-          return m != null && !m.book;
-        })
-        .take(5)
-        .toList();
-
     return Scaffold(
       body: HeaderPage(
         header: AppHeader(
@@ -121,150 +94,8 @@ class HomeScreen extends ConsumerWidget {
         body: (BuildContext context, double inset) => ListView(
           clipBehavior: Clip.none,
           padding: EdgeInsets.fromLTRB(Space.screen, inset + 6, Space.screen, Space.bottomSafe),
-          children: <Widget>[
-            if (foldersLoaded && folders.isEmpty)
-              _FolderCard(
-                icon: AppIcons.folder,
-                danger: false,
-                title: 'Add a folder to fill your Library',
-                body: 'Unfurl lists the books and documents in folders you choose. It only reads them.',
-                action: 'Add folder',
-                actionIcon: AppIcons.createNewFolder,
-                onAction: () => addFolder(context, ref),
-              ),
-            for (final Folder f in lost)
-              _FolderCard(
-                icon: AppIcons.folderOff,
-                danger: true,
-                title: 'Unfurl can’t see ${f.name} anymore',
-                body: f.source == 'saf_folder'
-                    ? 'Access was removed by Android. Your progress, highlights and notes are kept.'
-                    : kAllFilesAccess
-                    ? 'All files access was turned off. Your progress, highlights and notes are kept.'
-                    : 'Pick it again in Android’s folder picker. Your progress, highlights and notes are kept.',
-                action: f.source == 'saf_folder' || !kAllFilesAccess ? 'Grant access again' : 'Go to Files',
-                actionIcon: AppIcons.folderOpen,
-                onAction: () => regrantFolder(context, ref, f),
-              ),
-            if (hero != null) ...<Widget>[
-              Reveal(
-                child: _HeroCard(doc: hero, books: books),
-              ),
-              const SizedBox(height: Space.section),
-            ],
-            if (recentBooks.isNotEmpty) ...<Widget>[
-              SectionHeader(
-                label: wide ? 'Continue reading' : 'Recent books',
-                accent: wide,
-                action: 'Library',
-                onAction: () => StatefulNavigationShell.maybeOf(context)?.goBranch(1),
-              ),
-              const SizedBox(height: Space.md),
-              Reveal(
-                index: 1,
-                child: _CoverRow(
-                  grid: grid,
-                  count: recentBooks.length,
-                  tile: (int i, double w, double h) {
-                    final Document d = recentBooks[i];
-                    return Builder(
-                      builder: (BuildContext tile) => CoverTile(
-                        onLongPress: () => _bookMenu(
-                          context,
-                          tile,
-                          onOpen: () => _resume(context, d, 'home:${d.fingerprint}'),
-                          uri: d.uri,
-                          fingerprint: d.fingerprint,
-                          title: d.title ?? _stem(d.name),
-                          author: d.author,
-                          name: d.name,
-                        ),
-                        heroTag: 'home:${d.fingerprint}',
-                        cover: CoverArt(
-                          title: d.title ?? _stem(d.name),
-                          author: d.author,
-                          width: w,
-                          height: h,
-                          fingerprint: d.fingerprint,
-                          format: Formats.of(d.name) ?? Formats.pdf,
-                          badge: Formats.labelOf(d.name),
-                          issue: d.issue,
-                        ),
-                        progress: d.progress,
-                        finished: d.finished,
-                        onTap: () => _resume(context, d, 'home:${d.fingerprint}'),
-                      ),
-                    );
-                  },
-                ),
-              ),
-              const SizedBox(height: Space.section),
-            ],
-            if (files.isNotEmpty) ...<Widget>[
-              const SectionHeader(label: 'Recent files'),
-              const SizedBox(height: Space.md),
-              Reveal(
-                index: 2,
-                child: ListContainer(children: <Widget>[for (final Recent r in files) FileRow(recent: r)]),
-              ),
-            ],
-            if (recentBooks.isEmpty && unopened.isNotEmpty) ...<Widget>[
-              SectionHeader(
-                label: 'In your library',
-                action: 'Library',
-                onAction: () => StatefulNavigationShell.maybeOf(context)?.goBranch(1),
-              ),
-              const SizedBox(height: Space.md),
-              Reveal(
-                index: 1,
-                child: _CoverRow(
-                  grid: grid,
-                  count: math.min(unopened.length, wide ? grid.columns : 8),
-                  tile: (int i, double w, double h) {
-                    final BookItem b = unopened[i];
-                    final String tag = 'home:lib:${b.entry.id}';
-                    return Builder(
-                      builder: (BuildContext tileCtx) => CoverTile(
-                        onLongPress: () => _bookMenu(
-                          context,
-                          tileCtx,
-                          onOpen: () => openBook(context, b, heroTag: tag),
-                          uri: b.entry.uri,
-                          fingerprint: b.fingerprint,
-                          title: b.title,
-                          author: b.author,
-                          name: b.entry.name,
-                        ),
-                        heroTag: tag,
-                        cover: CoverArt(
-                          title: b.title,
-                          author: b.author,
-                          width: w,
-                          height: h,
-                          fingerprint: b.fingerprint,
-                          format: b.format,
-                          badge: Formats.labelOf(b.entry.name),
-                          issue: b.issue,
-                        ),
-                        progress: b.progress,
-                        finished: b.finished,
-                        onTap: () => openBook(context, b, heroTag: tag),
-                      ),
-                    );
-                  },
-                ),
-              ),
-              const SizedBox(height: Space.section),
-            ],
-            if (hero == null && files.isEmpty && books.isEmpty && folders.isNotEmpty && lost.isEmpty)
-              Padding(
-                padding: const EdgeInsets.only(top: Space.xxl),
-                child: Text(
-                  'Open a book from Library, or a file with Open file. What you read shows up here.',
-                  style: UnfurlType.body.copyWith(color: context.colors.onSurfaceVariant),
-                ),
-              ),
-          ],
+          // Each section watches only what it draws.
+          children: const <Widget>[_FolderCards(), _Continue(), _RecentFiles(), _Suggestions(), _Hint()],
         ),
       ),
     );
@@ -273,7 +104,266 @@ class HomeScreen extends ConsumerWidget {
   static String _stem(String n) => n.contains('.') ? n.substring(0, n.lastIndexOf('.')) : n;
 }
 
-/// Resume: the exact passage and mode last used.
+/// What Home draws, worked out once per change of its stream.
+final Provider<List<Document>> _readingProvider = Provider<List<Document>>(
+  (Ref ref) => <Document>[
+    for (final Document d in ref.watch(openedDocumentsProvider).value ?? const <Document>[])
+      if (!d.finished && (Formats.of(d.name)?.book ?? false)) d,
+  ],
+);
+
+final Provider<List<Recent>> _filesProvider = Provider<List<Recent>>(
+  (Ref ref) => (ref.watch(recentsProvider).value ?? const <Recent>[])
+      .where((Recent r) {
+        final FormatModule? m = Formats.of(r.name, r.mime);
+        return m != null && !m.book;
+      })
+      .take(5)
+      .toList(),
+);
+
+/// Books not opened yet, asked for only while there is little else to show:
+/// the whole library is joined to answer.
+final Provider<List<BookItem>> _unopenedProvider = Provider<List<BookItem>>(
+  (Ref ref) => (ref.watch(booksProvider).value ?? const <BookItem>[])
+      .where((BookItem b) => b.doc == null && b.format.book)
+      .take(8)
+      .toList(),
+);
+
+class _FolderCards extends ConsumerWidget {
+  const _FolderCards();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final List<Folder>? folders = ref.watch(foldersProvider).value;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        if (folders != null && folders.isEmpty)
+          _FolderCard(
+            icon: AppIcons.folder,
+            danger: false,
+            title: 'Add a folder to fill your Library',
+            body: 'Unfurl lists the books and documents in folders you choose. It only reads them.',
+            action: 'Add folder',
+            actionIcon: AppIcons.createNewFolder,
+            onAction: () => addFolder(context, ref),
+          ),
+        for (final Folder f in folders ?? const <Folder>[])
+          if (f.accessLost)
+            _FolderCard(
+              key: ValueKey<int>(f.id),
+              icon: AppIcons.folderOff,
+              danger: true,
+              title: 'Unfurl can’t see ${f.name} anymore',
+              body: f.source == 'saf_folder'
+                  ? 'Access was removed by Android. Your progress, highlights and notes are kept.'
+                  : kAllFilesAccess
+                  ? 'All files access was turned off. Your progress, highlights and notes are kept.'
+                  : 'Pick it again in Android’s folder picker. Your progress, highlights and notes are kept.',
+              action: f.source == 'saf_folder' || !kAllFilesAccess ? 'Grant access again' : 'Go to Files',
+              actionIcon: AppIcons.folderOpen,
+              onAction: () => regrantFolder(context, ref, f),
+            ),
+      ],
+    );
+  }
+}
+
+/// Continue reading and the recent books. Tablets show Continue reading as a
+/// row of covers (board 6, V7).
+class _Continue extends ConsumerWidget {
+  const _Continue();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final List<Document> reading = ref.watch(_readingProvider);
+    final CoverGrid grid = CoverGrid.of(context);
+    final bool wide = grid.columns > 3;
+    final Document? hero = wide ? null : reading.firstOrNull;
+    final List<Document> books = (wide ? reading : reading.skip(1)).take(wide ? grid.columns : 8).toList();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        if (hero != null) ...<Widget>[Reveal(child: _HeroCard(doc: hero)), const SizedBox(height: Space.section)],
+        if (books.isNotEmpty) ...<Widget>[
+          SectionHeader(
+            label: wide ? 'Continue reading' : 'Recent books',
+            accent: wide,
+            action: 'Library',
+            onAction: () => StatefulNavigationShell.maybeOf(context)?.goBranch(1),
+          ),
+          const SizedBox(height: Space.md),
+          Reveal(
+            index: 1,
+            child: _CoverRow(
+              grid: grid,
+              count: books.length,
+              tile: (int i, double w, double h) {
+                final Document d = books[i];
+                return Builder(
+                  builder: (BuildContext tile) => CoverTile(
+                    onLongPress: () => _bookMenu(
+                      context,
+                      tile,
+                      onOpen: () => _resume(context, d, 'home:${d.fingerprint}'),
+                      uri: d.uri,
+                      fingerprint: d.fingerprint,
+                      title: d.title ?? HomeScreen._stem(d.name),
+                      author: d.author,
+                      name: d.name,
+                    ),
+                    heroTag: 'home:${d.fingerprint}',
+                    cover: CoverArt(
+                      title: d.title ?? HomeScreen._stem(d.name),
+                      author: d.author,
+                      width: w,
+                      height: h,
+                      fingerprint: d.fingerprint,
+                      format: Formats.of(d.name) ?? Formats.pdf,
+                      badge: Formats.labelOf(d.name),
+                      issue: d.issue,
+                    ),
+                    progress: d.progress,
+                    finished: d.finished,
+                    onTap: () => _resume(context, d, 'home:${d.fingerprint}'),
+                  ),
+                );
+              },
+            ),
+          ),
+          const SizedBox(height: Space.section),
+        ],
+      ],
+    );
+  }
+}
+
+class _RecentFiles extends ConsumerWidget {
+  const _RecentFiles();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final List<Recent> files = ref.watch(_filesProvider);
+    if (files.isEmpty) return const SizedBox.shrink();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        const SectionHeader(label: 'Recent files'),
+        const SizedBox(height: Space.md),
+        Reveal(
+          index: 2,
+          child: ListContainer(
+            children: <Widget>[for (final Recent r in files) FileRow(key: ValueKey<String>(r.uri), recent: r)],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// Until a few books have been read, ones not opened yet.
+class _Suggestions extends ConsumerWidget {
+  const _Suggestions();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final CoverGrid grid = CoverGrid.of(context);
+    final bool wide = grid.columns > 3;
+    // Unknown until the first answer: asking early would flash them in.
+    final bool hasRecent =
+        ref.watch(openedDocumentsProvider.select((AsyncValue<List<Document>> v) => v.hasValue ? null : true)) ??
+        ref.watch(_readingProvider.select((List<Document> r) => r.length > (wide ? 0 : 1)));
+    if (hasRecent) return const SizedBox.shrink();
+    final List<BookItem> unopened = ref.watch(_unopenedProvider);
+    if (unopened.isEmpty) return const SizedBox.shrink();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        SectionHeader(
+          label: 'In your library',
+          action: 'Library',
+          onAction: () => StatefulNavigationShell.maybeOf(context)?.goBranch(1),
+        ),
+        const SizedBox(height: Space.md),
+        Reveal(
+          index: 1,
+          child: _CoverRow(
+            grid: grid,
+            count: math.min(unopened.length, wide ? grid.columns : 8),
+            tile: (int i, double w, double h) {
+              final BookItem b = unopened[i];
+              final String tag = 'home:lib:${b.entry.id}';
+              return Builder(
+                builder: (BuildContext tileCtx) => CoverTile(
+                  onLongPress: () => _bookMenu(
+                    context,
+                    tileCtx,
+                    onOpen: () => openBook(context, b, heroTag: tag),
+                    uri: b.entry.uri,
+                    fingerprint: b.fingerprint,
+                    title: b.title,
+                    author: b.author,
+                    name: b.entry.name,
+                  ),
+                  heroTag: tag,
+                  cover: CoverArt(
+                    title: b.title,
+                    author: b.author,
+                    width: w,
+                    height: h,
+                    fingerprint: b.fingerprint,
+                    format: b.format,
+                    badge: Formats.labelOf(b.entry.name),
+                    issue: b.issue,
+                  ),
+                  progress: b.progress,
+                  finished: b.finished,
+                  onTap: () => openBook(context, b, heroTag: tag),
+                ),
+              );
+            },
+          ),
+        ),
+        const SizedBox(height: Space.section),
+      ],
+    );
+  }
+}
+
+/// Folders added, nothing opened and no books found yet.
+class _Hint extends ConsumerWidget {
+  const _Hint();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final bool folders = ref.watch(
+      foldersProvider.select(
+        (AsyncValue<List<Folder>> v) =>
+            (v.value ?? const <Folder>[]).isNotEmpty && !v.value!.any((Folder f) => f.accessLost),
+      ),
+    );
+    if (!folders ||
+        ref.watch(_readingProvider.select((List<Document> r) => r.isNotEmpty)) ||
+        ref.watch(_filesProvider.select((List<Recent> f) => f.isNotEmpty)) ||
+        ref.watch(
+          booksProvider.select(
+            (AsyncValue<List<BookItem>> v) => (v.value ?? const <BookItem>[]).any((BookItem b) => b.format.book),
+          ),
+        )) {
+      return const SizedBox.shrink();
+    }
+    return Padding(
+      padding: const EdgeInsets.only(top: Space.xxl),
+      child: Text(
+        'Open a book from Library, or a file with Open file. What you read shows up here.',
+        style: UnfurlType.body.copyWith(color: context.colors.onSurfaceVariant),
+      ),
+    );
+  }
+}
+
 /// A row of covers: a horizontal list of 96dp tiles on phones, one row of
 /// the 5 or 7 column grid on tablets.
 class _CoverRow extends StatelessWidget {
@@ -311,6 +401,7 @@ class _CoverRow extends StatelessWidget {
   }
 }
 
+/// Resume: the exact passage and mode last used.
 Future<void> _resume(BuildContext context, Document d, String tag) => openDocument(
   context,
   DocRef(uri: d.uri, name: d.name, size: d.size),
@@ -328,6 +419,7 @@ class _FolderCard extends StatelessWidget {
     required this.action,
     required this.actionIcon,
     required this.onAction,
+    super.key,
   });
 
   final IconData icon;
@@ -385,10 +477,9 @@ class _FolderCard extends StatelessWidget {
 
 /// Board 1 ContinueHeroCard, at Home's size.
 class _HeroCard extends StatelessWidget {
-  const _HeroCard({required this.doc, required this.books});
+  const _HeroCard({required this.doc});
 
   final Document doc;
-  final List<BookItem> books;
 
   @override
   Widget build(BuildContext context) {
@@ -457,47 +548,12 @@ class _HeroCard extends StatelessWidget {
               ],
             ),
           ),
-          Builder(
-            builder: (BuildContext context) =>
-                _ResumeButton(onTap: () => _resume(context, doc, 'hero:${doc.fingerprint}')),
+          AppButton(
+            label: 'Resume',
+            icon: AppIcons.play,
+            onPressed: () => _resume(context, doc, 'hero:${doc.fingerprint}'),
           ),
         ],
-      ),
-    );
-  }
-}
-
-class _ResumeButton extends StatelessWidget {
-  const _ResumeButton({required this.onTap});
-
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final UnfurlColors c = context.colors;
-    return Semantics(
-      button: true,
-      label: 'Resume',
-      onTap: onTap,
-      excludeSemantics: true,
-      child: Material(
-        color: c.primary,
-        shape: const StadiumBorder(),
-        child: InkWell(
-          customBorder: const StadiumBorder(),
-          onTap: onTap,
-          child: SizedBox(
-            height: 48,
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              spacing: Space.sm,
-              children: <Widget>[
-                AppIcon(AppIcons.play, fill: true, size: 20, color: c.onPrimary),
-                Text('Resume', style: UnfurlType.titleMedium.copyWith(color: c.onPrimary)),
-              ],
-            ),
-          ),
-        ),
       ),
     );
   }
@@ -514,11 +570,11 @@ class FileRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final UnfurlColors c = context.colors;
     final FormatModule? m = Formats.of(recent.name, recent.mime);
-    return Semantics(
-      button: true,
-      child: InkWell(
+    return MergeSemantics(
+      child: PressableRow(
         onTap: () =>
             openDocument(context, DocRef(uri: recent.uri, name: recent.name, size: recent.size, mime: recent.mime)),
+        onLongPress: () => _fileMenu(context, recent),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: Space.lg, vertical: Space.md),
           child: Row(
@@ -559,6 +615,30 @@ class FileRow extends StatelessWidget {
   }
 }
 
+/// A recent file's menu (long press): Open, Share file, Remove from Recents.
+Future<void> _fileMenu(BuildContext context, Recent recent) async {
+  final Library library = ProviderScope.containerOf(context).read(libraryProvider);
+  final String? v = await showAppMenu<String>(
+    context: context,
+    anchorContext: context,
+    entries: const <AppMenuEntry<String>>[
+      AppMenuEntry<String>(value: 'open', label: 'Open', icon: AppIcons.menuBook),
+      AppMenuEntry<String>(value: 'share', label: 'Share file', icon: AppIcons.share),
+      AppMenuEntry<String>.divider(),
+      AppMenuEntry<String>(value: 'remove', label: 'Remove from Recents', icon: AppIcons.removeCircle),
+    ],
+  );
+  if (!context.mounted) return;
+  switch (v) {
+    case 'open':
+      await openDocument(context, DocRef(uri: recent.uri, name: recent.name, size: recent.size, mime: recent.mime));
+    case 'share':
+      await Platform.shareFile(recent.uri, recent.mime);
+    case 'remove':
+      await library.forgetRecent(recent.uri);
+  }
+}
+
 /// Opens a recent or an index row from anywhere (shared by Folder screens).
 void openRef(BuildContext context, DocRef ref) => unawaited(openDocument(context, ref));
 
@@ -577,7 +657,7 @@ Future<void> _bookMenu(
     context: context,
     anchorContext: anchor,
     entries: const <AppMenuEntry<String>>[
-      AppMenuEntry<String>(value: 'open', label: 'Open', icon: AppIcons.openInNew),
+      AppMenuEntry<String>(value: 'open', label: 'Open', icon: AppIcons.menuBook),
       AppMenuEntry<String>(value: 'share', label: 'Share file', icon: AppIcons.share),
       kInsightsEntry,
     ],

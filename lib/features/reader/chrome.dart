@@ -580,14 +580,19 @@ class MiniPlayer extends StatelessWidget {
             label: playing ? 'Pause' : 'Play',
             onTap: onToggle,
             excludeSemantics: true,
-            child: Material(
-              color: playing ? c.primary : c.primaryContainer,
-              shape: const CircleBorder(),
-              child: Pressable(
-                kind: PressKind.fab,
+            // A circle that squares to 12 dp while held (Expressive).
+            child: Pressable(
+              kind: PressKind.fab,
+              restRadius: 26,
+              builder: (BuildContext context, double radius, double pressed) => Material(
+                color: playing ? c.primary : c.primaryContainer,
+                animationDuration: Duration.zero,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(radius)),
+                clipBehavior: Clip.antiAlias,
                 child: InkWell(
-                  customBorder: const CircleBorder(),
                   onTap: onToggle,
+                  overlayColor: pressedLayer(c),
+                  splashFactory: NoSplash.splashFactory,
                   child: SizedBox.square(
                     dimension: 52,
                     child: AnimatedSwitcher(
@@ -674,7 +679,7 @@ class SelectionToolbar extends StatelessWidget {
   Widget _bar(BuildContext context) {
     final UnfurlColors c = context.colors;
     return Material(
-      color: Colors.transparent,
+      color: c.surfaceContainerHigh.withValues(alpha: 0),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: Space.xs, vertical: Space.xs),
         decoration: BoxDecoration(

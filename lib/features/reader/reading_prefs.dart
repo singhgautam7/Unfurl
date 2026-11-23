@@ -1,9 +1,10 @@
 import 'dart:async';
 
-import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../core/motion/motion.dart';
 import '../../core/theme/reading_theme.dart';
 import '../../core/theme/tokens.dart';
 import '../settings/settings_controller.dart';
@@ -185,38 +186,90 @@ class ReadingPrefs {
     ttsVoice: p.getString('tts.voice'),
   );
 
-  Future<void> write(SharedPreferences p) async {
-    theme == null ? await p.remove('reading.theme') : await p.setString('reading.theme', theme!.name);
-    await p.setString('reading.font', font.name);
-    await p.setDouble('reading.size', size);
-    await p.setDouble('reading.lineHeight', lineHeight);
-    await p.setDouble('reading.margin', margin);
-    await p.setBool('reading.justify', justify);
-    await p.setBool('reading.hyphenate', hyphenate);
-    await p.setString('reading.layout', layout.name);
-    await p.setString('reading.pageTurn', pageTurn.name);
-    brightness == null ? await p.remove('reading.brightness') : await p.setDouble('reading.brightness', brightness!);
-    await p.setBool('reading.keepScreenOn', keepScreenOn);
-    await p.setBool('reading.volumeKeys', volumeKeys);
-    await p.setBool('reading.volumeInvert', volumeInvert);
-    await p.setBool('pdf.opensReader', pdfOpensReader);
-    await p.setString('pdf.layout', pdfLayout.name);
-    await p.setBool('pdf.crop', pdfCrop);
-    await p.setBool('pdf.recolourPages', pdfRecolour);
-    await p.remove('pdf.recolour');
-    await p.setDouble('tts.rate', ttsRate);
-    if (ttsVoice != null) await p.setString('tts.voice', ttsVoice!);
+  /// Writes the keys whose value differs from [since] (all of them when it is
+  /// null). Each platform write is awaited, so an unchanged key costs nothing.
+  Future<void> write(SharedPreferences p, {ReadingPrefs? since}) async {
+    final ReadingPrefs? o = since;
+    if (o == null || o.theme != theme) {
+      theme == null ? await p.remove('reading.theme') : await p.setString('reading.theme', theme!.name);
+    }
+    if (o == null || o.font != font) await p.setString('reading.font', font.name);
+    if (o == null || o.size != size) await p.setDouble('reading.size', size);
+    if (o == null || o.lineHeight != lineHeight) await p.setDouble('reading.lineHeight', lineHeight);
+    if (o == null || o.margin != margin) await p.setDouble('reading.margin', margin);
+    if (o == null || o.justify != justify) await p.setBool('reading.justify', justify);
+    if (o == null || o.hyphenate != hyphenate) await p.setBool('reading.hyphenate', hyphenate);
+    if (o == null || o.layout != layout) await p.setString('reading.layout', layout.name);
+    if (o == null || o.pageTurn != pageTurn) await p.setString('reading.pageTurn', pageTurn.name);
+    if (o == null || o.brightness != brightness) {
+      brightness == null ? await p.remove('reading.brightness') : await p.setDouble('reading.brightness', brightness!);
+    }
+    if (o == null || o.keepScreenOn != keepScreenOn) await p.setBool('reading.keepScreenOn', keepScreenOn);
+    if (o == null || o.volumeKeys != volumeKeys) await p.setBool('reading.volumeKeys', volumeKeys);
+    if (o == null || o.volumeInvert != volumeInvert) await p.setBool('reading.volumeInvert', volumeInvert);
+    if (o == null || o.pdfOpensReader != pdfOpensReader) await p.setBool('pdf.opensReader', pdfOpensReader);
+    if (o == null || o.pdfLayout != pdfLayout) await p.setString('pdf.layout', pdfLayout.name);
+    if (o == null || o.pdfCrop != pdfCrop) await p.setBool('pdf.crop', pdfCrop);
+    if (o == null || o.pdfRecolour != pdfRecolour) {
+      await p.setBool('pdf.recolourPages', pdfRecolour);
+      await p.remove('pdf.recolour');
+    }
+    if (o == null || o.ttsRate != ttsRate) await p.setDouble('tts.rate', ttsRate);
+    if ((o == null || o.ttsVoice != ttsVoice) && ttsVoice != null) await p.setString('tts.voice', ttsVoice!);
+  }
+}
+
+/// Flushes the debounced prefs write when the app is paused: Android may end
+/// a backgrounded app without disposing anything.
+class _FlushOnPause with WidgetsBindingObserver {
+  _FlushOnPause(this.flush);
+
+  final void Function() flush;
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused || state == AppLifecycleState.inactive) flush();
   }
 }
 
 class ReadingPrefsController extends Notifier<ReadingPrefs> {
-  @override
-  ReadingPrefs build() => ReadingPrefs.read(ref.watch(prefsProvider));
+  /// What is on disk now; a write sends only what differs from it.
+  late ReadingPrefs _persisted;
+  late ReadingPrefs _latest;
+  late SharedPreferences _prefs;
+  Timer? _saveTimer;
 
-  /// Applies at once (the page re-lays out within a frame) and persists.
+  @override
+  ReadingPrefs build() {
+    _prefs = ref.watch(prefsProvider);
+    final ReadingPrefs p = ReadingPrefs.read(_prefs);
+    _persisted = _latest = p;
+    _saveTimer?.cancel();
+    final _FlushOnPause observer = _FlushOnPause(flush);
+    WidgetsBinding.instance.addObserver(observer);
+    ref.onDispose(() {
+      WidgetsBinding.instance.removeObserver(observer);
+      flush();
+    });
+    return p;
+  }
+
+  /// Applies at once (the page re-lays out within a frame) and persists after
+  /// [Motion.saveDelay]: a slider drag or a pinch writes once, when it rests.
   void update(ReadingPrefs Function(ReadingPrefs p) change) {
-    state = change(state);
-    unawaited(state.write(ref.read(prefsProvider)));
+    state = _latest = change(state);
+    _saveTimer?.cancel();
+    _saveTimer = Timer(Motion.saveDelay, flush);
+  }
+
+  /// Writes what changed now.
+  void flush() {
+    _saveTimer?.cancel();
+    _saveTimer = null;
+    final ReadingPrefs old = _persisted, now = _latest;
+    if (identical(old, now)) return;
+    _persisted = now;
+    unawaited(now.write(_prefs, since: old));
   }
 
   void reset() {

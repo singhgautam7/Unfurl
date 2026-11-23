@@ -46,7 +46,7 @@ class _SheetScreenState extends ConsumerState<SheetScreen> {
   String _query = '';
   List<(int, int)> _hits = const <(int, int)>[];
   int _hit = 0;
-  final GlobalKey<_GridState> _grid = GlobalKey<_GridState>();
+  final GlobalKey<SheetGridState> _grid = GlobalKey<SheetGridState>();
 
   @override
   void initState() {
@@ -202,7 +202,7 @@ class _SheetScreenState extends ConsumerState<SheetScreen> {
               child: Stack(
                 children: <Widget>[
                   Positioned.fill(
-                    child: _Grid(
+                    child: SheetGrid(
                       key: _grid,
                       sheet: s,
                       selected: sel,
@@ -320,8 +320,9 @@ class _CellStrip extends StatelessWidget {
 /// A grid that only ever lays out the cells on screen: column letters and
 /// row numbers frozen, the first row frozen with them, pan with
 /// momentum, pinch to zoom.
-class _Grid extends StatefulWidget {
-  const _Grid({required this.sheet, required this.selected, required this.hits, required this.onSelect, super.key});
+@visibleForTesting
+class SheetGrid extends StatefulWidget {
+  const SheetGrid({required this.sheet, required this.selected, required this.hits, required this.onSelect, super.key});
 
   final SheetData sheet;
   final (int, int)? selected;
@@ -329,10 +330,11 @@ class _Grid extends StatefulWidget {
   final void Function(int r, int c) onSelect;
 
   @override
-  State<_Grid> createState() => _GridState();
+  State<SheetGrid> createState() => SheetGridState();
 }
 
-class _GridState extends State<_Grid> with SingleTickerProviderStateMixin {
+@visibleForTesting
+class SheetGridState extends State<SheetGrid> with SingleTickerProviderStateMixin {
   Offset _offset = Offset.zero;
   double _zoom = 1;
   double _zoomStart = 1;
@@ -346,10 +348,14 @@ class _GridState extends State<_Grid> with SingleTickerProviderStateMixin {
 
   static const double _rowH = 36, _headH = 30, _numW = 36;
 
+  /// Text cells laid out (and kept) so far: only what has been on screen, never the sheet.
+  @visibleForTesting
+  int get laidOutCells => _cache.length;
+
   @override
-  void didUpdateWidget(_Grid old) {
-    super.didUpdateWidget(old);
-    if (old.sheet != widget.sheet) {
+  void didUpdateWidget(SheetGrid oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.sheet != widget.sheet) {
       _widths = _measureColumns();
       _offset = Offset.zero;
       _clearCache();
@@ -456,17 +462,19 @@ class _GridState extends State<_Grid> with SingleTickerProviderStateMixin {
           child: Semantics(
             label: 'Sheet ${widget.sheet.name}, ${widget.sheet.rows.length} rows',
             child: ClipRect(
-              child: CustomPaint(
-                size: Size.infinite,
-                painter: _GridPainter(
-                  sheet: widget.sheet,
-                  widths: _widths,
-                  offset: _offset,
-                  zoom: _zoom,
-                  colors: c,
-                  selected: widget.selected,
-                  hits: widget.hits,
-                  cache: _cache,
+              child: RepaintBoundary(
+                child: CustomPaint(
+                  size: Size.infinite,
+                  painter: _GridPainter(
+                    sheet: widget.sheet,
+                    widths: _widths,
+                    offset: _offset,
+                    zoom: _zoom,
+                    colors: c,
+                    selected: widget.selected,
+                    hits: widget.hits,
+                    cache: _cache,
+                  ),
                 ),
               ),
             ),
@@ -511,6 +519,7 @@ class _GridPainter extends CustomPainter {
   final LinkedHashMap<String, TextPainter> cache;
 
   static const double _rowH = 36, _headH = 30, _numW = 36;
+  static final RegExp _totalWord = RegExp(r'\b(total|sum)\b', caseSensitive: false);
 
   TextPainter _text(String key, String text, TextStyle style, double maxW) {
     final TextPainter? hit = cache.remove(key);
@@ -534,6 +543,7 @@ class _GridPainter extends CustomPainter {
     final UnfurlColors c = colors;
     final Paint divider = Paint()..color = c.divider;
     final Paint outline = Paint()..color = c.outline;
+    final Paint fill = Paint();
     final double rowH = _rowH * zoom;
     final TextStyle cell = TextStyle(
       fontFamily: UnfurlType.sans,
@@ -566,9 +576,7 @@ class _GridPainter extends CustomPainter {
     final int lastRow = math.min(sheet.rows.length - 1, firstRow + (size.height / rowH).ceil() + 1);
 
     // A last row reads as totals (bold figures) only when it says so.
-    final bool totals =
-        sheet.rows.isNotEmpty &&
-        sheet.rows.last.any((String v) => RegExp(r'\b(total|sum)\b', caseSensitive: false).hasMatch(v));
+    final bool totals = sheet.rows.isNotEmpty && sheet.rows.last.any(_totalWord.hasMatch);
     void drawCell(int r, int col, double cx, double cy, double w, {bool frozenRow = false}) {
       final bool sel = selected == (r, col);
       final bool hit = hits.contains((r, col));
@@ -581,7 +589,7 @@ class _GridPainter extends CustomPainter {
         bg = c.surfaceContainer;
       }
       final Rect rect = Rect.fromLTWH(cx, cy, w, rowH);
-      if (bg != null) canvas.drawRect(rect, Paint()..color = bg);
+      if (bg != null) canvas.drawRect(rect, fill..color = bg);
       final String v = sheet.cell(r, col);
       if (v.isNotEmpty) {
         final bool numeric = sheet.numeric.contains((r, col));

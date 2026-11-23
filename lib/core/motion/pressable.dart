@@ -1,5 +1,6 @@
 // ignore_for_file: discarded_futures, unawaited_futures (animation futures are fire-and-forget)
 
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/gestures.dart';
@@ -17,7 +18,7 @@ enum PressKind { card, row, button, iconButton, fab, chip }
 /// card / row / button; none at Off) and, for buttons, a corner morph.
 ///
 /// Listener-based, so an InkWell / GestureDetector inside keeps its own tap
-/// and state layer. Pass [onTap] / [onLongPress] only when there is no inner
+/// and state layer. A tap ends in one haptic tick (see [haptic]). Pass [onTap] / [onLongPress] only when there is no inner
 /// tap handler. Down on springFast, up on springDefault (card / row) or
 /// springFast (buttons); Subtle uses springSubtle; Off does nothing. Retargets
 /// from the current value and velocity; no ticker runs at rest.
@@ -38,6 +39,7 @@ class Pressable extends StatefulWidget {
     this.morphCorners,
     this.enabled = true,
     this.semanticLabel,
+    this.haptic = true,
   }) : assert((child == null) != (builder == null), 'Pass a child or a builder');
 
   final Widget? child;
@@ -65,6 +67,11 @@ class Pressable extends StatefulWidget {
   /// Announced as a button when [onTap] is set.
   final String? semanticLabel;
 
+  /// One tick when a press ends as a tap (released within the touch slop),
+  /// whoever handles the tap. Off for a control that ticks itself (chips,
+  /// segments), so one tap is one tick.
+  final bool haptic;
+
   @override
   State<Pressable> createState() => _PressableState();
 }
@@ -74,11 +81,17 @@ class _PressableState extends State<Pressable> with SingleTickerProviderStateMix
   AnimationController? _c;
   Offset? _down;
 
+  // Where the current press began, for the tap tick; null once it moved past
+  // the slop (a scroll) or became a long press.
+  Offset? _tapAt;
+  Timer? _hold;
+
   AnimationController get _ctrl =>
       _c ??= AnimationController.unbounded(vsync: this)..addListener(() => _v.value = _c!.value);
 
   @override
   void dispose() {
+    _hold?.cancel();
     _c?.dispose();
     _v.dispose();
     super.dispose();
@@ -127,6 +140,10 @@ class _PressableState extends State<Pressable> with SingleTickerProviderStateMix
 
   void _press(PointerDownEvent e) {
     if (!widget.enabled) return;
+    _tapAt = e.position;
+    // A hold past the long-press time is not a tap.
+    _hold?.cancel();
+    _hold = Timer(kLongPressTimeout, () => _tapAt = null);
     final MotionLevel l = Motion.levelOf(context);
     if (l == MotionLevel.off) return;
     _down = e.position;
@@ -140,7 +157,22 @@ class _PressableState extends State<Pressable> with SingleTickerProviderStateMix
     _ctrl.springTo(0, Motion.spatial(l, _morphs ? Motion.springFast : Motion.springDefault));
   }
 
+  void _up(PointerUpEvent e) {
+    _hold?.cancel();
+    if (_tapAt != null && widget.haptic && widget.enabled) Haptics.tick();
+    _tapAt = null;
+    _release(e);
+  }
+
+  void _cancel(PointerCancelEvent e) {
+    _hold?.cancel();
+    _tapAt = null;
+    _release(e);
+  }
+
   void _move(PointerMoveEvent e) {
+    final Offset? t = _tapAt;
+    if (t != null && (e.position - t).distance > kTouchSlop) _tapAt = null;
     final Offset? d = _down;
     // A drag (scroll) is not a press: let go once it passes the touch slop.
     if (d != null && (e.position - d).distance > kTouchSlop) _release();
@@ -167,14 +199,10 @@ class _PressableState extends State<Pressable> with SingleTickerProviderStateMix
     if (widget.onTap != null || widget.onLongPress != null) {
       body = GestureDetector(
         behavior: HitTestBehavior.opaque,
-        onTap: widget.enabled && widget.onTap != null
-            ? () {
-                Haptics.tick();
-                widget.onTap!();
-              }
-            : null,
+        onTap: widget.enabled ? widget.onTap : null,
         onLongPress: widget.enabled && widget.onLongPress != null
             ? () {
+                _tapAt = null;
                 Haptics.longPress();
                 widget.onLongPress!();
               }
@@ -189,8 +217,8 @@ class _PressableState extends State<Pressable> with SingleTickerProviderStateMix
       behavior: HitTestBehavior.translucent,
       onPointerDown: _press,
       onPointerMove: _move,
-      onPointerUp: _release,
-      onPointerCancel: _release,
+      onPointerUp: _up,
+      onPointerCancel: _cancel,
       child: body,
     );
   }

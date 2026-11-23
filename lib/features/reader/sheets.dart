@@ -116,16 +116,9 @@ Future<T?> showReaderSheet<T>(
   bool scrim = true,
   double? heightFactor,
   bool surface = false,
-}) => showModalBottomSheet<T>(
+}) => pushHeldSheet<T>(
   context: context,
-  useRootNavigator: true,
-  isScrollControlled: true,
-  backgroundColor: Colors.transparent,
   barrierColor: scrim ? context.colors.scrim : Colors.transparent,
-  sheetAnimationStyle: AnimationStyle(
-    duration: Motion.of(context, Motion.sheet),
-    curve: Motion.curveOf(context, Motion.decelerate),
-  ),
   builder: (BuildContext ctx) => Padding(
     padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(ctx).bottom),
     child: ReaderSheet(
@@ -141,16 +134,9 @@ Future<T?> showReaderSheet<T>(
 /// Reading settings (R7): opens at about half height over the live page,
 /// which re-renders on every change. [pdf] swaps typography for layout,
 /// crop and recolour ("Page settings").
-Future<void> showReadingSettings(BuildContext context, {bool pdf = false}) => showModalBottomSheet<void>(
+Future<void> showReadingSettings(BuildContext context, {bool pdf = false}) => pushHeldSheet<void>(
   context: context,
-  useRootNavigator: true,
-  isScrollControlled: true,
-  backgroundColor: Colors.transparent,
   barrierColor: Colors.transparent,
-  sheetAnimationStyle: AnimationStyle(
-    duration: Motion.of(context, Motion.sheet),
-    curve: Motion.curveOf(context, Motion.decelerate),
-  ),
   // Opens at the board's 540 (Theme to Margins; Page settings 500), over a
   // page that re-renders live; dragged up it shows every group.
   builder: (BuildContext ctx) => DraggableScrollableSheet(
@@ -172,8 +158,11 @@ class _ThemeSwatches extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final UnfurlColors c = context.colors;
-    final ReadingPrefs p = ref.watch(readingPrefsProvider);
-    final ReadingThemeId current = p.themeFor(darkChrome: c.isDark, amoledChrome: c.tone == Tone.amoled);
+    final ReadingThemeId current = ref.watch(
+      readingPrefsProvider.select(
+        (ReadingPrefs p) => p.themeFor(darkChrome: c.isDark, amoledChrome: c.tone == Tone.amoled),
+      ),
+    );
     // Seven presets (v2 · V2-02) run off the right edge; the cut-off sixth
     // swatch says there are more. The ring draws in the 4dp margin.
     return SingleChildScrollView(
@@ -287,7 +276,9 @@ class _ReadingSettings extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final UnfurlColors c = context.colors;
-    final ReadingPrefs p = ref.watch(readingPrefsProvider);
+    final p = ref.watch(
+      readingPrefsProvider.select((ReadingPrefs p) => (font: p.font, hyphenate: p.hyphenate, layout: p.layout)),
+    );
     final ReadingPrefsController ctl = ref.read(readingPrefsProvider.notifier);
     void set(ReadingPrefs Function(ReadingPrefs) f) => ctl.update(f);
     return Column(
@@ -318,23 +309,28 @@ class _ReadingSettings extends ConsumerWidget {
                         onTap: () => set((ReadingPrefs x) => x.copyWith(font: f)),
                         child: Padding(
                           padding: const EdgeInsets.symmetric(vertical: 2),
-                          child: Material(
-                            color: f == p.font ? c.primaryContainer : c.surfaceContainerHigh,
-                            shape: const StadiumBorder(),
-                            child: InkWell(
-                              customBorder: const StadiumBorder(),
-                              onTap: () => set((ReadingPrefs x) => x.copyWith(font: f)),
-                              child: Container(
-                                height: 44,
-                                padding: const EdgeInsets.symmetric(horizontal: Space.lg),
-                                alignment: Alignment.center,
-                                child: Text(
-                                  f.label,
-                                  style: TextStyle(
-                                    fontFamily: f.family,
-                                    fontSize: f == ReaderFont.openDyslexic ? 14 : 15.5,
-                                    fontWeight: FontWeight.w500,
-                                    color: f == p.font ? c.onPrimaryContainer : c.onSurface,
+                          child: _SelectedShape(
+                            selected: f == p.font,
+                            builder: (BuildContext context, BorderRadius radius) => Material(
+                              color: f == p.font ? c.primaryContainer : c.surfaceContainerHigh,
+                              borderRadius: radius,
+                              clipBehavior: Clip.antiAlias,
+                              child: InkWell(
+                                splashFactory: NoSplash.splashFactory,
+                                overlayColor: pressedLayer(c),
+                                onTap: () => set((ReadingPrefs x) => x.copyWith(font: f)),
+                                child: Container(
+                                  height: 44,
+                                  padding: const EdgeInsets.symmetric(horizontal: Space.lg),
+                                  alignment: Alignment.center,
+                                  child: Text(
+                                    f.label,
+                                    style: TextStyle(
+                                      fontFamily: f.family,
+                                      fontSize: f == ReaderFont.openDyslexic ? 14 : 15.5,
+                                      fontWeight: FontWeight.w500,
+                                      color: f == p.font ? c.onPrimaryContainer : c.onSurface,
+                                    ),
                                   ),
                                 ),
                               ),
@@ -368,34 +364,62 @@ class _ReadingSettings extends ConsumerWidget {
             _Group(label: 'Align', child: AlignControl()),
           ],
         ),
-        const _Group(label: 'Layout', child: LayoutControl()),
-        _Group(
-          label: 'Page',
-          child: _Card(
+        // Below the sheet's opening height.
+        AfterSlide(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            spacing: Space.lg,
             children: <Widget>[
-              _SwitchRow(
-                label: 'Hyphenation',
-                value: p.hyphenate,
-                onChanged: (bool v) => set((ReadingPrefs x) => x.copyWith(hyphenate: v)),
+              const _Group(label: 'Layout', child: LayoutControl()),
+              _Group(
+                label: 'Page',
+                child: _Card(
+                  children: <Widget>[
+                    _SwitchRow(
+                      label: 'Hyphenation',
+                      value: p.hyphenate,
+                      onChanged: (bool v) => set((ReadingPrefs x) => x.copyWith(hyphenate: v)),
+                    ),
+                    const BrightnessRow(labelled: true),
+                  ],
+                ),
               ),
-              const BrightnessRow(labelled: true),
+              // Last, so leaving Paged moves nothing above it.
+              ShowHide(
+                visible: p.layout == ReaderLayout.paged,
+                child: const _Group(label: 'Page turn', child: PageTurnControl()),
+              ),
+              AppButton(
+                label: 'Reset to defaults',
+                icon: AppIcons.history,
+                type: AppButtonType.secondary,
+                height: IconSpec.tapTarget,
+                onPressed: ctl.reset,
+              ),
+              const SizedBox(height: Space.sm),
             ],
           ),
         ),
-        // Last, so leaving Paged moves nothing above it.
-        ShowHide(
-          visible: p.layout == ReaderLayout.paged,
-          child: const _Group(label: 'Page turn', child: PageTurnControl()),
-        ),
-        AppButton(
-          label: 'Reset to defaults',
-          icon: AppIcons.history,
-          type: AppButtonType.secondary,
-          height: IconSpec.tapTarget,
-          onPressed: ctl.reset,
-        ),
-        const SizedBox(height: Space.sm),
       ],
+    );
+  }
+}
+
+/// Picked is a 12 dp squircle, the rest pills (the chips' rule and spring).
+class _SelectedShape extends StatelessWidget {
+  const _SelectedShape({required this.selected, required this.builder});
+
+  final bool selected;
+  final Widget Function(BuildContext context, BorderRadius radius) builder;
+
+  @override
+  Widget build(BuildContext context) {
+    final MotionLevel level = Motion.levelOf(context);
+    return TweenAnimationBuilder<double>(
+      tween: Tween<double>(end: selected ? kSelectedRadius : 22),
+      duration: level == MotionLevel.expressive ? Motion.fastCurve.settle : Duration.zero,
+      curve: Motion.fastCurve.clamped,
+      builder: (BuildContext context, double r, Widget? _) => builder(context, BorderRadius.circular(r)),
     );
   }
 }
@@ -405,7 +429,11 @@ class _PageSettings extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final ReadingPrefs p = ref.watch(readingPrefsProvider);
+    final p = ref.watch(
+      readingPrefsProvider.select(
+        (ReadingPrefs p) => (pdfLayout: p.pdfLayout, pdfCrop: p.pdfCrop, pdfRecolour: p.pdfRecolour),
+      ),
+    );
     void set(ReadingPrefs Function(ReadingPrefs) f) => ref.read(readingPrefsProvider.notifier).update(f);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -454,8 +482,8 @@ class TextSizeControl extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final ReadingPrefs p = ref.watch(readingPrefsProvider);
-    final int at = ReadingPrefs.sizes.indexOf(p.size);
+    final double size = ref.watch(readingPrefsProvider.select((ReadingPrefs p) => p.size));
+    final int at = ReadingPrefs.sizes.indexOf(size);
     return _Track(
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -473,8 +501,8 @@ class TextSizeControl extends ConsumerWidget {
               child: ScaleTransition(scale: Tween<double>(begin: 0.7, end: 1).animate(a), child: child),
             ),
             child: Text(
-              '${p.size.round()}',
-              key: ValueKey<double>(p.size),
+              '${size.round()}',
+              key: ValueKey<double>(size),
               style: UnfurlType.monoTabular.copyWith(color: context.colors.onSurface),
             ),
           ),
@@ -605,12 +633,6 @@ class _StepButton extends StatefulWidget {
 }
 
 class _StepButtonState extends State<_StepButton> {
-  bool _down = false;
-
-  void _press({required bool down}) {
-    if (widget.onTap != null && down != _down) setState(() => _down = down);
-  }
-
   @override
   Widget build(BuildContext context) {
     final UnfurlColors c = context.colors;
@@ -620,32 +642,34 @@ class _StepButtonState extends State<_StepButton> {
       label: widget.semantic,
       onTap: widget.onTap,
       excludeSemantics: true,
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: widget.onTap,
-        onTapDown: (_) => _press(down: true),
-        onTapUp: (_) => _press(down: false),
-        onTapCancel: () => _press(down: false),
-        child: Padding(
+      // A pill that squares up a little while held; the state layer is the
+      // fill, so there is no splash.
+      child: Pressable(
+        kind: PressKind.button,
+        restRadius: 20,
+        enabled: widget.onTap != null,
+        builder: (BuildContext context, double radius, double pressed) => Padding(
           padding: const EdgeInsets.symmetric(vertical: Space.xs),
-          child: AnimatedScale(
-            scale: _down ? 0.85 : 1,
-            duration: Motion.of(context, Motion.instant),
-            curve: Motion.curveOf(context, Motion.spring),
-            child: AnimatedContainer(
-              duration: Motion.of(context, Motion.instant),
-              width: 48,
-              height: 40,
-              decoration: BoxDecoration(
-                color: _down ? c.surface : c.surface.withValues(alpha: 0),
-                borderRadius: Radii.fullR,
-              ),
-              alignment: Alignment.center,
-              child: Text(
-                widget.label,
-                style: UnfurlType.titleMedium
-                    .copyWith(fontSize: widget.size, color: widget.onTap == null ? c.onSurfaceMuted : c.icon)
-                    .weight(600),
+          child: Material(
+            color: c.surface.withValues(alpha: 0),
+            animationDuration: Duration.zero,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(radius)),
+            clipBehavior: Clip.antiAlias,
+            child: InkWell(
+              onTap: widget.onTap,
+              overlayColor: pressedLayer(c),
+              splashFactory: NoSplash.splashFactory,
+              child: SizedBox(
+                width: 48,
+                height: 40,
+                child: Center(
+                  child: Text(
+                    widget.label,
+                    style: UnfurlType.titleMedium
+                        .copyWith(fontSize: widget.size, color: widget.onTap == null ? c.onSurfaceMuted : c.icon)
+                        .weight(600),
+                  ),
+                ),
               ),
             ),
           ),
@@ -691,16 +715,20 @@ class _IconSegments<T> extends StatelessWidget {
                   onTap: () => onChanged(values[i]),
                   child: Padding(
                     padding: const EdgeInsets.symmetric(vertical: Space.xs),
-                    child: AnimatedContainer(
-                      duration: Motion.of(context, Motion.fast),
-                      width: IconSpec.tapTarget,
-                      height: 40,
-                      decoration: BoxDecoration(
-                        color: values[i] == selected ? c.surface : c.surface.withValues(alpha: 0),
-                        borderRadius: Radii.fullR,
-                        border: Border.all(color: values[i] == selected ? c.outline : c.outline.withValues(alpha: 0)),
+                    // Picked is the accent, 12 dp, as every single choice; a
+                    // surface fill with an outline looks disabled.
+                    child: _SelectedShape(
+                      selected: values[i] == selected,
+                      builder: (BuildContext context, BorderRadius radius) => AnimatedContainer(
+                        duration: Motion.of(context, Motion.fast),
+                        width: IconSpec.tapTarget,
+                        height: 40,
+                        decoration: BoxDecoration(
+                          color: values[i] == selected ? c.primary : c.primary.withValues(alpha: 0),
+                          borderRadius: radius,
+                        ),
+                        child: AppIcon(icons[i], size: 20, color: values[i] == selected ? c.onPrimary : c.iconMuted),
                       ),
-                      child: AppIcon(icons[i], size: 20, color: values[i] == selected ? c.onSurface : c.iconMuted),
                     ),
                   ),
                 ),
@@ -744,34 +772,10 @@ class _SwitchRow extends StatelessWidget {
   final bool value;
   final ValueChanged<bool> onChanged;
 
+  /// The whole row toggles, once (the kit's switch row).
   @override
-  Widget build(BuildContext context) {
-    final UnfurlColors c = context.colors;
-    return MergeSemantics(
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(minHeight: 52),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: Space.xs),
-          child: Row(
-            children: <Widget>[
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: <Widget>[
-                    Text(label, style: UnfurlType.titleMedium.copyWith(color: c.onSurface)),
-                    if (subtitle != null)
-                      Text(subtitle!, style: UnfurlType.bodySmall.copyWith(color: c.onSurfaceVariant)),
-                  ],
-                ),
-              ),
-              Switch(value: value, onChanged: onChanged),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
+  Widget build(BuildContext context) =>
+      ListRow(label: label, subtitle: subtitle, switchValue: value, onChanged: onChanged, minHeight: 52);
 }
 
 /// Screen brightness for reading, or the system's ("Auto").
@@ -794,8 +798,8 @@ class BrightnessRow extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final UnfurlColors c = context.colors;
-    final ReadingPrefs p = ref.watch(readingPrefsProvider);
-    final double v = p.brightness ?? 0.44;
+    final double? brightness = ref.watch(readingPrefsProvider.select((ReadingPrefs p) => p.brightness));
+    final double v = brightness ?? 0.44;
     return SizedBox(
       height: 52,
       child: Padding(
@@ -810,7 +814,7 @@ class BrightnessRow extends ConsumerWidget {
               child: SliderTheme(
                 data: SliderThemeData(
                   trackHeight: 6,
-                  activeTrackColor: p.brightness == null ? c.onSurfaceMuted : c.primary,
+                  activeTrackColor: brightness == null ? c.onSurfaceMuted : c.primary,
                   inactiveTrackColor: c.surfaceContainerHigh,
                   thumbColor: c.primary,
                   overlayColor: c.primary.withValues(alpha: 0.12),
@@ -843,10 +847,8 @@ class BrightnessRow extends ConsumerWidget {
                     height: IconSpec.tapTarget,
                     child: Center(
                       child: Text(
-                        p.brightness == null ? 'Auto' : (percent ? '${(v * 100).round()}%' : 'Auto'),
-                        style: UnfurlType.monoLabel.copyWith(
-                          color: p.brightness == null ? c.accent : c.onSurfaceVariant,
-                        ),
+                        brightness == null ? 'Auto' : (percent ? '${(v * 100).round()}%' : 'Auto'),
+                        style: UnfurlType.monoLabel.copyWith(color: brightness == null ? c.accent : c.onSurfaceVariant),
                       ),
                     ),
                   ),
@@ -1001,7 +1003,7 @@ class _ContentsSheetState extends State<ContentsSheet> {
             button: true,
             selected: r.current,
             child: Material(
-              color: r.current ? c.primaryContainer : Colors.transparent,
+              color: r.current ? c.primaryContainer : c.primaryContainer.withValues(alpha: 0),
               borderRadius: Radii.cardR,
               child: Pressable(
                 kind: PressKind.row,
@@ -1447,7 +1449,7 @@ class _VoiceSheetState extends ConsumerState<_VoiceSheet> {
   @override
   Widget build(BuildContext context) {
     final UnfurlColors c = context.colors;
-    final String? chosen = ref.watch(readingPrefsProvider).ttsVoice;
+    final String? chosen = ref.watch(readingPrefsProvider.select((ReadingPrefs p) => p.ttsVoice));
     final String lang = Localizations.localeOf(context).languageCode;
     final List<Map<Object?, Object?>> voices = (_voices ?? const <Map<Object?, Object?>>[])
         .where((Map<Object?, Object?> v) => (v['locale'] as String? ?? '').startsWith(lang))

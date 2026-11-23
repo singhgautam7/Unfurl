@@ -11,6 +11,16 @@ abstract final class Motion {
   static const Duration instant = Duration(milliseconds: 90);
   static const Duration fast = Duration(milliseconds: 150);
   static const Duration navIndicator = Duration(milliseconds: 220);
+
+  /// Kuber's tab pager: whole pages side by side, ease in and out.
+  static const Duration tabSlide = Duration(milliseconds: 300);
+  static const Curve tabSlideCurve = Curves.easeInOut;
+
+  /// Tabs built ahead of their first visit: the first waits this long after
+  /// launch, each next one a step more; a busy moment is tried again later.
+  static const Duration warmDelay = Duration(milliseconds: 1500);
+  static const Duration warmStep = Duration(milliseconds: 700);
+  static const Duration warmRetry = Duration(milliseconds: 200);
   static const Duration containerTransform = Duration(milliseconds: 240);
   static const Duration sheet = Duration(milliseconds: 260);
   static const Duration navHide = Duration(milliseconds: 160);
@@ -75,6 +85,12 @@ abstract final class Motion {
   /// Not animation: how long a position waits before it is written, and how
   /// long a zoomed PDF waits before sharper tiles are drawn.
   static const Duration saveDelay = Duration(milliseconds: 600);
+
+  /// Bursts of data (a folder scan) redraw at most this often.
+  static const Duration coalesce = Duration(milliseconds: 300);
+
+  /// How long typing rests before a search runs.
+  static const Duration searchDelay = Duration(milliseconds: 150);
   static const Duration sharpenDelay = Duration(milliseconds: 160);
 
   /// Anything the finger caused.
@@ -246,6 +262,7 @@ class Reveal extends StatefulWidget {
 
 class _RevealState extends State<Reveal> with SingleTickerProviderStateMixin {
   late final AnimationController _t = AnimationController(vsync: this);
+  late final CurvedAnimation _a = CurvedAnimation(parent: _t, curve: Motion.decelerate);
   bool _started = false;
 
   @override
@@ -254,7 +271,8 @@ class _RevealState extends State<Reveal> with SingleTickerProviderStateMixin {
     if (_started) return;
     _started = true;
     final MotionLevel level = Motion.levelOf(context);
-    if (level == MotionLevel.off) {
+    // Built offstage (a tab warmed ahead of its visit): it is simply there.
+    if (level == MotionLevel.off || !TickerMode.getValuesNotifier(context).value.enabled) {
       _t.value = 1;
       return;
     }
@@ -271,6 +289,7 @@ class _RevealState extends State<Reveal> with SingleTickerProviderStateMixin {
 
   @override
   void dispose() {
+    _a.dispose();
     _t.dispose();
     super.dispose();
   }
@@ -278,7 +297,7 @@ class _RevealState extends State<Reveal> with SingleTickerProviderStateMixin {
   @override
   Widget build(BuildContext context) {
     final bool plain = Motion.levelOf(context) != MotionLevel.expressive;
-    final Animation<double> a = CurvedAnimation(parent: _t, curve: Motion.decelerate);
+    final Animation<double> a = _a;
     return AnimatedBuilder(
       animation: a,
       child: widget.child,

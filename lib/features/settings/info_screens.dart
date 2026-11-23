@@ -124,11 +124,13 @@ class ThemeScreen extends StatelessWidget {
 
 /// Every theme switch, shared by Settings › Theme and the welcome flow.
 class ThemeControls extends ConsumerStatefulWidget {
-  /// [look]: Settings › Theme adds the Look settings (motion, haptics, the
-  /// floating header) under the theme; the welcome page shows the theme only.
-  const ThemeControls({this.look = false, super.key});
+  /// [look]: Settings › Theme adds the Look settings (haptics, the floating
+  /// header) under the theme. [modeOnly]: Light, Dark and System alone, as the
+  /// welcome setup page asks for nothing else.
+  const ThemeControls({this.look = false, this.modeOnly = false, super.key});
 
   final bool look;
+  final bool modeOnly;
 
   @override
   ConsumerState<ThemeControls> createState() => _ThemeControlsState();
@@ -141,109 +143,56 @@ class _ThemeControlsState extends ConsumerState<ThemeControls> {
   /// A theme change, revealed as a ripple from the tap (handoff decision 15).
   Future<void> _ripple(FutureOr<void> Function() change) => ThemeRipple.of(context).run(_tap, change);
 
+  Widget _mode(ThemeMode mode, SettingsController ctl) => SegmentedToggle<ThemeMode>(
+    options: const <(ThemeMode, String, IconData?)>[
+      (ThemeMode.light, 'Light', null),
+      (ThemeMode.dark, 'Dark', null),
+      (ThemeMode.system, 'System', null),
+    ],
+    selected: mode,
+    onChanged: (ThemeMode m) => _ripple(() => ctl.setThemeMode(m)),
+  );
+
   @override
   Widget build(BuildContext context) {
-    final UnfurlColors c = context.colors;
-    final AppSettings s = ref.watch(settingsProvider);
     final SettingsController ctl = ref.read(settingsProvider.notifier);
-    final Tone tone = s.toneFor(MediaQuery.platformBrightnessOf(context));
-    final bool light = s.themeMode == ThemeMode.light;
-    final UnfurlColors? wallpaper = s.wallpaperSeed == null
-        ? null
-        : ThemeFamily.fromSeed(s.wallpaperSeed!).colors(tone, expressive: s.expressive);
-    Widget row({
-      required Widget leading,
-      required String title,
-      required String note,
-      required bool value,
-      required ValueChanged<bool>? onChanged,
-      bool selected = false,
-    }) => AnimatedOpacity(
-      opacity: onChanged == null ? Opacities.disabled : 1,
-      duration: Motion.of(context, Motion.fast),
-      child: Material(
-        color: c.surfaceContainer,
-        shape: RoundedRectangleBorder(
-          borderRadius: Radii.cardR,
-          side: BorderSide(color: selected ? c.primary : c.outline, width: selected ? 2 : 1),
-        ),
-        clipBehavior: Clip.antiAlias,
-        // The whole row flips the switch, not just the switch.
-        child: InkWell(
-          onTap: onChanged == null ? null : () => onChanged(!value),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: Space.md),
-            child: MergeSemantics(
-              child: Row(
-                spacing: Space.md,
-                children: <Widget>[
-                  leading,
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: <Widget>[
-                        Text(title, style: UnfurlType.titleMedium.copyWith(color: c.onSurface)),
-                        Text(note, style: UnfurlType.bodySmall.copyWith(color: c.onSurfaceVariant)),
-                      ],
-                    ),
-                  ),
-                  Switch(value: value, onChanged: onChanged),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-    Widget swatch({Color? fill, List<Color> halves = const <Color>[]}) => Container(
-      width: 30,
-      height: 30,
-      clipBehavior: Clip.antiAlias,
-      decoration: BoxDecoration(
-        color: fill,
-        borderRadius: BorderRadius.circular(9),
-        border: Border.all(color: c.outline),
-      ),
-      child: Row(
-        children: <Widget>[for (final Color h in halves) Expanded(child: ColoredBox(color: h))],
-      ),
-    );
-    return Listener(
+    Widget listen(Widget child) => Listener(
       behavior: HitTestBehavior.translucent,
       onPointerDown: (PointerDownEvent e) => _tap = e.position,
-      child: Column(
+      child: child,
+    );
+    if (widget.modeOnly) {
+      return listen(_mode(ref.watch(settingsProvider.select((AppSettings s) => s.themeMode)), ctl));
+    }
+    // The theme page uses nearly every field, so it watches them all.
+    final AppSettings s = ref.watch(settingsProvider);
+    final bool light = s.themeMode == ThemeMode.light;
+    final Tone tone = s.toneFor(MediaQuery.platformBrightnessOf(context));
+    return listen(
+      Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
-          SegmentedToggle<ThemeMode>(
-            options: const <(ThemeMode, String, IconData?)>[
-              (ThemeMode.light, 'Light', null),
-              (ThemeMode.dark, 'Dark', null),
-              (ThemeMode.system, 'System', null),
+          _mode(s.themeMode, ctl),
+          const SizedBox(height: Space.md),
+          ListContainer(
+            children: <Widget>[
+              ListRow(
+                icon: AppIcons.palette,
+                label: 'Expressive colours',
+                subtitle: 'Tint backgrounds with your theme colour',
+                switchValue: s.expressive,
+                onChanged: (bool v) => _ripple(() => ctl.setExpressive(value: v)),
+              ),
+              // Dimmed in Light, where it can't act; choosing Dark turns it on.
+              ListRow(
+                icon: AppIcons.darkMode,
+                label: 'Pure black',
+                subtitle: light ? 'Used in dark mode' : 'Black background in dark mode, saves battery on OLED',
+                switchValue: s.amoled && !light,
+                enabled: !light,
+                onChanged: (bool v) => _ripple(() => ctl.setAmoled(value: v)),
+              ),
             ],
-            selected: s.themeMode,
-            onChanged: (ThemeMode m) => _ripple(() => ctl.setThemeMode(m)),
-          ),
-          const SizedBox(height: Space.md),
-          row(
-            // The raised surface with the tint and without.
-            leading: swatch(
-              halves: <Color>[
-                for (final bool e in <bool>[true, false]) s.family.colors(tone, expressive: e).surfaceContainerHigh,
-              ],
-            ),
-            title: 'Expressive colours',
-            note: 'Tint backgrounds with your theme colour',
-            value: s.expressive,
-            onChanged: (bool v) => _ripple(() => ctl.setExpressive(value: v)),
-          ),
-          const SizedBox(height: Space.md),
-          // Always shown; dimmed in Light, where it can't act.
-          row(
-            leading: swatch(fill: s.family.colors(Tone.amoled).surface),
-            title: 'Pure black',
-            note: 'Black background in dark mode. Saves battery on OLED screens.',
-            value: s.amoled && !light,
-            onChanged: light ? null : (bool v) => _ripple(() => ctl.setAmoled(value: v)),
           ),
           if (s.themeMode == ThemeMode.system)
             Padding(
@@ -251,11 +200,11 @@ class _ThemeControlsState extends ConsumerState<ThemeControls> {
               child: Row(
                 spacing: 6,
                 children: <Widget>[
-                  AppIcon(AppIcons.info, size: 14, color: c.onSurfaceVariant),
+                  AppIcon(AppIcons.info, size: 14, color: context.colors.onSurfaceVariant),
                   Expanded(
                     child: Text(
                       'Applies when your phone is in dark mode',
-                      style: UnfurlType.bodySmall.copyWith(color: c.onSurfaceVariant),
+                      style: UnfurlType.bodySmall.copyWith(color: context.colors.onSurfaceVariant),
                     ),
                   ),
                 ],
@@ -278,52 +227,49 @@ class _ThemeControlsState extends ConsumerState<ThemeControls> {
                 ),
             ],
           ),
-          const SizedBox(height: Space.lg),
-          row(
-            leading: Row(
-              spacing: 4,
+          // Below Android 12 there is no wallpaper colour: no row at all.
+          if (s.wallpaperSeed != null) ...<Widget>[
+            const SizedBox(height: Space.lg),
+            ListContainer(
               children: <Widget>[
-                if (wallpaper != null) ...<Widget>[
-                  ThemeDot(wallpaper.primary, size: 26),
-                  ThemeDot(wallpaper.primaryContainer, size: 26),
-                ] else
-                  AppIcon(AppIcons.palette, color: c.onSurfaceVariant),
+                ListRow(
+                  icon: AppIcons.image,
+                  label: 'From your wallpaper',
+                  subtitle: 'Otherwise ${ThemeFamily.byId(s.familyId).name}',
+                  switchValue: s.dynamicColor,
+                  onChanged: (bool v) => _ripple(() => ctl.setDynamicColor(value: v)),
+                ),
               ],
             ),
-            title: 'From your wallpaper',
-            note: s.wallpaperSeed == null
-                ? 'Dynamic colour, Android 12+'
-                : 'Otherwise ${ThemeFamily.byId(s.familyId).name}',
-            selected: s.dynamicColor,
-            value: s.dynamicColor,
-            onChanged: s.wallpaperSeed == null ? null : (bool v) => _ripple(() => ctl.setDynamicColor(value: v)),
-          ),
+          ],
           if (widget.look) ...<Widget>[
             const SizedBox(height: Space.section),
             const SectionHeader(label: 'Look'),
             const SizedBox(height: Space.md),
-            _motionCard(context, s, ctl),
-            const SizedBox(height: Space.md),
-            row(
-              leading: AppIcon(AppIcons.touchApp, color: c.onSurfaceVariant),
-              title: 'Haptics',
-              note: 'A light tap when you switch, select or confirm',
-              value: s.haptics,
-              onChanged: (bool v) {
-                unawaited(ctl.setHaptics(value: v));
-                // The tick confirms the new state (it only sounds when on).
-                Haptics.tick();
-              },
-            ),
-            const SizedBox(height: Space.md),
-            row(
-              leading: AppIcon(AppIcons.viewDay, color: c.onSurfaceVariant),
-              title: 'Floating header',
-              note: s.floatingHeader
-                  ? 'The title bar becomes a pill as you scroll'
-                  : 'The title bar scrolls away with the page',
-              value: s.floatingHeader,
-              onChanged: (bool v) => ctl.setFloatingHeader(value: v),
+            ListContainer(
+              children: <Widget>[
+                ListRow(
+                  icon: AppIcons.touchApp,
+                  label: 'Haptics',
+                  subtitle: 'A light tap when you switch, select or confirm',
+                  switchValue: s.haptics,
+                  onChanged: (bool v) {
+                    unawaited(ctl.setHaptics(value: v));
+                    // The tick confirms the new state (it only sounds when on,
+                    // and never twice within 50 ms).
+                    Haptics.tick();
+                  },
+                ),
+                ListRow(
+                  icon: AppIcons.viewDay,
+                  label: 'Floating header',
+                  subtitle: s.floatingHeader
+                      ? 'The title bar becomes a pill as you scroll'
+                      : 'The title bar scrolls away with the page',
+                  switchValue: s.floatingHeader,
+                  onChanged: (bool v) => ctl.setFloatingHeader(value: v),
+                ),
+              ],
             ),
             const SizedBox(height: Space.lg),
             const SectionHeader(label: 'Show the pill'),
@@ -352,47 +298,6 @@ class _ThemeControlsState extends ConsumerState<ThemeControls> {
     (PillMode.scrollUp, 'When scrolling up'),
     (PillMode.scrollStop, 'When scrolling stops'),
   ];
-
-  /// Motion: Auto, Expressive, Subtle or Off, and what Auto comes to here.
-  Widget _motionCard(BuildContext context, AppSettings s, SettingsController ctl) {
-    final UnfurlColors c = context.colors;
-    final bool systemOff = MediaQuery.disableAnimationsOf(context) || MediaQuery.accessibleNavigationOf(context);
-    final MotionLevel level = resolveMotionLevel(s.motion, s.deviceClass, systemOff: systemOff);
-    final String levelName = switch (level) {
-      MotionLevel.expressive => 'Expressive',
-      MotionLevel.subtle => 'Subtle',
-      MotionLevel.off => 'Off',
-    };
-    final String note = systemOff
-        ? 'Off. Your phone has animations turned off.'
-        : switch (s.motion) {
-            MotionPreference.auto => 'Auto ($levelName). Follows what your phone can do.',
-            MotionPreference.expressive => 'Springs and bounce.',
-            MotionPreference.subtle => 'Quick fades, no bounce.',
-            MotionPreference.off => 'Nothing moves.',
-          };
-    return SurfaceCard(
-      padding: const EdgeInsets.symmetric(horizontal: Space.lg, vertical: 14),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        spacing: 10,
-        children: <Widget>[
-          Text('Motion', style: UnfurlType.titleMedium.copyWith(color: c.onSurface)),
-          SegmentedToggle<MotionPreference>(
-            options: const <(MotionPreference, String, IconData?)>[
-              (MotionPreference.auto, 'Auto', null),
-              (MotionPreference.expressive, 'Expressive', null),
-              (MotionPreference.subtle, 'Subtle', null),
-              (MotionPreference.off, 'Off', null),
-            ],
-            selected: s.motion,
-            onChanged: ctl.setMotion,
-          ),
-          Text(note, style: UnfurlType.bodySmall.copyWith(color: c.onSurfaceVariant)),
-        ],
-      ),
-    );
-  }
 }
 
 /// About, as Mull's: a note from the developer, what it stands for as four
@@ -414,7 +319,7 @@ class AboutScreen extends ConsumerWidget {
       'PDF, EPUB, Kindle, FB2 and HTML books get the full reader; comics their own viewer. Word, slides, sheets, Markdown, text and images open too.',
     ),
     (
-      AppIcons.visibility,
+      AppIcons.editOff,
       'Read only',
       'Unfurl never edits, moves or deletes a file. Notes and highlights stay in the app.',
     ),
@@ -455,9 +360,17 @@ class AboutScreen extends ConsumerWidget {
               const SizedBox(height: Space.xl),
               Text('Gautam Rajeev Singh', style: UnfurlType.titleMedium.copyWith(color: c.onSurface)),
               const SizedBox(height: Space.xs),
-              InkWell(
+              PressableRow(
+                semanticLabel: 'singhgautam.com',
                 onTap: () => unawaited(Platform.openUrl(portfolio)),
-                child: Text('singhgautam.com', style: UnfurlType.bodySmall.copyWith(color: c.onSurfaceVariant)),
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(minHeight: IconSpec.tapTarget),
+                  child: Align(
+                    alignment: AlignmentDirectional.centerStart,
+                    widthFactor: 1,
+                    child: Text('singhgautam.com', style: UnfurlType.bodySmall.copyWith(color: c.accent)),
+                  ),
+                ),
               ),
             ],
           ),
@@ -520,11 +433,21 @@ class AboutScreen extends ConsumerWidget {
             ListRow(
               icon: AppIcons.privacy,
               label: 'Privacy policy',
-              value: 'Offline only',
+              subtitle: 'Offline only',
               onTap: () => context.push(Routes.privacy),
             ),
-            ListRow(icon: AppIcons.key, label: 'Permissions', onTap: () => context.push(Routes.permissions)),
-            ListRow(icon: AppIcons.license, label: 'Licences', onTap: () => context.push(Routes.licences)),
+            ListRow(
+              icon: AppIcons.key,
+              label: 'Permissions',
+              subtitle: 'What Unfurl asks for',
+              onTap: () => context.push(Routes.permissions),
+            ),
+            ListRow(
+              icon: AppIcons.license,
+              label: 'Licences',
+              subtitle: 'Fonts and packages it uses',
+              onTap: () => context.push(Routes.licences),
+            ),
           ],
         ),
         const SizedBox(height: Space.xl),
@@ -631,7 +554,7 @@ class PermissionsScreen extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         spacing: Space.sm,
         children: <Widget>[
-          Text(title.toUpperCase(), style: UnfurlType.sectionHeader.copyWith(color: c.onSurfaceVariant)),
+          SectionHeader(label: title),
           Text(text, style: UnfurlType.body.copyWith(color: c.onSurface)),
         ],
       ),

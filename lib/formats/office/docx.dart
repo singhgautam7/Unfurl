@@ -517,27 +517,62 @@ class _Styles {
 /// break run, `pageBreakBefore` on, a section break). A page that would hold
 /// only empty paragraphs is never kept, so empty paragraphs never make a
 /// blank page.
-List<List<int>> docxPages(Docx d, double textHeight, double Function(DocxItem) height) {
-  bool blank(List<int> page) => page.every((int i) {
-    final DocxItem it = d.items[i];
+///
+/// Resumable: [run] stops when its time budget is spent, so a long document is
+/// laid out a few milliseconds a frame. [pages] is provisional until [done]:
+/// the last page may still gain items, and the count may still grow.
+class DocxPaginator {
+  DocxPaginator(this.docx, this.textHeight, this.height);
+
+  final Docx docx;
+  final double textHeight;
+  final double Function(DocxItem) height;
+
+  final List<List<int>> pages = <List<int>>[<int>[]];
+  int _next = 0;
+  double _y = 0;
+  bool _closed = false;
+
+  /// How many items are placed.
+  int get laid => _next;
+  bool get done => _closed;
+
+  bool _blank(List<int> page) => page.every((int i) {
+    final DocxItem it = docx.items[i];
     return it.rows == null && it.image == null && it.text.trim().isEmpty;
   });
-  final List<List<int>> pages = <List<int>>[<int>[]];
-  double y = 0;
-  for (int i = 0; i < d.items.length; i++) {
-    final DocxItem it = d.items[i];
-    final double h = height(it);
-    if ((y + h > textHeight || it.pageBreakBefore) && pages.last.isNotEmpty) {
-      if (blank(pages.last)) {
-        pages.last.clear();
-      } else {
-        pages.add(<int>[]);
+
+  /// Places items until [budget] has passed (null: no limit) or [until] is
+  /// placed, at least one, or all are placed. Returns [done].
+  bool run(Duration? budget, {int? until}) {
+    if (_closed) return true;
+    final Stopwatch clock = Stopwatch()..start();
+    final int n = docx.items.length;
+    while (_next < n) {
+      final DocxItem it = docx.items[_next];
+      final double h = height(it);
+      if ((_y + h > textHeight || it.pageBreakBefore) && pages.last.isNotEmpty) {
+        if (_blank(pages.last)) {
+          pages.last.clear();
+        } else {
+          pages.add(<int>[]);
+        }
+        _y = 0;
       }
-      y = 0;
+      pages.last.add(_next);
+      _y += h;
+      _next++;
+      if (budget != null && clock.elapsed >= budget) break;
+      if (until != null && _next > until) break;
     }
-    pages.last.add(i);
-    y += h;
+    if (_next >= n) {
+      if (pages.length > 1 && _blank(pages.last)) pages.removeLast();
+      _closed = true;
+    }
+    return _closed;
   }
-  if (pages.length > 1 && blank(pages.last)) pages.removeLast();
-  return pages;
 }
+
+/// All of Page view at once.
+List<List<int>> docxPages(Docx d, double textHeight, double Function(DocxItem) height) =>
+    (DocxPaginator(d, textHeight, height)..run(null)).pages;

@@ -130,6 +130,7 @@ class Annotations extends Table {
 }
 
 /// Files opened directly (Open file, Open with), newest first.
+@TableIndex(name: 'recents_fp', columns: <Symbol>{#fingerprint})
 class Recents extends Table {
   TextColumn get uri => text()();
   TextColumn get fingerprint => text().nullable()();
@@ -137,6 +138,15 @@ class Recents extends Table {
   TextColumn get mime => text().nullable()();
   IntColumn get size => integer().withDefault(const Constant(0))();
   DateTimeColumn get openedAt => dateTime()();
+
+  /// Where it came from (schema 5, `FileSource`): the URI's authority, its
+  /// exact location if Android gave one, the app that sent it, and whether
+  /// Android lets Unfurl keep reading it.
+  TextColumn get authority => text().nullable()();
+  TextColumn get docId => text().nullable()();
+  TextColumn get sender => text().nullable()();
+  TextColumn get senderPackage => text().nullable()();
+  BoolColumn get persisted => boolean().withDefault(const Constant(false))();
 
   @override
   Set<Column<Object>> get primaryKey => <Column<Object>>{uri};
@@ -280,7 +290,7 @@ class AppDatabase extends _$AppDatabase {
 
   /// Bump with a tested migration on every schema change (data rule 4).
   @override
-  int get schemaVersion => 4;
+  int get schemaVersion => 5;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -313,6 +323,15 @@ class AppDatabase extends _$AppDatabase {
         // v3 builds before book word counts (schema 3 existed only on test devices).
         await m.addColumn(bookStats, bookStats.totalWords);
         await m.addColumn(bookStats, bookStats.wordsLeft);
+      }
+      if (from < 5) {
+        // Where a recent file came from, so one that can't be opened says why.
+        await m.addColumn(recents, recents.authority);
+        await m.addColumn(recents, recents.docId);
+        await m.addColumn(recents, recents.sender);
+        await m.addColumn(recents, recents.senderPackage);
+        await m.addColumn(recents, recents.persisted);
+        await m.createIndex(recentsFp);
       }
     },
     beforeOpen: (OpeningDetails details) async {

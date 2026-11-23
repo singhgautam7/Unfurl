@@ -2741,8 +2741,67 @@ class $RecentsTable extends Recents with TableInfo<$RecentsTable, Recent> {
     type: DriftSqlType.dateTime,
     requiredDuringInsert: true,
   );
+  static const VerificationMeta _authorityMeta = const VerificationMeta('authority');
   @override
-  List<GeneratedColumn> get $columns => [uri, fingerprint, name, mime, size, openedAt];
+  late final GeneratedColumn<String> authority = GeneratedColumn<String>(
+    'authority',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _docIdMeta = const VerificationMeta('docId');
+  @override
+  late final GeneratedColumn<String> docId = GeneratedColumn<String>(
+    'doc_id',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _senderMeta = const VerificationMeta('sender');
+  @override
+  late final GeneratedColumn<String> sender = GeneratedColumn<String>(
+    'sender',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _senderPackageMeta = const VerificationMeta('senderPackage');
+  @override
+  late final GeneratedColumn<String> senderPackage = GeneratedColumn<String>(
+    'sender_package',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _persistedMeta = const VerificationMeta('persisted');
+  @override
+  late final GeneratedColumn<bool> persisted = GeneratedColumn<bool>(
+    'persisted',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways('CHECK ("persisted" IN (0, 1))'),
+    defaultValue: const Constant(false),
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    uri,
+    fingerprint,
+    name,
+    mime,
+    size,
+    openedAt,
+    authority,
+    docId,
+    sender,
+    senderPackage,
+    persisted,
+  ];
   @override
   String get aliasedName => _alias ?? actualTableName;
   @override
@@ -2776,6 +2835,24 @@ class $RecentsTable extends Recents with TableInfo<$RecentsTable, Recent> {
     } else if (isInserting) {
       context.missing(_openedAtMeta);
     }
+    if (data.containsKey('authority')) {
+      context.handle(_authorityMeta, authority.isAcceptableOrUnknown(data['authority']!, _authorityMeta));
+    }
+    if (data.containsKey('doc_id')) {
+      context.handle(_docIdMeta, docId.isAcceptableOrUnknown(data['doc_id']!, _docIdMeta));
+    }
+    if (data.containsKey('sender')) {
+      context.handle(_senderMeta, sender.isAcceptableOrUnknown(data['sender']!, _senderMeta));
+    }
+    if (data.containsKey('sender_package')) {
+      context.handle(
+        _senderPackageMeta,
+        senderPackage.isAcceptableOrUnknown(data['sender_package']!, _senderPackageMeta),
+      );
+    }
+    if (data.containsKey('persisted')) {
+      context.handle(_persistedMeta, persisted.isAcceptableOrUnknown(data['persisted']!, _persistedMeta));
+    }
     return context;
   }
 
@@ -2791,6 +2868,11 @@ class $RecentsTable extends Recents with TableInfo<$RecentsTable, Recent> {
       mime: attachedDatabase.typeMapping.read(DriftSqlType.string, data['${effectivePrefix}mime']),
       size: attachedDatabase.typeMapping.read(DriftSqlType.int, data['${effectivePrefix}size'])!,
       openedAt: attachedDatabase.typeMapping.read(DriftSqlType.dateTime, data['${effectivePrefix}opened_at'])!,
+      authority: attachedDatabase.typeMapping.read(DriftSqlType.string, data['${effectivePrefix}authority']),
+      docId: attachedDatabase.typeMapping.read(DriftSqlType.string, data['${effectivePrefix}doc_id']),
+      sender: attachedDatabase.typeMapping.read(DriftSqlType.string, data['${effectivePrefix}sender']),
+      senderPackage: attachedDatabase.typeMapping.read(DriftSqlType.string, data['${effectivePrefix}sender_package']),
+      persisted: attachedDatabase.typeMapping.read(DriftSqlType.bool, data['${effectivePrefix}persisted'])!,
     );
   }
 
@@ -2807,6 +2889,15 @@ class Recent extends DataClass implements Insertable<Recent> {
   final String? mime;
   final int size;
   final DateTime openedAt;
+
+  /// Where it came from (schema 5, `FileSource`): the URI's authority, its
+  /// exact location if Android gave one, the app that sent it, and whether
+  /// Android lets Unfurl keep reading it.
+  final String? authority;
+  final String? docId;
+  final String? sender;
+  final String? senderPackage;
+  final bool persisted;
   const Recent({
     required this.uri,
     this.fingerprint,
@@ -2814,6 +2905,11 @@ class Recent extends DataClass implements Insertable<Recent> {
     this.mime,
     required this.size,
     required this.openedAt,
+    this.authority,
+    this.docId,
+    this.sender,
+    this.senderPackage,
+    required this.persisted,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -2828,6 +2924,19 @@ class Recent extends DataClass implements Insertable<Recent> {
     }
     map['size'] = Variable<int>(size);
     map['opened_at'] = Variable<DateTime>(openedAt);
+    if (!nullToAbsent || authority != null) {
+      map['authority'] = Variable<String>(authority);
+    }
+    if (!nullToAbsent || docId != null) {
+      map['doc_id'] = Variable<String>(docId);
+    }
+    if (!nullToAbsent || sender != null) {
+      map['sender'] = Variable<String>(sender);
+    }
+    if (!nullToAbsent || senderPackage != null) {
+      map['sender_package'] = Variable<String>(senderPackage);
+    }
+    map['persisted'] = Variable<bool>(persisted);
     return map;
   }
 
@@ -2839,6 +2948,11 @@ class Recent extends DataClass implements Insertable<Recent> {
       mime: mime == null && nullToAbsent ? const Value.absent() : Value(mime),
       size: Value(size),
       openedAt: Value(openedAt),
+      authority: authority == null && nullToAbsent ? const Value.absent() : Value(authority),
+      docId: docId == null && nullToAbsent ? const Value.absent() : Value(docId),
+      sender: sender == null && nullToAbsent ? const Value.absent() : Value(sender),
+      senderPackage: senderPackage == null && nullToAbsent ? const Value.absent() : Value(senderPackage),
+      persisted: Value(persisted),
     );
   }
 
@@ -2851,6 +2965,11 @@ class Recent extends DataClass implements Insertable<Recent> {
       mime: serializer.fromJson<String?>(json['mime']),
       size: serializer.fromJson<int>(json['size']),
       openedAt: serializer.fromJson<DateTime>(json['openedAt']),
+      authority: serializer.fromJson<String?>(json['authority']),
+      docId: serializer.fromJson<String?>(json['docId']),
+      sender: serializer.fromJson<String?>(json['sender']),
+      senderPackage: serializer.fromJson<String?>(json['senderPackage']),
+      persisted: serializer.fromJson<bool>(json['persisted']),
     );
   }
   @override
@@ -2863,6 +2982,11 @@ class Recent extends DataClass implements Insertable<Recent> {
       'mime': serializer.toJson<String?>(mime),
       'size': serializer.toJson<int>(size),
       'openedAt': serializer.toJson<DateTime>(openedAt),
+      'authority': serializer.toJson<String?>(authority),
+      'docId': serializer.toJson<String?>(docId),
+      'sender': serializer.toJson<String?>(sender),
+      'senderPackage': serializer.toJson<String?>(senderPackage),
+      'persisted': serializer.toJson<bool>(persisted),
     };
   }
 
@@ -2873,6 +2997,11 @@ class Recent extends DataClass implements Insertable<Recent> {
     Value<String?> mime = const Value.absent(),
     int? size,
     DateTime? openedAt,
+    Value<String?> authority = const Value.absent(),
+    Value<String?> docId = const Value.absent(),
+    Value<String?> sender = const Value.absent(),
+    Value<String?> senderPackage = const Value.absent(),
+    bool? persisted,
   }) => Recent(
     uri: uri ?? this.uri,
     fingerprint: fingerprint.present ? fingerprint.value : this.fingerprint,
@@ -2880,6 +3009,11 @@ class Recent extends DataClass implements Insertable<Recent> {
     mime: mime.present ? mime.value : this.mime,
     size: size ?? this.size,
     openedAt: openedAt ?? this.openedAt,
+    authority: authority.present ? authority.value : this.authority,
+    docId: docId.present ? docId.value : this.docId,
+    sender: sender.present ? sender.value : this.sender,
+    senderPackage: senderPackage.present ? senderPackage.value : this.senderPackage,
+    persisted: persisted ?? this.persisted,
   );
   Recent copyWithCompanion(RecentsCompanion data) {
     return Recent(
@@ -2889,6 +3023,11 @@ class Recent extends DataClass implements Insertable<Recent> {
       mime: data.mime.present ? data.mime.value : this.mime,
       size: data.size.present ? data.size.value : this.size,
       openedAt: data.openedAt.present ? data.openedAt.value : this.openedAt,
+      authority: data.authority.present ? data.authority.value : this.authority,
+      docId: data.docId.present ? data.docId.value : this.docId,
+      sender: data.sender.present ? data.sender.value : this.sender,
+      senderPackage: data.senderPackage.present ? data.senderPackage.value : this.senderPackage,
+      persisted: data.persisted.present ? data.persisted.value : this.persisted,
     );
   }
 
@@ -2900,13 +3039,19 @@ class Recent extends DataClass implements Insertable<Recent> {
           ..write('name: $name, ')
           ..write('mime: $mime, ')
           ..write('size: $size, ')
-          ..write('openedAt: $openedAt')
+          ..write('openedAt: $openedAt, ')
+          ..write('authority: $authority, ')
+          ..write('docId: $docId, ')
+          ..write('sender: $sender, ')
+          ..write('senderPackage: $senderPackage, ')
+          ..write('persisted: $persisted')
           ..write(')'))
         .toString();
   }
 
   @override
-  int get hashCode => Object.hash(uri, fingerprint, name, mime, size, openedAt);
+  int get hashCode =>
+      Object.hash(uri, fingerprint, name, mime, size, openedAt, authority, docId, sender, senderPackage, persisted);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -2916,7 +3061,12 @@ class Recent extends DataClass implements Insertable<Recent> {
           other.name == this.name &&
           other.mime == this.mime &&
           other.size == this.size &&
-          other.openedAt == this.openedAt);
+          other.openedAt == this.openedAt &&
+          other.authority == this.authority &&
+          other.docId == this.docId &&
+          other.sender == this.sender &&
+          other.senderPackage == this.senderPackage &&
+          other.persisted == this.persisted);
 }
 
 class RecentsCompanion extends UpdateCompanion<Recent> {
@@ -2926,6 +3076,11 @@ class RecentsCompanion extends UpdateCompanion<Recent> {
   final Value<String?> mime;
   final Value<int> size;
   final Value<DateTime> openedAt;
+  final Value<String?> authority;
+  final Value<String?> docId;
+  final Value<String?> sender;
+  final Value<String?> senderPackage;
+  final Value<bool> persisted;
   final Value<int> rowid;
   const RecentsCompanion({
     this.uri = const Value.absent(),
@@ -2934,6 +3089,11 @@ class RecentsCompanion extends UpdateCompanion<Recent> {
     this.mime = const Value.absent(),
     this.size = const Value.absent(),
     this.openedAt = const Value.absent(),
+    this.authority = const Value.absent(),
+    this.docId = const Value.absent(),
+    this.sender = const Value.absent(),
+    this.senderPackage = const Value.absent(),
+    this.persisted = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   RecentsCompanion.insert({
@@ -2943,6 +3103,11 @@ class RecentsCompanion extends UpdateCompanion<Recent> {
     this.mime = const Value.absent(),
     this.size = const Value.absent(),
     required DateTime openedAt,
+    this.authority = const Value.absent(),
+    this.docId = const Value.absent(),
+    this.sender = const Value.absent(),
+    this.senderPackage = const Value.absent(),
+    this.persisted = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : uri = Value(uri),
        name = Value(name),
@@ -2954,6 +3119,11 @@ class RecentsCompanion extends UpdateCompanion<Recent> {
     Expression<String>? mime,
     Expression<int>? size,
     Expression<DateTime>? openedAt,
+    Expression<String>? authority,
+    Expression<String>? docId,
+    Expression<String>? sender,
+    Expression<String>? senderPackage,
+    Expression<bool>? persisted,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -2963,6 +3133,11 @@ class RecentsCompanion extends UpdateCompanion<Recent> {
       if (mime != null) 'mime': mime,
       if (size != null) 'size': size,
       if (openedAt != null) 'opened_at': openedAt,
+      if (authority != null) 'authority': authority,
+      if (docId != null) 'doc_id': docId,
+      if (sender != null) 'sender': sender,
+      if (senderPackage != null) 'sender_package': senderPackage,
+      if (persisted != null) 'persisted': persisted,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -2974,6 +3149,11 @@ class RecentsCompanion extends UpdateCompanion<Recent> {
     Value<String?>? mime,
     Value<int>? size,
     Value<DateTime>? openedAt,
+    Value<String?>? authority,
+    Value<String?>? docId,
+    Value<String?>? sender,
+    Value<String?>? senderPackage,
+    Value<bool>? persisted,
     Value<int>? rowid,
   }) {
     return RecentsCompanion(
@@ -2983,6 +3163,11 @@ class RecentsCompanion extends UpdateCompanion<Recent> {
       mime: mime ?? this.mime,
       size: size ?? this.size,
       openedAt: openedAt ?? this.openedAt,
+      authority: authority ?? this.authority,
+      docId: docId ?? this.docId,
+      sender: sender ?? this.sender,
+      senderPackage: senderPackage ?? this.senderPackage,
+      persisted: persisted ?? this.persisted,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -3008,6 +3193,21 @@ class RecentsCompanion extends UpdateCompanion<Recent> {
     if (openedAt.present) {
       map['opened_at'] = Variable<DateTime>(openedAt.value);
     }
+    if (authority.present) {
+      map['authority'] = Variable<String>(authority.value);
+    }
+    if (docId.present) {
+      map['doc_id'] = Variable<String>(docId.value);
+    }
+    if (sender.present) {
+      map['sender'] = Variable<String>(sender.value);
+    }
+    if (senderPackage.present) {
+      map['sender_package'] = Variable<String>(senderPackage.value);
+    }
+    if (persisted.present) {
+      map['persisted'] = Variable<bool>(persisted.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -3023,6 +3223,11 @@ class RecentsCompanion extends UpdateCompanion<Recent> {
           ..write('mime: $mime, ')
           ..write('size: $size, ')
           ..write('openedAt: $openedAt, ')
+          ..write('authority: $authority, ')
+          ..write('docId: $docId, ')
+          ..write('sender: $sender, ')
+          ..write('senderPackage: $senderPackage, ')
+          ..write('persisted: $persisted, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -5684,6 +5889,7 @@ abstract class _$AppDatabase extends GeneratedDatabase {
     'annotations_doc',
     'CREATE INDEX annotations_doc ON annotations (fingerprint)',
   );
+  late final Index recentsFp = Index('recents_fp', 'CREATE INDEX recents_fp ON recents (fingerprint)');
   late final Index sessionsDoc = Index('sessions_doc', 'CREATE INDEX sessions_doc ON reading_sessions (fingerprint)');
   late final Index sessionsOpen = Index('sessions_open', 'CREATE INDEX sessions_open ON reading_sessions (open)');
   late final Index bookStatsTime = Index('book_stats_time', 'CREATE INDEX book_stats_time ON book_stats (reading_ms)');
@@ -5705,6 +5911,7 @@ abstract class _$AppDatabase extends GeneratedDatabase {
     entriesExt,
     entriesFp,
     annotationsDoc,
+    recentsFp,
     sessionsDoc,
     sessionsOpen,
     bookStatsTime,
@@ -7011,6 +7218,11 @@ typedef $$RecentsTableCreateCompanionBuilder = RecentsCompanion Function({
   Value<String?> mime,
   Value<int> size,
   required DateTime openedAt,
+  Value<String?> authority,
+  Value<String?> docId,
+  Value<String?> sender,
+  Value<String?> senderPackage,
+  Value<bool> persisted,
   Value<int> rowid,
 });
 typedef $$RecentsTableUpdateCompanionBuilder = RecentsCompanion Function({
@@ -7020,6 +7232,11 @@ typedef $$RecentsTableUpdateCompanionBuilder = RecentsCompanion Function({
   Value<String?> mime,
   Value<int> size,
   Value<DateTime> openedAt,
+  Value<String?> authority,
+  Value<String?> docId,
+  Value<String?> sender,
+  Value<String?> senderPackage,
+  Value<bool> persisted,
   Value<int> rowid,
 });
 
@@ -7044,6 +7261,21 @@ class $$RecentsTableFilterComposer extends Composer<_$AppDatabase, $RecentsTable
 
   ColumnFilters<DateTime> get openedAt =>
       $composableBuilder(column: $table.openedAt, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get authority =>
+      $composableBuilder(column: $table.authority, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get docId =>
+      $composableBuilder(column: $table.docId, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get sender =>
+      $composableBuilder(column: $table.sender, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get senderPackage =>
+      $composableBuilder(column: $table.senderPackage, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<bool> get persisted =>
+      $composableBuilder(column: $table.persisted, builder: (column) => ColumnFilters(column));
 }
 
 class $$RecentsTableOrderingComposer extends Composer<_$AppDatabase, $RecentsTable> {
@@ -7071,6 +7303,21 @@ class $$RecentsTableOrderingComposer extends Composer<_$AppDatabase, $RecentsTab
 
   ColumnOrderings<DateTime> get openedAt =>
       $composableBuilder(column: $table.openedAt, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get authority =>
+      $composableBuilder(column: $table.authority, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get docId =>
+      $composableBuilder(column: $table.docId, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get sender =>
+      $composableBuilder(column: $table.sender, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get senderPackage =>
+      $composableBuilder(column: $table.senderPackage, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<bool> get persisted =>
+      $composableBuilder(column: $table.persisted, builder: (column) => ColumnOrderings(column));
 }
 
 class $$RecentsTableAnnotationComposer extends Composer<_$AppDatabase, $RecentsTable> {
@@ -7093,6 +7340,17 @@ class $$RecentsTableAnnotationComposer extends Composer<_$AppDatabase, $RecentsT
   GeneratedColumn<int> get size => $composableBuilder(column: $table.size, builder: (column) => column);
 
   GeneratedColumn<DateTime> get openedAt => $composableBuilder(column: $table.openedAt, builder: (column) => column);
+
+  GeneratedColumn<String> get authority => $composableBuilder(column: $table.authority, builder: (column) => column);
+
+  GeneratedColumn<String> get docId => $composableBuilder(column: $table.docId, builder: (column) => column);
+
+  GeneratedColumn<String> get sender => $composableBuilder(column: $table.sender, builder: (column) => column);
+
+  GeneratedColumn<String> get senderPackage =>
+      $composableBuilder(column: $table.senderPackage, builder: (column) => column);
+
+  GeneratedColumn<bool> get persisted => $composableBuilder(column: $table.persisted, builder: (column) => column);
 }
 
 class $$RecentsTableTableManager
@@ -7126,6 +7384,11 @@ class $$RecentsTableTableManager
                 Value<String?> mime = const Value.absent(),
                 Value<int> size = const Value.absent(),
                 Value<DateTime> openedAt = const Value.absent(),
+                Value<String?> authority = const Value.absent(),
+                Value<String?> docId = const Value.absent(),
+                Value<String?> sender = const Value.absent(),
+                Value<String?> senderPackage = const Value.absent(),
+                Value<bool> persisted = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => RecentsCompanion(
                 uri: uri,
@@ -7134,6 +7397,11 @@ class $$RecentsTableTableManager
                 mime: mime,
                 size: size,
                 openedAt: openedAt,
+                authority: authority,
+                docId: docId,
+                sender: sender,
+                senderPackage: senderPackage,
+                persisted: persisted,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -7144,6 +7412,11 @@ class $$RecentsTableTableManager
                 Value<String?> mime = const Value.absent(),
                 Value<int> size = const Value.absent(),
                 required DateTime openedAt,
+                Value<String?> authority = const Value.absent(),
+                Value<String?> docId = const Value.absent(),
+                Value<String?> sender = const Value.absent(),
+                Value<String?> senderPackage = const Value.absent(),
+                Value<bool> persisted = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => RecentsCompanion.insert(
                 uri: uri,
@@ -7152,6 +7425,11 @@ class $$RecentsTableTableManager
                 mime: mime,
                 size: size,
                 openedAt: openedAt,
+                authority: authority,
+                docId: docId,
+                sender: sender,
+                senderPackage: senderPackage,
+                persisted: persisted,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0

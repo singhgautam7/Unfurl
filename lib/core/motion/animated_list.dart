@@ -154,7 +154,8 @@ class _StaggerState extends State<StaggeredEntrance> with SingleTickerProviderSt
     if (_started) return;
     _started = true;
     final l = Motion.levelOf(context);
-    if (!widget.animate || l == MotionLevel.off) return;
+    // Built offstage (a tab warmed ahead of its visit): it is simply there.
+    if (!widget.animate || l == MotionLevel.off || !TickerMode.getValuesNotifier(context).value.enabled) return;
     _rise = l == MotionLevel.subtle ? 4 : 8;
     final delay = Motion.staggerDelay(widget.index);
     final total = delay + Motion.fxFast;

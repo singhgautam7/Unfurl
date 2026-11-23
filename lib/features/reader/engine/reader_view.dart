@@ -5,7 +5,7 @@ import 'package:flutter/gestures.dart' show kTouchSlop;
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 
-import '../../../core/motion/motion.dart';
+import '../../../core/motion/kit.dart';
 import '../../../core/theme/tokens.dart';
 import '../../../core/theme/typography.dart';
 import '../../../design_system/app_icon.dart';
@@ -164,7 +164,12 @@ class ReaderView extends StatefulWidget {
 }
 
 class _ReaderViewState extends State<ReaderView> {
+  /// The layout for the current size and style. It is shown ([_ready]) once the
+  /// reader's place is laid out; until then [_stale], the one before, stays on
+  /// screen (a font step or a rotation never blanks the page).
   Layout? _layout;
+  Layout? _stale;
+  bool _ready = false;
   late final ImageSizes _images = ImageSizes.of(widget.controller.doc);
   PageController? _pages;
   final GlobalKey<TurnPagerState> _turner = GlobalKey<TurnPagerState>();
@@ -180,8 +185,25 @@ class _ReaderViewState extends State<ReaderView> {
   Size? _laidFor;
   ReaderStyle? _styleFor;
   int _columnsFor = 1;
-  Timer? _background;
   final GlobalKey _surface = GlobalKey();
+
+  // Layout is done in slices at the start of a frame, each within a time
+  // budget, so no frame waits on the rest of a long section.
+  static const Duration _sliceBudget = Duration(milliseconds: 6);
+
+  /// Filling in the rest of the book: 4 ms of work, then at least 4 ms free.
+  static const Duration _fillBudget = Duration(milliseconds: 4);
+  static const Duration _fillGap = Duration(milliseconds: 4);
+  static const Duration _firstBudget = Duration(milliseconds: 12);
+  static const int _publishMs = 250;
+  bool _sliceQueued = false;
+  final Stopwatch _lastPublish = Stopwatch()..start();
+
+  /// A jump to a place not laid out yet: made once its page exists.
+  ((int, int, int), bool)? _pendingGoTo;
+
+  /// The layout on screen: the new one once ready, else the one it replaces.
+  Layout? get _live => _ready ? _layout : _stale;
 
   // Selection drag state: the word a long press began on, and whether the
   // finger is dragging out from it.
@@ -248,7 +270,6 @@ class _ReaderViewState extends State<ReaderView> {
 
   @override
   void dispose() {
-    _background?.cancel();
     widget.controller.removeListener(_onController);
     if (widget.controller._view == this) widget.controller._view = null;
     final Layout? l = _layout;
@@ -260,6 +281,8 @@ class _ReaderViewState extends State<ReaderView> {
         l.dispose();
       }
     }
+    _fillTimer?.cancel();
+    _stale?.dispose();
     _pages?.dispose();
     _scroll.dispose();
     super.dispose();
@@ -283,54 +306,135 @@ class _ReaderViewState extends State<ReaderView> {
     final Size page = Size(colW, view.height - _headH - _footH);
     if (_layout != null && _laidFor == page && _styleFor == widget.style && _columnsFor == widget.columns) return;
     final (int, int, int) keep = _anchor ??= _c.position;
-    _layout?.dispose();
+    if (_ready) {
+      _stale?.dispose();
+      _stale = _layout;
+    } else {
+      _layout?.dispose();
+    }
     _layout =
         widget.layoutCache?.take(doc: _doc, style: widget.style, pageSize: page, columns: widget.columns) ??
         Layout(doc: _doc, style: widget.style, pageSize: page, images: _images);
+    _ready = false;
+    _pendingGoTo = null;
     _laidFor = page;
     _styleFor = widget.style;
     _columnsFor = widget.columns;
-    _layout!.ensure(keep.$1);
-    _index = _spreadOf(_layout!.pageOf(keep.$1, keep.$2, keep.$3));
+    // The pages up to the reader's place (not the rest of the section) are
+    // laid out now, within a budget; if that is not enough, the rest of the
+    // way is run in slices while the old page (or paper) stays on screen.
+    if (_layout!.advanceTo(keep.$1, keep.$2, keep.$3, _firstBudget)) {
+      _arrive(notify: false);
+    } else {
+      _hurry();
+    }
+  }
+
+  /// The new layout holds the reader's place: show it.
+  void _arrive({required bool notify}) {
+    final Layout l = _layout!;
+    final (int, int, int) keep = _anchor ?? _c.position;
+    _ready = true;
+    _stale?.dispose();
+    _stale = null;
+    _index = _spreadOf(l.pageOf(keep.$1, keep.$2, keep.$3));
     _pages?.dispose();
     _pages = PageController(initialPage: _index);
-    _c.layoutComplete = _layout!.complete;
-    if (_layout!.complete) {
-      _background?.cancel();
-    } else {
-      _scheduleBackground();
-    }
-    _reportFor(_index, notify: false);
+    _c.layoutComplete = l.complete;
+    _reportFor(_index, notify: notify);
+    _publishProgress();
+    if (!l.complete) _scheduleSlice();
   }
 
   int _spreadOf(int page) => widget.columns == 2 ? page ~/ 2 : page;
   int _pageOfSpread(int spread) => widget.columns == 2 ? spread * 2 : spread;
 
-  /// Lays out the other sections between frames, keeping the reader on the
-  /// same words as page numbers settle.
-  void _scheduleBackground() {
-    _background?.cancel();
-    _background = Timer.periodic(const Duration(milliseconds: 16), (Timer t) {
-      final Layout? l = _layout;
-      if (l == null || !mounted) return t.cancel();
-      final (int, int, int) keep = _anchor ?? _c.position;
-      final bool more = l.layoutNext(keep.$1);
-      if (!more) {
-        t.cancel();
-        _c.layoutComplete = true;
+  void _publishProgress() {
+    final Layout? l = _layout;
+    if (l == null) return;
+    _lastPublish.reset();
+    _c.layoutComplete = l.complete;
+  }
+
+  Timer? _fillTimer;
+
+  /// While the reader's place (or a jump's) isn't laid out yet, a slice runs
+  /// at the start of every frame: there is nothing else to show. The rest of
+  /// the book fills in between frames, a few ms at a time, and never while
+  /// something moves (a page turn, a sheet, a fling): it asks for no frames.
+  void _scheduleSlice() {
+    if (_sliceQueued) return;
+    _sliceQueued = true;
+    if (!_ready || _pendingGoTo != null) {
+      SchedulerBinding.instance.scheduleFrameCallback((Duration _) {
+        _sliceQueued = false;
+        if (mounted) _slice(_sliceBudget);
+      });
+    } else {
+      _fillTimer = Timer(_fillGap, _fill);
+    }
+  }
+
+  void _fill() {
+    if (!mounted) return;
+    if (SchedulerBinding.instance.transientCallbackCount > 0 || Haptics.scrolling) {
+      _fillTimer = Timer(Motion.warmRetry, _fill);
+      return;
+    }
+    _sliceQueued = false;
+    _slice(_fillBudget);
+  }
+
+  /// Waiting for the reader's place: a fill that was queued gives way.
+  void _hurry() {
+    if (_fillTimer?.isActive ?? false) {
+      _fillTimer!.cancel();
+      _sliceQueued = false;
+    }
+    _scheduleSlice();
+  }
+
+  void _slice(Duration budget) {
+    final Layout? l = _layout;
+    if (l == null) return;
+    final (int, int, int) keep = _anchor ?? _c.position;
+    if (!_ready) {
+      if (l.advanceTo(keep.$1, keep.$2, keep.$3, budget)) {
+        setState(() => _arrive(notify: true));
+      } else {
+        _scheduleSlice();
       }
-      final int now = _spreadOf(l.pageOf(keep.$1, keep.$2, keep.$3));
-      if (now != _index && _pages != null && _pages!.hasClients) {
-        _index = now;
-        _pages!.jumpToPage(now);
-      }
+      return;
+    }
+    final ((int, int, int), bool)? jump = _pendingGoTo;
+    if (jump != null) {
+      final (int, int, int) at = jump.$1;
+      if (!l.advanceTo(at.$1, at.$2, at.$3, budget)) return _scheduleSlice();
+      _pendingGoTo = null;
+      _goTo(at, animate: jump.$2);
+      if (!l.complete) _scheduleSlice();
+      return;
+    }
+    final bool more = l.step(keep.$1, budget);
+    // Sections laid out before the reader's move the page numbers: keep the
+    // reader on the same words.
+    final int now = _spreadOf(l.pageOf(keep.$1, keep.$2, keep.$3));
+    final bool moved = now != _index && _pages != null && _pages!.hasClients;
+    if (moved) {
+      _index = now;
+      _pages!.jumpToPage(now);
+    }
+    if (moved || !more || _lastPublish.elapsedMilliseconds >= _publishMs) {
+      _reportFor(_index, notify: false);
+      _publishProgress();
       setState(() {});
-      _reportFor(_index, notify: true);
-    });
+    }
+    if (more) _scheduleSlice();
   }
 
   void _reportFor(int spread, {required bool notify}) {
-    final Layout l = _layout!;
+    final Layout l = _live!;
+    l.ahead(_pageOfSpread(spread), 2 * widget.columns + 1);
     final ReaderPage? p = l.page(_pageOfSpread(spread));
     if (p == null || p.fragments.isEmpty) return;
     _c.position = p.first;
@@ -355,7 +459,18 @@ class _ReaderViewState extends State<ReaderView> {
       return;
     }
     final Layout? l = _layout;
-    if (l == null) return;
+    if (l == null || !_ready) {
+      // Not on screen yet: the layout in progress opens at this place.
+      _anchor = at;
+      return;
+    }
+    // A far place in a long section is reached in slices; the page stays put
+    // until its page exists.
+    if (!l.advanceTo(at.$1, at.$2, at.$3, _firstBudget)) {
+      _pendingGoTo = (at, animate);
+      _hurry();
+      return;
+    }
     final int target = _spreadOf(l.pageOf(at.$1, at.$2, at.$3));
     _setIndex(target, animate: animate);
     _anchor = at;
@@ -394,8 +509,16 @@ class _ReaderViewState extends State<ReaderView> {
       );
       return;
     }
-    final Layout? l = _layout;
+    final Layout? l = _live;
     if (l == null) return;
+    final (int s, int b, int o) = _c.position;
+    if (delta < 0 && _index == 0 && s > 0 && !l.isDone(s - 1)) {
+      // The chapter before isn't laid out yet: it is now, and the page in
+      // front keeps its place after it.
+      l.ensure(s - 1);
+      setState(() => _index = _spreadOf(l.pageOf(s, b, o)));
+      if (_pages?.hasClients ?? false) _pages!.jumpToPage(_index);
+    }
     final int max = _spreadOf(l.knownPages - 1);
     _setIndex((_index + delta).clamp(0, max), animate: true);
   }
@@ -403,6 +526,7 @@ class _ReaderViewState extends State<ReaderView> {
   void _setIndex(int target, {required bool animate}) {
     if (target == _index && _pages?.hasClients == true && _pages!.page?.round() == target) return;
     _anchor = null;
+    _pendingGoTo = null;
     final bool reduced = Motion.reduced(context);
     final TurnPagerState? turner = _turner.currentState;
     if (turner != null && animate && (target - _index).abs() == 1) {
@@ -434,13 +558,13 @@ class _ReaderViewState extends State<ReaderView> {
       return;
     }
     final Layout? l = _layout;
-    if (l == null) return;
+    if (l == null || !_ready) return;
     final int target = _spreadOf(l.pageOf(at.$1, at.$2, at.$3));
     if (target != _index) _setIndex(target, animate: true);
   }
 
   double? _anchorY() {
-    final ReaderPage? p = _layout?.page(_pageOfSpread(_index));
+    final ReaderPage? p = _live?.page(_pageOfSpread(_index));
     final Fragment? f = p?.firstText;
     if (f == null) return null;
     return _headH + f.rect.top;
@@ -449,7 +573,7 @@ class _ReaderViewState extends State<ReaderView> {
   // ------------------------------------------------------------ gestures
 
   Offset _toPage(Offset local, int column) {
-    final double colW = _laidFor!.width;
+    final double colW = _live!.pageSize.width;
     return local - Offset(widget.style.margin + column * (colW + 64), _headH);
   }
 
@@ -474,9 +598,9 @@ class _ReaderViewState extends State<ReaderView> {
   }
 
   (ReaderPage, int)? _pageAt(Offset local) {
-    final Layout? l = _layout;
+    final Layout? l = _live;
     if (l == null) return null;
-    final int column = widget.columns == 2 && local.dx > (_laidFor!.width + widget.style.margin + 32) ? 1 : 0;
+    final int column = widget.columns == 2 && local.dx > (l.pageSize.width + widget.style.margin + 32) ? 1 : 0;
     final ReaderPage? page = l.page(_pageOfSpread(_index) + column);
     return page == null ? null : (page, column);
   }
@@ -597,13 +721,13 @@ class _ReaderViewState extends State<ReaderView> {
   /// Selection rectangles in view coordinates.
   List<Rect> _selectionRects() {
     final (int, int)? s = _c.selection;
-    final Layout? l = _layout;
+    final Layout? l = _live;
     if (s == null || l == null) return const <Rect>[];
     final List<Rect> out = <Rect>[];
     for (int col = 0; col < widget.columns; col++) {
       final ReaderPage? page = l.page(_pageOfSpread(_index) + col);
       if (page == null) continue;
-      final Offset origin = Offset(widget.style.margin + col * (_laidFor!.width + 64), _headH);
+      final Offset origin = Offset(widget.style.margin + col * (l.pageSize.width + 64), _headH);
       for (final Rect r in _boxes(page, s.$1, s.$2)) {
         out.add(r.shift(origin));
       }
@@ -662,11 +786,13 @@ class _ReaderViewState extends State<ReaderView> {
     return i < 0 ? 0 : i;
   }
 
-  final Map<int, GlobalKey<_ScrollBlockState>> _itemKeys = <int, GlobalKey<_ScrollBlockState>>{};
+  /// The blocks on the tree now, by flat index: each registers in initState
+  /// and leaves in dispose, so this is as big as the viewport, not the book.
+  final Map<int, _ScrollBlockState> _mounted = <int, _ScrollBlockState>{};
   final GlobalKey _scrollSurface = GlobalKey();
 
   void _jumpToFlat(int i, int offset, [int tries = 8]) {
-    final BuildContext? ctx = _itemKeys[i]?.currentContext;
+    final BuildContext? ctx = _mounted[i]?.context;
     if (ctx != null && ctx.mounted) {
       Scrollable.ensureVisible(ctx, alignment: 0.05);
       return;
@@ -700,23 +826,20 @@ class _ReaderViewState extends State<ReaderView> {
 
   /// The first block whose box crosses the top of the viewport.
   void _reportScroll() {
-    for (final MapEntry<int, GlobalKey<_ScrollBlockState>> e
-        in _itemKeys.entries.toList()..sort(
-          (MapEntry<int, GlobalKey<_ScrollBlockState>> a, MapEntry<int, GlobalKey<_ScrollBlockState>> b) =>
-              a.key.compareTo(b.key),
-        )) {
-      final RenderObject? r = e.value.currentContext?.findRenderObject();
+    final double top = MediaQuery.paddingOf(context).top + 8;
+    int? best;
+    for (final MapEntry<int, _ScrollBlockState> e in _mounted.entries) {
+      if (best != null && e.key > best) continue;
+      final RenderObject? r = e.value.context.findRenderObject();
       if (r is! RenderBox || !r.attached) continue;
-      final Offset o = r.localToGlobal(Offset.zero);
-      if (o.dy + r.size.height > MediaQuery.paddingOf(context).top + 8) {
-        final (int s, int b) = _flat[e.key];
-        if (_c.position.$1 != s || _c.position.$2 != b) {
-          _c.position = (s, b, 0);
-          _c.lastVisible = (s, b, 0);
-          _c._report();
-        }
-        break;
-      }
+      if (r.localToGlobal(Offset.zero).dy + r.size.height > top) best = e.key;
+    }
+    if (best == null) return;
+    final (int s, int b) = _flat[best];
+    if (_c.position.$1 != s || _c.position.$2 != b) {
+      _c.position = (s, b, 0);
+      _c.lastVisible = (s, b, 0);
+      _c._report();
     }
   }
 
@@ -736,7 +859,10 @@ class _ReaderViewState extends State<ReaderView> {
     builder: (BuildContext context, BoxConstraints box) {
       final Size size = box.biggest;
       _ensureLayout(size);
-      final Layout l = _layout!;
+      final Layout? live = _live;
+      // The first layout of a far place is not ready for a frame or more.
+      if (live == null) return ColoredBox(color: widget.style.theme.paper, child: const SizedBox.expand());
+      final Layout l = live;
       final int spreads = _spreadOf(math.max(0, l.knownPages - 1)) + 1;
       Widget spread(int i) => _Spread(
         key: ValueKey<int>(i),
@@ -843,11 +969,9 @@ class _ReaderViewState extends State<ReaderView> {
 
   /// The blocks on the tree now, in reading order.
   List<(int, _ScrollBlockState)> _mountedBlocks() {
-    final List<(int, _ScrollBlockState)> out = <(int, _ScrollBlockState)>[];
-    for (final MapEntry<int, GlobalKey<_ScrollBlockState>> e in _itemKeys.entries) {
-      final _ScrollBlockState? st = e.value.currentState;
-      if (st != null) out.add((e.key, st));
-    }
+    final List<(int, _ScrollBlockState)> out = <(int, _ScrollBlockState)>[
+      for (final MapEntry<int, _ScrollBlockState> e in _mounted.entries) (e.key, e.value),
+    ];
     out.sort(((int, _ScrollBlockState) a, (int, _ScrollBlockState) b) => a.$1.compareTo(b.$1));
     return out;
   }
@@ -942,9 +1066,10 @@ class _ReaderViewState extends State<ReaderView> {
               itemCount: _flat.length,
               itemBuilder: (BuildContext context, int i) {
                 final (int s, int b) = _flat[i];
-                final GlobalKey<_ScrollBlockState> key = _itemKeys.putIfAbsent(i, GlobalKey<_ScrollBlockState>.new);
                 return _ScrollBlock(
-                  key: key,
+                  key: ValueKey<int>(i),
+                  index: i,
+                  registry: _mounted,
                   doc: _doc,
                   section: s,
                   block: b,
@@ -1330,6 +1455,8 @@ class _TableScrollerState extends State<_TableScroller> {
 /// chapter divider before a section's first block.
 class _ScrollBlock extends StatefulWidget {
   const _ScrollBlock({
+    required this.index,
+    required this.registry,
     required this.doc,
     required this.section,
     required this.block,
@@ -1346,6 +1473,8 @@ class _ScrollBlock extends StatefulWidget {
     super.key,
   });
 
+  final int index;
+  final Map<int, _ScrollBlockState> registry;
   final ReadingDocument doc;
   final int section;
   final int block;
@@ -1378,6 +1507,12 @@ class _ScrollBlockState extends State<_ScrollBlock> {
   final GlobalKey _content = GlobalKey();
 
   Block get _block => widget.doc.sections[widget.section].blocks[widget.block];
+
+  @override
+  void initState() {
+    super.initState();
+    widget.registry[widget.index] = this;
+  }
 
   /// Global [from, to] of this block's text.
   (int, int) get range => (_block.start, _block.start + _block.text.length);
@@ -1450,6 +1585,7 @@ class _ScrollBlockState extends State<_ScrollBlock> {
 
   @override
   void dispose() {
+    if (identical(widget.registry[widget.index], this)) widget.registry.remove(widget.index);
     _layout?.dispose();
     super.dispose();
   }

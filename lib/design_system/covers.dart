@@ -135,18 +135,15 @@ class CoverArt extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (badge == null) return _face(context);
-    final Widget tile = ValueListenableBuilder<int>(
-      valueListenable: Covers.changed,
-      builder: (BuildContext context, int _, Widget? child) {
-        final File? art = Covers.fileFor(fingerprint);
-        return FormatTile(
-          label: badge!,
-          icon: format.icon,
-          width: width,
-          height: height,
-          preview: art == null ? null : PreviewImage(art, width: width),
-        );
-      },
+    final Widget tile = ValueListenableBuilder<File?>(
+      valueListenable: Covers.watch(fingerprint),
+      builder: (BuildContext context, File? art, Widget? child) => FormatTile(
+        label: badge!,
+        icon: format.icon,
+        width: width,
+        height: height,
+        preview: art == null ? null : PreviewImage(art, width: width),
+      ),
     );
     if (issue == null) return tile;
     return Stack(
@@ -161,10 +158,9 @@ class CoverArt extends StatelessWidget {
     final UnfurlColors c = context.colors;
     final bool small = width < 70;
     final BorderRadius radius = BorderRadius.circular(small ? 4 : Radii.cover);
-    return ValueListenableBuilder<int>(
-      valueListenable: Covers.changed,
-      builder: (BuildContext context, int _, Widget? child) {
-        final File? art = Covers.fileFor(fingerprint);
+    return ValueListenableBuilder<File?>(
+      valueListenable: Covers.watch(fingerprint),
+      builder: (BuildContext context, File? art, Widget? child) {
         final double dpr = MediaQuery.devicePixelRatioOf(context);
         if (art != null) {
           return Container(

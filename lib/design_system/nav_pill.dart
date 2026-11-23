@@ -12,7 +12,6 @@ import '../core/theme/palette.dart';
 import '../core/theme/tokens.dart';
 import '../core/theme/typography.dart';
 import 'app_icon.dart';
-import 'buttons.dart';
 
 class NavDestination {
   const NavDestination(this.icon, this.label, this.branch);
@@ -31,7 +30,7 @@ const List<NavDestination> kDestinations = <NavDestination>[
   NavDestination(AppIcons.library, 'Library', 1),
   if (kAllFilesAccess) NavDestination(AppIcons.folderOpen, 'Files', 2),
   NavDestination(AppIcons.notes, 'Notes', 3),
-  NavDestination(AppIcons.more, 'More', 4),
+  NavDestination(AppIcons.tune, 'More', 4),
 ];
 
 /// The tab showing [branch], or Home's for a hidden one.
@@ -42,8 +41,8 @@ int tabOfBranch(int branch) => math.max(0, kDestinations.indexWhere((NavDestinat
 /// selected tab a `primaryContainer` indicator with icon and label (10/14
 /// padding, 6dp apart), `surface`, 1px outline and the one shadow. If the
 /// pill would be wider than the screen minus 32dp (the largest font sizes),
-/// the selected tab drops its label for a 64dp indicator; the label moves to
-/// its content description and a long-press tooltip.
+/// the selected tab drops its label for a 64dp indicator; the label stays in
+/// its content description (no long-press on tabs).
 ///
 /// One indicator slides behind the items (Kuber's `NavIndicator`): its two
 /// edges follow springs, the leading one fast, so it stretches in flight.
@@ -241,7 +240,7 @@ class _IndicatorPainter extends CustomPainter {
   bool shouldRepaint(_IndicatorPainter o) => o.color != color || o.l != l || o.r != r;
 }
 
-class _NavItem extends StatelessWidget {
+class _NavItem extends StatefulWidget {
   const _NavItem({required this.destination, required this.selected, required this.labelled, required this.onTap});
 
   final NavDestination destination;
@@ -252,7 +251,18 @@ class _NavItem extends StatelessWidget {
   final VoidCallback onTap;
 
   @override
+  State<_NavItem> createState() => _NavItemState();
+}
+
+class _NavItemState extends State<_NavItem> {
+  /// Kuber's press: the icon scales to 0.9 while held (not at Off).
+  bool _pressed = false;
+
+  @override
   Widget build(BuildContext context) {
+    final NavDestination destination = widget.destination;
+    final bool selected = widget.selected, labelled = widget.labelled;
+    final VoidCallback onTap = widget.onTap;
     final UnfurlColors c = context.colors;
     final MotionLevel level = Motion.levelOf(context);
     final bool off = level == MotionLevel.off;
@@ -263,7 +273,7 @@ class _NavItem extends StatelessWidget {
     final double activeL = labelled ? NavPill.activeLeft : iconOnly;
     final double activeR = labelled ? NavPill.activeRight : iconOnly;
 
-    Widget item = Semantics(
+    final Widget item = Semantics(
       button: true,
       selected: selected,
       label: destination.label,
@@ -276,6 +286,7 @@ class _NavItem extends StatelessWidget {
           padding: const EdgeInsets.symmetric(vertical: NavPill.padding),
           child: InkWell(
             onTap: onTap,
+            onHighlightChanged: (bool v) => setState(() => _pressed = v),
             customBorder: const StadiumBorder(),
             child: SizedBox(
               height: 44,
@@ -293,7 +304,12 @@ class _NavItem extends StatelessWidget {
                     mainAxisSize: MainAxisSize.min,
                     children: <Widget>[
                       SizedBox(width: side + (activeL - side) * t),
-                      AppIcon(destination.icon, color: color),
+                      AnimatedScale(
+                        scale: _pressed && !off ? 0.9 : 1,
+                        duration: Motion.fastCurve.settle,
+                        curve: Motion.fastCurve,
+                        child: AppIcon(destination.icon, color: color),
+                      ),
                       if (labelled && (showLabel || t > 0.001))
                         ClipRect(
                           child: Align(
@@ -324,8 +340,6 @@ class _NavItem extends StatelessWidget {
         ),
       ),
     );
-    // Without a visible label the selected tab names itself on long-press.
-    if (selected && !labelled) item = AppTooltip(message: destination.label, child: item);
     return item;
   }
 }

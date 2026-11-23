@@ -111,3 +111,18 @@ the build prompt, what was done, and which Mull file it follows.
 | v3-39 | App polish, Nov 2026 | Chips are full pills in both states. | Kuber's shape rule: a selected chip has 12 dp corners, an unselected chip is a full pill; it morphs on a spring (a fade at Subtle). | Owner |
 | v3-40 | App polish, Nov 2026 | The screen header is a fixed bar that only restyles past 24 px. | Kuber's floating header: past 32 dp it becomes a pill near the top (back at 8 dp); Settings › Theme has Floating header (on) and Show the pill (Always, When scrolling up, When scrolling stops). With Floating header off, headers scroll away with the content. | Owner |
 | v3-41 | App polish, Nov 2026 | No Motion or Haptics setting; a theme change cross-fades. | Settings › Theme adds Motion (Auto, Expressive, Subtle, Off) and Haptics (off by default); a theme change is revealed in a circle from the tap (Kuber's). | Owner |
+
+## Pass 2 of the polish (November 2026, Kuber's components)
+
+The boards are replaced where the owner asked for Kuber's behaviour (`specs/app-polish-2/decisions.md`):
+
+- Buttons are 56 or 40 dp (the boards' 52, 48 and 44 snap to them); chips are 32 dp in a 48 dp hit region, outlined
+  when not selected; search fields are 48 dp.
+- Menus are one panel with 12 dp rows, a check on the selected row and an icon on every row.
+- Settings and More rows have a 40 dp icon tile and a description under the title; no value on the right.
+- Welcome is three short pages and one setup page (Light, Dark or System, and a folder); the colour families are on
+  Settings › Theme only.
+- Tabs slide as whole pages; the search bar becomes the pill when scrolled; no Motion setting.
+- Line spacing and Align are selected in the accent, as every single choice.
+- A recent file that can't be opened has three states (board 4 had one): not allowed in its folder, open it again from
+  the app that sent it, and not there anymore.

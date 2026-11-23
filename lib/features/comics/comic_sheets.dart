@@ -3,7 +3,6 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../core/motion/kit.dart';
 import '../../core/db/database.dart';
 import '../../core/files.dart';
 import '../../core/theme/app_theme.dart';
@@ -13,6 +12,7 @@ import '../../core/theme/tokens.dart';
 import '../../core/theme/typography.dart';
 import '../../design_system/app_icon.dart';
 import '../../design_system/buttons.dart';
+import '../../design_system/containers.dart';
 import '../../design_system/option_tiles.dart';
 import '../files/files_widgets.dart';
 import '../reader/sheets.dart';
@@ -155,65 +155,62 @@ Future<void> showComicBookmarks(
         subtitle: rows.isEmpty ? 'No bookmarks yet' : (rows.length == 1 ? '1 page' : '${rows.length} pages'),
       ),
       for (final (Annotation a, int page) in rows)
-        Pressable(
-          kind: PressKind.row,
-          child: InkWell(
-            onTap: () {
-              Navigator.of(ctx).pop();
-              onOpen(page);
-            },
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(minHeight: 60),
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(Space.lg, Space.sm, Space.xs, Space.sm),
-                child: Row(
-                  spacing: 14,
-                  children: <Widget>[
-                    Container(
-                      width: 32,
-                      height: 46,
-                      clipBehavior: Clip.antiAlias,
-                      decoration: BoxDecoration(
-                        color: c.surfaceContainerHigh,
-                        borderRadius: BorderRadius.circular(3),
-                        border: Border.all(color: c.outline),
-                      ),
-                      child: FutureBuilder<File?>(
-                        initialData: pages.thumbNow(page),
-                        future: pages.thumb(page),
-                        builder: (BuildContext context, AsyncSnapshot<File?> s) => s.data == null
-                            ? const SizedBox.shrink()
-                            : Image(
-                                image: ResizeImage(FileImage(s.data!), width: ComicPages.thumbWidth),
-                                fit: BoxFit.cover,
-                              ),
-                      ),
+        PressableRow(
+          onTap: () {
+            Navigator.of(ctx).pop();
+            onOpen(page);
+          },
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(minHeight: 60),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(Space.lg, Space.sm, Space.xs, Space.sm),
+              child: Row(
+                spacing: 14,
+                children: <Widget>[
+                  Container(
+                    width: 32,
+                    height: 46,
+                    clipBehavior: Clip.antiAlias,
+                    decoration: BoxDecoration(
+                      color: c.surfaceContainerHigh,
+                      borderRadius: BorderRadius.circular(3),
+                      border: Border.all(color: c.outline),
                     ),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        spacing: 3,
-                        children: <Widget>[
-                          Text('Page ${page + 1}', style: UnfurlType.titleMedium.copyWith(color: c.onSurface)),
-                          Text(
-                            'Added ${Files.when(a.createdAt.millisecondsSinceEpoch).replaceFirst('Today', 'today')}'
-                            '${page == current ? ' · current page' : ''}',
-                            style: UnfurlType.bodySmall.copyWith(height: 1.45, color: c.onSurfaceVariant),
-                          ),
-                        ],
-                      ),
+                    child: FutureBuilder<File?>(
+                      initialData: pages.thumbNow(page),
+                      future: pages.thumb(page),
+                      builder: (BuildContext context, AsyncSnapshot<File?> s) => s.data == null
+                          ? const SizedBox.shrink()
+                          : Image(
+                              image: ResizeImage(FileImage(s.data!), width: ComicPages.thumbWidth),
+                              fit: BoxFit.cover,
+                            ),
                     ),
-                    AppIconButton(
-                      icon: AppIcons.bookmarkRemove,
-                      filled: false,
-                      semanticLabel: 'Remove bookmark on page ${page + 1}',
-                      onPressed: () {
-                        Navigator.of(ctx).pop();
-                        onDelete(a);
-                      },
+                  ),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      spacing: 3,
+                      children: <Widget>[
+                        Text('Page ${page + 1}', style: UnfurlType.titleMedium.copyWith(color: c.onSurface)),
+                        Text(
+                          'Added ${Files.when(a.createdAt.millisecondsSinceEpoch).replaceFirst('Today', 'today')}'
+                          '${page == current ? ' · current page' : ''}',
+                          style: UnfurlType.bodySmall.copyWith(height: 1.45, color: c.onSurfaceVariant),
+                        ),
+                      ],
                     ),
-                  ],
-                ),
+                  ),
+                  AppIconButton(
+                    icon: AppIcons.bookmarkRemove,
+                    filled: false,
+                    semanticLabel: 'Remove bookmark on page ${page + 1}',
+                    onPressed: () {
+                      Navigator.of(ctx).pop();
+                      onDelete(a);
+                    },
+                  ),
+                ],
               ),
             ),
           ),

@@ -401,11 +401,9 @@ class _CardEditorState extends ConsumerState<CardEditor> {
                   in <(String, bool, ValueChanged<bool>?)>[
                     ('Book title', s.showTitle, (bool v) => _set(s.copyWith(showTitle: v))),
                     ('Author', s.showAuthor, (bool v) => _set(s.copyWith(showAuthor: v))),
-                    (
-                      'Cover thumbnail',
-                      s.template == CardTemplate.cover || s.showCover,
-                      s.template == CardTemplate.cover ? null : (bool v) => _set(s.copyWith(showCover: v)),
-                    ),
+                    // The Cover template already is the cover: no thumbnail to switch there.
+                    if (s.template != CardTemplate.cover)
+                      ('Cover thumbnail', s.showCover, (bool v) => _set(s.copyWith(showCover: v))),
                     ('Page or location', s.showLocation, (bool v) => _set(s.copyWith(showLocation: v))),
                     ('Unfurl mark', s.showMark, (bool v) => _set(s.copyWith(showMark: v))),
                   ].indexed) ...<Widget>[

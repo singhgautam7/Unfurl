@@ -6,14 +6,16 @@ import 'package:flutter/foundation.dart';
 import '../motion/motion.dart';
 import '../../formats/format_registry.dart';
 import '../db/database.dart';
+import '../files.dart';
 import '../platform/platform.dart';
 import '../tracking/stats_store.dart';
+import 'access.dart';
 
 /// A file in the Library (a book, or any file Unfurl opens), with what
 /// Unfurl knows of it.
 @immutable
 class BookItem {
-  const BookItem({required this.entry, required this.folder, this.doc});
+  BookItem({required this.entry, required this.folder, this.doc});
 
   final Entry entry;
   final Folder folder;
@@ -34,7 +36,7 @@ class BookItem {
 
   /// A comic read but without ComicInfo: the tile says "No metadata".
   bool get noMetadata => format == Formats.comics && entry.enriched == 1 && entry.title == null;
-  FormatModule get format => Formats.of(entry.name, entry.mime) ?? Formats.pdf;
+  late final FormatModule format = Formats.of(entry.name, entry.mime) ?? Formats.pdf;
 
   /// "Books › Austen": the folder, then the subfolders down to the file. A
   /// book found across the device shows where it is on the phone.
@@ -274,8 +276,17 @@ class Library {
     removing.value = <int>{...removing.value}..remove(id);
   }
 
+  DateTime? _refreshed;
+
+  /// A resume this soon after a rescan (back from a picker, a share sheet, a
+  /// permission dialog) checks the grants but doesn't walk the folders again.
+  static const Duration rescanAfter = Duration(seconds: 15);
+
   /// Marks folders whose grant Android removed, and rescans the rest.
   Future<void> refreshAll() async {
+    final DateTime now = DateTime.now();
+    final bool rescan = _refreshed == null || now.difference(_refreshed!) >= rescanAfter;
+    if (rescan) _refreshed = now;
     final List<String> granted = await Platform.persistedFolders();
     final bool allFiles = await Platform.hasAllFilesAccess();
     for (final Folder f in await db.select(db.folders).get()) {
@@ -287,7 +298,8 @@ class Library {
           db.folders,
         )..where((x) => x.id.equals(f.id))).write(FoldersCompanion(accessLost: Value<bool>(lost)));
       }
-      if (lost) continue;
+      // A folder that just came back is walked whatever the clock says.
+      if (lost || (!rescan && lost == f.accessLost)) continue;
       if (f.source == 'device') {
         unawaited(_rescanDevice(f));
       } else {
@@ -391,10 +403,9 @@ class Library {
           for (final Entry e in known.values)
             if (!seen.contains(e.docId)) e.id,
         ];
+        // Nothing else is written: a rescan that finds nothing new must not
+        // re-run the library's queries.
         if (gone.isNotEmpty) await (db.delete(db.entries)..where((x) => x.id.isIn(gone))).go();
-        await (db.update(
-          db.folders,
-        )..where((x) => x.id.equals(folderId))).write(FoldersCompanion(scannedAt: Value<DateTime?>(DateTime.now())));
         if (!done.isCompleted) done.complete();
       },
       cancelOnError: true,
@@ -536,18 +547,24 @@ class Library {
     );
   }
 
-  /// Readable and total file counts under each directory of a folder.
+  /// Readable and total file counts under each directory of a folder. Counted
+  /// in SQL per directory and type, then rolled up to the parents.
   Future<Map<String, (int, int)>> countsUnder(int folderId) async {
-    final List<Entry> files = await (db.select(
-      db.entries,
-    )..where((x) => x.folderId.equals(folderId) & x.isDir.equals(false))).get();
+    final Expression<int> n = db.entries.id.count();
+    final List<TypedResult> rows =
+        await (db.selectOnly(db.entries)
+              ..addColumns(<Expression<Object>>[db.entries.parent, db.entries.ext, db.entries.mime, n])
+              ..where(db.entries.folderId.equals(folderId) & db.entries.isDir.equals(false))
+              ..groupBy(<Expression<Object>>[db.entries.parent, db.entries.ext, db.entries.mime]))
+            .get();
     final Map<String, (int, int)> out = <String, (int, int)>{};
-    for (final Entry e in files) {
-      final bool readable = Formats.of(e.name, e.mime) != null;
-      String dir = e.parent;
+    for (final TypedResult row in rows) {
+      final int count = row.read(n) ?? 0;
+      final bool readable = Formats.of('x.${row.read(db.entries.ext)}', row.read(db.entries.mime)) != null;
+      String dir = row.read(db.entries.parent)!;
       while (true) {
         final (int r, int t) = out[dir] ?? (0, 0);
-        out[dir] = (r + (readable ? 1 : 0), t + 1);
+        out[dir] = (r + (readable ? count : 0), t + count);
         if (dir.isEmpty) break;
         final int slash = dir.lastIndexOf('/');
         dir = slash < 0 ? '' : dir.substring(0, slash);
@@ -622,9 +639,13 @@ class Library {
         ),
       );
     }
-    await (db.update(
-      db.entries,
-    )..where((x) => x.uri.equals(ref.uri))).write(EntriesCompanion(fingerprint: Value<String?>(fingerprint)));
+    // Only when it changes: any write to entries re-runs every library query.
+    final List<Entry> here = await (db.select(db.entries)..where((x) => x.uri.equals(ref.uri))).get();
+    if (here.any((Entry e) => e.fingerprint != fingerprint)) {
+      await (db.update(
+        db.entries,
+      )..where((x) => x.uri.equals(ref.uri))).write(EntriesCompanion(fingerprint: Value<String?>(fingerprint)));
+    }
     return (await document(fingerprint))!;
   }
 
@@ -658,12 +679,17 @@ class Library {
   }
 
   /// Documents opened before, newest first: Continue reading and the recent
-  /// books row.
-  Stream<List<Document>> watchOpened() =>
+  /// books row, which show a handful of them.
+  Stream<List<Document>> watchOpened({int limit = 60}) =>
       (db.select(db.documents)
             ..where((d) => d.openedAt.isNotNull())
-            ..orderBy(<OrderClauseGenerator<$DocumentsTable>>[(d) => OrderingTerm.desc(d.openedAt)]))
+            ..orderBy(<OrderClauseGenerator<$DocumentsTable>>[(d) => OrderingTerm.desc(d.openedAt)])
+            ..limit(limit))
           .watch();
+
+  /// A position save writes quietly (it must not re-run the library's queries
+  /// while reading); this tells the lists once, when a document closes.
+  void documentsChanged() => db.markTablesUpdated(<TableInfo<Table, Object?>>{db.documents});
 
   // ---------------------------------------------------------------- recents
 
@@ -681,18 +707,130 @@ class Library {
     await (db.delete(db.recents)..where((x) => x.fingerprint.equals(fingerprint))).go();
   });
 
-  Future<void> addRecent(DocRef ref, String? fingerprint) => db
-      .into(db.recents)
-      .insertOnConflictUpdate(
-        RecentsCompanion.insert(
-          uri: ref.uri,
-          fingerprint: Value<String?>(fingerprint),
-          name: ref.name,
-          mime: Value<String?>(ref.mime),
-          size: Value<int>(ref.size),
-          openedAt: DateTime.now(),
-        ),
-      );
+  /// [ref]'s source is kept from when the file arrived: opening it again
+  /// from Recents doesn't know it and leaves it as it was.
+  Future<void> addRecent(DocRef ref, String? fingerprint) {
+    final FileSource? from = ref.source;
+    Value<T> given<T>(T value) => from == null ? Value<T>.absent() : Value<T>(value);
+    return db
+        .into(db.recents)
+        .insertOnConflictUpdate(
+          RecentsCompanion.insert(
+            uri: ref.uri,
+            fingerprint: Value<String?>(fingerprint),
+            name: ref.name,
+            mime: Value<String?>(ref.mime),
+            size: Value<int>(ref.size),
+            openedAt: DateTime.now(),
+            authority: given<String?>(from?.authority),
+            docId: given<String?>(from?.docId),
+            sender: given<String?>(from?.sender),
+            senderPackage: given<String?>(from?.senderPackage),
+            persisted: given<bool>(from?.persisted ?? false),
+          ),
+        );
+  }
+
+  Future<Recent?> recent(String uri) => (db.select(db.recents)..where((r) => r.uri.equals(uri))).getSingleOrNull();
+
+  /// The document last seen at [uri], or the one its Recents row names.
+  Future<String?> fingerprintAt(String uri) async =>
+      (await recent(uri))?.fingerprint ??
+      (await (db.select(db.documents)
+                ..where((d) => d.uri.equals(uri))
+                ..limit(1))
+              .getSingleOrNull())
+          ?.fingerprint;
+
+  /// Other places the same content (its fingerprint) was seen: folders added
+  /// to the Library, then other Recents rows, newest first.
+  Future<List<DocRef>> copiesOf(String fingerprint, {required String except}) async {
+    final List<Entry> entries = await (db.select(
+      db.entries,
+    )..where((e) => e.fingerprint.equals(fingerprint) & e.hidden.equals(false))).get();
+    final List<Recent> recents =
+        await (db.select(db.recents)
+              ..where((r) => r.fingerprint.equals(fingerprint))
+              ..orderBy(<OrderClauseGenerator<$RecentsTable>>[(r) => OrderingTerm.desc(r.openedAt)]))
+            .get();
+    final Set<String> seen = <String>{except};
+    return <DocRef>[
+      for (final Entry e in entries)
+        if (seen.add(e.uri)) DocRef(uri: e.uri, name: e.name, size: e.size, modified: e.modified, mime: e.mime),
+      for (final Recent r in recents)
+        if (seen.add(r.uri)) DocRef(uri: r.uri, name: r.name, size: r.size, mime: r.mime),
+    ];
+  }
+
+  /// The same file at a new URI (an allowed folder, a fresh grant): its
+  /// Recents row moves with everything known of where it came from. Positions,
+  /// highlights and notes are keyed by fingerprint and stay as they are.
+  Future<void> relink(String from, DocRef to, String fingerprint) => db.transaction(() async {
+    if (from == to.uri) return;
+    final Recent? old = await recent(from);
+    await addRecent(
+      to.source != null || old == null
+          ? to
+          : to.withSource(
+              FileSource(
+                authority: Uri.tryParse(to.uri)?.authority,
+                docId: old.docId,
+                sender: old.sender,
+                senderPackage: old.senderPackage,
+                persisted: true,
+              ),
+            ),
+      fingerprint,
+    );
+    await (db.delete(db.recents)..where((r) => r.uri.equals(from))).go();
+    await (db.update(
+      db.documents,
+    )..where((d) => d.fingerprint.equals(fingerprint))).write(DocumentsCompanion(uri: Value<String>(to.uri)));
+  });
+
+  /// "Remove from Recents": gone from Home and Recents; its place, highlights
+  /// and notes stay (opening the file again brings it back).
+  Future<void> forgetRecent(String uri) => db.transaction(() async {
+    final String? fp = await fingerprintAt(uri);
+    await removeRecent(uri);
+    if (fp == null) return;
+    await (db.delete(db.recents)..where((r) => r.fingerprint.equals(fp))).go();
+    await (db.update(
+      db.documents,
+    )..where((d) => d.fingerprint.equals(fp))).write(const DocumentsCompanion(openedAt: Value<DateTime?>(null)));
+  });
+
+  /// What Unfurl can do about a file it couldn't read at [asked]: the same
+  /// content somewhere it may read (returned as the first value), or the
+  /// state to show.
+  Future<(DocRef?, AccessProblem?)> locate(DocRef asked) async {
+    final Recent? row = await recent(asked.uri);
+    final FileProbe probe = await Platform.probeFile(asked.uri, row?.docId);
+    if (probe.covered != null) {
+      final DocRef? r = await Platform.stat(probe.covered!);
+      if (r != null) return (r, null);
+    }
+    final String? fp = await fingerprintAt(asked.uri);
+    if (fp != null) {
+      for (final DocRef copy in await copiesOf(fp, except: asked.uri)) {
+        final DocRef? r = await Platform.stat(copy.uri);
+        // The file there may have changed since it was indexed.
+        if (r != null && await Files.fingerprint(r.uri) == fp) return (r, null);
+      }
+    }
+    return (
+      null,
+      AccessProblem(
+        state: sortAccess(readable: false, docId: probe.docId, exists: probe.exists),
+        ref: asked,
+        docId: probe.docId == null ? null : DocId(probe.docId!),
+        sender: row?.sender,
+        exists: probe.exists,
+        folderApp: probe.folderApp,
+        sdk: probe.sdk,
+      ),
+    );
+  }
 
   /// Newest first, one row per document: the same file reached through two
   /// apps has two URIs but one fingerprint.

@@ -7,6 +7,7 @@ import android.graphics.drawable.ColorDrawable
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.provider.DocumentsContract
 import android.provider.OpenableColumns
 import android.view.KeyEvent
 import android.view.WindowManager
@@ -14,19 +15,27 @@ import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
+import java.util.concurrent.Executors
+import java.util.concurrent.Future
 
 class MainActivity : FlutterActivity() {
     private lateinit var channel: MethodChannel
     private lateinit var storage: Storage
+    private lateinit var sources: Sources
     private lateinit var speech: Speech
     private lateinit var explorer: Explorer
     private lateinit var comics: Comics
     private var pending: MethodChannel.Result? = null
-    private var pendingIntent: Map<String, Any?>? = null
+    private var pendingIntent: Future<Map<String, Any?>?>? = null
+
+    /** Provider calls (queries, opening descriptors) are IPC and may be slow: never on the main thread. */
+    private val io = Executors.newFixedThreadPool(4)
     private var volumeKeys = false
     private var lastVolumeKey = 0L
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        sources = Sources(this)
+        storage = Storage(this)
         super.onCreate(savedInstanceState)
         paintLaunchWindow()
         // A file opens only on a fresh launch. Android hands a recreated or
@@ -34,13 +43,12 @@ class MainActivity : FlutterActivity() {
         // launcher after the process was killed, the intent that first started
         // it; taking that as new would open the same file again by itself.
         val fromHistory = intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY != 0
-        pendingIntent = if (savedInstanceState == null && !fromHistory) describe(intent) else null
+        pendingIntent = if (savedInstanceState == null && !fromHistory) describeLater(intent) else null
     }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         val messenger = flutterEngine.dartExecutor.binaryMessenger
-        storage = Storage(this)
         speech = Speech(this) { method, args -> runOnUiThread { channel.invokeMethod(method, args) } }
         channel = MethodChannel(messenger, "unfurl/platform")
         channel.setMethodCallHandler(::handle)
@@ -52,10 +60,13 @@ class MainActivity : FlutterActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        describe(intent)?.let { channel.invokeMethod("intent", it) }
+        // The referrer is this intent's own only while this runs.
+        val from = referrer?.host
+        work { describe(intent, from)?.let { m -> runOnUiThread { channel.invokeMethod("intent", m) } } }
     }
 
     override fun onDestroy() {
+        io.shutdown()
         if (::speech.isInitialized) speech.shutdown()
         if (::comics.isInitialized) comics.shutdown()
         super.onDestroy()
@@ -83,17 +94,24 @@ class MainActivity : FlutterActivity() {
                     pending = result
                     val pick = Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("*/*")
                     call.argument<List<String>>("mimes")?.let { pick.putExtra(Intent.EXTRA_MIME_TYPES, it.toTypedArray()) }
+                    call.argument<String>("initial")?.let { pick.putExtra(DocumentsContract.EXTRA_INITIAL_URI, Sources.documentUri(it)) }
                     startActivityForResult(pick, PICK_FILE)
                 }
                 "pickFolder" -> {
                     pending = result
-                    startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).addFlags(TREE_FLAGS), PICK_FOLDER)
+                    val pick = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).addFlags(TREE_FLAGS)
+                    // The picker opens there (Android 8 and later).
+                    call.argument<String>("initial")?.let { pick.putExtra(DocumentsContract.EXTRA_INITIAL_URI, Sources.documentUri(it)) }
+                    startActivityForResult(pick, PICK_FOLDER)
                 }
-                "releaseFolder" -> result.success(storage.release(call.argument<String>("uri")!!))
-                "persistedFolders" -> result.success(contentResolver.persistedUriPermissions.filter { it.isReadPermission }.map { it.uri.toString() })
-                "stat" -> result.success(storage.stat(Uri.parse(call.argument<String>("uri")!!)))
-                "openFd" -> result.success(storage.openFd(Uri.parse(call.argument<String>("uri")!!)))
-                "closeFd" -> result.success(storage.closeFd(call.argument<Int>("fd")!!))
+                "releaseFolder" -> answer(result) { storage.release(call.argument<String>("uri")!!) }
+                "persistedFolders" -> answer(result) { contentResolver.persistedUriPermissions.filter { it.isReadPermission }.map { it.uri.toString() } }
+                "stat" -> answer(result) { storage.stat(Uri.parse(call.argument<String>("uri")!!)) }
+                "openFd" -> answer(result) { storage.openFd(Uri.parse(call.argument<String>("uri")!!)) }
+                "closeFd" -> answer(result) { storage.closeFd(call.argument<Int>("fd")!!) }
+                "probeFile" -> answer(result) { sources.probe(Uri.parse(call.argument<String>("uri")!!), call.argument<String>("docId")) }
+                "fileInFolder" -> result.success(sources.inTree(Uri.parse(call.argument<String>("tree")!!), call.argument<String>("docId")!!))
+                "openFolder" -> result.success(launch(sources.folderIntent(call.argument<String>("docId")!!)))
                 "hasAllFilesAccess" -> result.success(explorer.hasAccess())
                 "requestAllFilesAccess" -> result.success(explorer.requestAccess())
                 "volumes" -> result.success(explorer.volumes())
@@ -119,7 +137,11 @@ class MainActivity : FlutterActivity() {
                     call.argument<String>("path")!!,
                     call.argument<List<String>>("readable")!!.toSet(),
                 ) { result.success(it) }
-                "takeIntent" -> { result.success(pendingIntent); pendingIntent = null }
+                "takeIntent" -> {
+                    val launched = pendingIntent
+                    pendingIntent = null
+                    if (launched == null) result.success(null) else answer(result) { launched.get() }
+                }
                 "openWith" -> result.success(launch(Intent.createChooser(viewIntent(call), null)))
                 "shareFile" -> {
                     result.success(launch(chooser(shareable(call.argument<String>("uri")!!), call.argument<String>("mime") ?: "*/*")))
@@ -204,14 +226,11 @@ class MainActivity : FlutterActivity() {
         val uri = data?.data
         if (resultCode != RESULT_OK || uri == null) return result.success(null)
         when (requestCode) {
-            PICK_FILE -> {
-                try {
-                    contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                } catch (_: SecurityException) {
-                }
-                result.success(storage.stat(uri))
+            PICK_FILE -> answer(result) {
+                val kept = persist(uri)
+                storage.stat(uri)?.plus("source" to sources.describe(uri, null, kept))
             }
-            PICK_FOLDER -> result.success(storage.takeFolder(uri))
+            PICK_FOLDER -> answer(result) { storage.takeFolder(uri) }
         }
     }
 
@@ -313,8 +332,45 @@ class MainActivity : FlutterActivity() {
         false
     }
 
-    /** An "Open with" or share arrival, as the file it names. */
-    private fun describe(intent: Intent?): Map<String, Any?>? {
+    /** Runs [work] off the main thread and answers [result] on it. */
+    private fun answer(result: MethodChannel.Result, job: () -> Any?) = work {
+        try {
+            val value = job()
+            runOnUiThread { result.success(value) }
+        } catch (e: Exception) {
+            runOnUiThread { result.error("platform", e.message, null) }
+        }
+    }
+
+    /** A job on the [io] threads; dropped once the activity is going. */
+    private fun work(job: () -> Unit) {
+        try {
+            io.execute {
+                try {
+                    job()
+                } catch (_: Exception) {
+                    // A provider that fails is a file that can't be opened, never a crash.
+                }
+            }
+        } catch (_: java.util.concurrent.RejectedExecutionException) {
+        }
+    }
+
+    /** Keeps read access across restarts; false when the sender doesn't allow it. */
+    private fun persist(uri: Uri): Boolean = try {
+        contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        true
+    } catch (_: SecurityException) {
+        false
+    }
+
+    private fun describeLater(intent: Intent?): Future<Map<String, Any?>?> {
+        val from = referrer?.host
+        return io.submit<Map<String, Any?>?> { describe(intent, from) }
+    }
+
+    /** An "Open with" or share arrival, as the file it names and where it came from. */
+    private fun describe(intent: Intent?, from: String?): Map<String, Any?>? {
         if (intent == null) return null
         val uri: Uri = when (intent.action) {
             Intent.ACTION_VIEW -> intent.data
@@ -322,12 +378,10 @@ class MainActivity : FlutterActivity() {
             else @Suppress("DEPRECATION") intent.getParcelableExtra(Intent.EXTRA_STREAM)
             else -> null
         } ?: return null
-        try {
-            contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
-        } catch (_: SecurityException) {
-        }
+        if (uri.scheme != "content" && uri.scheme != "file") return null
+        val kept = persist(uri)
         val stat = storage.stat(uri) ?: mapOf("uri" to uri.toString())
-        return stat + mapOf("referrer" to referrer?.host, "mime" to (stat["mime"] ?: intent.type))
+        return stat + mapOf("mime" to (stat["mime"] ?: intent.type), "source" to sources.describe(uri, from, kept))
     }
 
     /**

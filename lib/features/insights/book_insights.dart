@@ -262,7 +262,7 @@ class _Figures extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final BookStat? s = b.stats;
-    String speed = '—';
+    String speed = 'None yet';
     String? speedSub = pages ? 'after 30 min reading' : 'after 30 min reading';
     if (s != null) {
       if (!pages && s.readerMs >= 30 * 60000 && s.readerWords > 0) {
@@ -279,7 +279,7 @@ class _Figures extends StatelessWidget {
         StatTile(label: 'Sessions', value: '${b.sessions}', number: InsightNumber(b.sessions, (int n) => '$n')),
         StatTile(
           label: 'Average session',
-          value: b.sessions == 0 ? '—' : formatMinutes(b.timeMs ~/ b.sessions),
+          value: b.sessions == 0 ? 'None yet' : formatMinutes(b.timeMs ~/ b.sessions),
           number: b.sessions == 0 ? null : InsightNumber(b.timeMs ~/ b.sessions, formatMinutes),
         ),
         StatTile(label: 'Reading speed', value: speed, sub: speedSub),
@@ -302,13 +302,13 @@ class _Progress extends StatelessWidget {
     if (pages) {
       final int? units = d?.units;
       final double? pph = b.speeds.pagesPerHour;
-      if (units == null || pph == null || pph <= 0) return ('—', 'after 30 min in Page view');
+      if (units == null || pph == null || pph <= 0) return ('Not yet', 'after 30 min in Page view');
       final int left = math.max(0, (units * (1 - (d?.progress ?? 0))).round());
       return ('about ${formatMinutes((left / pph * 3600000).round())}', 'at ${pph.round()} pages/h');
     }
     final int? words = s?.wordsLeft ?? s?.totalWords;
     final double wpm = b.speeds.wpm ?? 230;
-    if (words == null) return ('—', 'after you open it in Reader mode');
+    if (words == null) return ('Not yet', 'after you open it in Reader mode');
     final bool own = s != null && s.readerMs >= 10 * 60000;
     return (
       'about ${formatMinutes((words / wpm * 60000).round())}',

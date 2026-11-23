@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
 import '../core/motion/kit.dart';
@@ -7,9 +9,10 @@ import '../core/theme/typography.dart';
 import 'app_icon.dart';
 import 'buttons.dart';
 
-/// The pill search field (board 2): 52dp, `surfaceContainer`, 1px outline,
+/// The pill search field (board 2): 48dp, `surfaceContainer`, 1px outline,
 /// 1.5px `primary` while focused, a clear button once there is text, and an
-/// optional trailing count ("3 of 14"). With [onBack] it leads with a back
+/// optional trailing count ("3 of 14"). All of the pill takes the tap and
+/// focuses the field. With [onBack] it leads with a back
 /// button instead of the glyph (the header search).
 class SearchField extends StatefulWidget {
   const SearchField({
@@ -20,7 +23,7 @@ class SearchField extends StatefulWidget {
     this.autofocus = false,
     this.trailing,
     this.onSubmitted,
-    this.height = 52,
+    this.height = 48,
     this.onBack,
     super.key,
   });
@@ -65,56 +68,73 @@ class _SearchFieldState extends State<SearchField> {
   Widget build(BuildContext context) {
     final UnfurlColors c = context.colors;
     final bool focused = _focus.hasFocus;
-    return AnimatedContainer(
-      duration: Motion.isOff(context) ? Duration.zero : Motion.fxFast,
-      curve: Motion.curveEffects,
-      constraints: BoxConstraints(minHeight: widget.height),
-      padding: EdgeInsets.only(
-        left: widget.onBack == null ? 18 : 0,
-        right: _controller.text.isEmpty && widget.trailing == null ? 18 : 2,
-      ),
-      decoration: BoxDecoration(
-        color: c.surfaceContainer,
-        borderRadius: BorderRadius.circular(widget.height),
-        border: Border.all(color: focused ? c.primary : c.outline, width: focused ? 1.5 : 1),
-      ),
-      child: Row(
-        spacing: widget.onBack == null ? 12 : 0,
-        children: <Widget>[
-          if (widget.onBack == null)
-            AppIcon(AppIcons.search, color: c.icon)
-          else
-            AppIconButton(icon: AppIcons.back, filled: false, semanticLabel: 'Close search', onPressed: widget.onBack),
-          Expanded(
-            child: TextField(
-              controller: _controller,
-              focusNode: _focus,
-              autofocus: widget.autofocus,
-              onChanged: widget.onChanged,
-              onSubmitted: widget.onSubmitted,
-              textInputAction: TextInputAction.search,
-              style: UnfurlType.body.copyWith(height: 1.3, color: c.onSurface),
-              cursorColor: c.primary,
-              decoration: InputDecoration(
-                isCollapsed: true,
-                border: InputBorder.none,
-                hintText: widget.hint,
-                hintStyle: UnfurlType.body.copyWith(height: 1.3, color: c.onSurfaceVariant),
+    final TextStyle text = UnfurlType.body.copyWith(height: 1.3, color: c.onSurface);
+    final double line = MediaQuery.textScalerOf(context).scale(text.fontSize ?? 15) * (text.height ?? 1.3);
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: _focus.requestFocus,
+      child: AnimatedContainer(
+        duration: Motion.isOff(context) ? Duration.zero : Motion.fxFast,
+        curve: Motion.curveEffects,
+        constraints: BoxConstraints(minHeight: widget.height),
+        padding: EdgeInsets.only(
+          left: widget.onBack == null ? 18 : 0,
+          right: _controller.text.isEmpty && widget.trailing == null ? 18 : 2,
+        ),
+        decoration: BoxDecoration(color: c.surfaceContainer, borderRadius: BorderRadius.circular(widget.height)),
+        // Painted over, so the ring takes no room and the pill stays 48dp.
+        foregroundDecoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(widget.height),
+          border: Border.all(color: focused ? c.primary : c.outline, width: focused ? 1.5 : 1),
+        ),
+        child: Row(
+          spacing: widget.onBack == null ? 12 : 0,
+          children: <Widget>[
+            if (widget.onBack == null)
+              AppIcon(AppIcons.search, color: c.icon)
+            else
+              AppIconButton(
+                icon: AppIcons.back,
+                filled: false,
+                semanticLabel: 'Close search',
+                onPressed: widget.onBack,
+              ),
+            Expanded(
+              child: TextField(
+                controller: _controller,
+                focusNode: _focus,
+                autofocus: widget.autofocus,
+                onChanged: widget.onChanged,
+                onSubmitted: widget.onSubmitted,
+                textInputAction: TextInputAction.search,
+                textAlignVertical: TextAlignVertical.center,
+                style: text,
+                cursorColor: c.primary,
+                decoration: InputDecoration(
+                  isCollapsed: true,
+                  // Fills the pill, so all of it takes the tap, not just the line.
+                  contentPadding: EdgeInsets.symmetric(
+                    vertical: math.max(0, (widget.height - line.ceilToDouble()) / 2),
+                  ),
+                  border: InputBorder.none,
+                  hintText: widget.hint,
+                  hintStyle: UnfurlType.body.copyWith(height: 1.3, color: c.onSurfaceVariant),
+                ),
               ),
             ),
-          ),
-          ?widget.trailing,
-          if (_controller.text.isNotEmpty)
-            AppIconButton(
-              icon: AppIcons.close,
-              filled: false,
-              semanticLabel: 'Clear search',
-              onPressed: () {
-                _controller.clear();
-                widget.onChanged('');
-              },
-            ),
-        ],
+            ?widget.trailing,
+            if (_controller.text.isNotEmpty)
+              AppIconButton(
+                icon: AppIcons.close,
+                filled: false,
+                semanticLabel: 'Clear search',
+                onPressed: () {
+                  _controller.clear();
+                  widget.onChanged('');
+                },
+              ),
+          ],
+        ),
       ),
     );
   }

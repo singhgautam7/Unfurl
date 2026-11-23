@@ -6,6 +6,7 @@ import '../core/theme/palette.dart';
 import '../core/theme/tokens.dart';
 import '../core/theme/typography.dart';
 import 'app_icon.dart';
+import 'buttons.dart' show pressedLayer;
 import 'chips.dart' show kSelectedRadius;
 
 /// One colour family as a card, as Mull's Theme page draws it: three swatches
@@ -51,16 +52,21 @@ class FamilyCard extends StatelessWidget {
         curve: shape.clamped,
         builder: (BuildContext context, double sq, Widget? child) {
           final BorderRadius radius = BorderRadius.circular(Radii.card + (kSelectedRadius - Radii.card) * sq);
-          return Material(
-            color: c.surfaceContainer,
-            shape: RoundedRectangleBorder(
-              borderRadius: radius,
-              side: BorderSide(color: selected ? c.primary : c.outline, width: selected ? 2 : 1),
-            ),
-            child: InkWell(
-              onTap: onTap,
-              customBorder: RoundedRectangleBorder(borderRadius: radius),
-              child: child,
+          return Pressable(
+            kind: PressKind.card,
+            child: Material(
+              color: c.surfaceContainer,
+              shape: RoundedRectangleBorder(
+                borderRadius: radius,
+                side: BorderSide(color: selected ? c.primary : c.outline, width: selected ? 2 : 1),
+              ),
+              clipBehavior: Clip.antiAlias,
+              child: InkWell(
+                onTap: onTap,
+                splashFactory: NoSplash.splashFactory,
+                overlayColor: pressedLayer(c),
+                child: child,
+              ),
             ),
           );
         },

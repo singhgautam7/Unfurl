@@ -60,7 +60,7 @@ void main() {
     expect(t.binding.hasScheduledFrame, isFalse);
   });
 
-  testWidgets('PillChip: selected is a 12dp squircle, unselected a full pill', (WidgetTester t) async {
+  testWidgets('PillChip: selected is a 12dp squircle, unselected an outlined stadium', (WidgetTester t) async {
     Widget chips(bool sel) => host(
       Row(
         mainAxisSize: MainAxisSize.min,
@@ -70,24 +70,32 @@ void main() {
         ],
       ),
     );
-    double radiusOf(String label) {
+    // A stadium is half the 32dp height at rest (the chip is no longer 40dp).
+    ShapeBorder shapeOf(String label) => t
+        .widget<Material>(
+          find.descendant(of: find.widgetWithText(PillChip, label), matching: find.byType(Material)).first,
+        )
+        .shape!;
+
+    await t.pumpWidget(chips(false));
+    await t.pumpAndSettle();
+    expect(shapeOf('A'), isA<StadiumBorder>());
+    await t.pumpWidget(chips(true));
+    await t.pumpAndSettle();
+    final ShapeBorder sel = shapeOf('A');
+    expect((sel as RoundedRectangleBorder).borderRadius.resolve(TextDirection.ltr).topLeft.x, kSelectedRadius);
+    expect(shapeOf('B'), isA<StadiumBorder>());
+  });
+
+  testWidgets('AppIconButton morphs under the finger at Expressive, stays round at Off', (WidgetTester t) async {
+    double radiusOf() {
       final Material m = t.widget<Material>(
-        find.descendant(of: find.widgetWithText(PillChip, label), matching: find.byType(Material)).first,
+        find.descendant(of: find.byType(AppIconButton), matching: find.byType(Material)).first,
       );
       return (m.shape! as RoundedRectangleBorder).borderRadius.resolve(TextDirection.ltr).topLeft.x;
     }
 
-    await t.pumpWidget(chips(false));
-    await t.pumpAndSettle();
-    expect(radiusOf('A'), PillChip.minHeight / 2);
-    await t.pumpWidget(chips(true));
-    await t.pumpAndSettle();
-    expect(radiusOf('A'), kSelectedRadius);
-    expect(radiusOf('B'), PillChip.minHeight / 2);
-  });
-
-  testWidgets('AppIconButton morphs under the finger at Expressive, stays round at Off', (WidgetTester t) async {
-    Future<ShapeBorder> pressed(MotionLevel level) async {
+    Future<double> held(MotionLevel level) async {
       await t.pumpWidget(
         host(
           AppIconButton(icon: AppIcons.search, semanticLabel: 'Go', onPressed: () {}),
@@ -97,23 +105,15 @@ void main() {
       final TestGesture g = await t.startGesture(t.getCenter(find.byType(AppIconButton)));
       await t.pump();
       await t.pump(const Duration(milliseconds: 200));
-      final Material m = t.widget<Material>(
-        find.descendant(of: find.byType(AppIconButton), matching: find.byType(Material)).first,
-      );
+      final double r = radiusOf();
       await g.up();
       await t.pumpAndSettle();
-      return m.shape!;
+      return r;
     }
 
-    final ShapeBorder ex = await pressed(MotionLevel.expressive);
-    expect(ex, isA<RoundedRectangleBorder>());
-    expect((ex as RoundedRectangleBorder).borderRadius.resolve(TextDirection.ltr).topLeft.x, lessThan(20));
-    expect(await pressed(MotionLevel.off), isA<CircleBorder>());
-    // Released: round again.
-    final Material m = t.widget<Material>(
-      find.descendant(of: find.byType(AppIconButton), matching: find.byType(Material)).first,
-    );
-    expect(m.shape, isA<CircleBorder>());
+    expect(await held(MotionLevel.expressive), closeTo(12, 0.5));
+    expect(radiusOf(), 20); // released: a circle again
+    expect(await held(MotionLevel.off), 20);
   });
 
   group('NavPill', () {

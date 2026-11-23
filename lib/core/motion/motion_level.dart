@@ -3,11 +3,8 @@ import 'package:flutter/widgets.dart';
 /// How much Unfurl moves.
 enum MotionLevel { expressive, subtle, off }
 
-/// What the user picked. Auto resolves from the phone (see [resolveMotionLevel]).
-enum MotionPreference { auto, expressive, subtle, off }
-
 /// Result of the one-off device check, cached in prefs. [unknown] until the
-/// check has run (Auto then behaves as Expressive).
+/// check has run (Expressive meanwhile).
 enum DeviceClass { unknown, normal, low }
 
 /// Total RAM under this (MB, as Android reports it) is a low-end phone
@@ -18,17 +15,13 @@ const int kLowRamMb = 3584;
 DeviceClass classifyDevice({required int? ramMb, bool lowRamFlag = false}) =>
     lowRamFlag || (ramMb != null && ramMb < kLowRamMb) ? DeviceClass.low : DeviceClass.normal;
 
-/// Level for [pref] on a phone of class [device]. The phone wins: with
-/// [systemOff] (Remove animations, or accessible navigation) the answer is
-/// always Off, even over an explicit preference.
-MotionLevel resolveMotionLevel(MotionPreference pref, DeviceClass device, {required bool systemOff}) {
+/// The level on a phone of class [device]. The phone decides and nothing else
+/// (there is no Motion setting; a `motion.preference` an older version stored
+/// is ignored): Off under [systemOff] (Remove animations, or an accessibility
+/// service that navigates), Subtle on a low-RAM phone, else Expressive.
+MotionLevel resolveMotionLevel(DeviceClass device, {required bool systemOff}) {
   if (systemOff) return MotionLevel.off;
-  return switch (pref) {
-    MotionPreference.expressive => MotionLevel.expressive,
-    MotionPreference.subtle => MotionLevel.subtle,
-    MotionPreference.off => MotionLevel.off,
-    MotionPreference.auto => device == DeviceClass.low ? MotionLevel.subtle : MotionLevel.expressive,
-  };
+  return device == DeviceClass.low ? MotionLevel.subtle : MotionLevel.expressive;
 }
 
 /// The level for everything below it. One instance sits above the routes (see

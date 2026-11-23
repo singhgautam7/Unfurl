@@ -8,6 +8,7 @@ import '../core/theme/tokens.dart';
 import '../core/theme/typography.dart';
 import 'app_icon.dart';
 import 'buttons.dart';
+import 'containers.dart';
 import 'floating_header.dart';
 import 'search_field.dart';
 
@@ -58,7 +59,7 @@ class AppHeader extends StatelessWidget {
             label: '$title, in $crumb',
             onTap: onCrumb,
             excludeSemantics: true,
-            child: InkWell(
+            child: PressableRow(
               onTap: onCrumb,
               borderRadius: Radii.chipR,
               child: ConstrainedBox(
@@ -218,18 +219,34 @@ class _HeaderSearchState extends State<HeaderSearch> {
               },
               child: SizedBox(
                 height: widget.height,
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(Space.lg, 0, 14, 0),
-                  child: Center(
-                    child: SearchField(
-                      hint: widget.hint,
-                      controller: _controller,
-                      autofocus: true,
-                      height: IconSpec.tapTarget,
-                      onBack: _close,
-                      onChanged: widget.onChanged,
-                    ),
-                  ),
+                // The bar is the header's content, so it is the pill when the
+                // page is scrolled: the field grows from 48 to 56 dp and its
+                // margins from 16 and 14 to 12, in step with the surface's
+                // morph. The same field element, so focus and text carry over.
+                child: AnimatedBuilder(
+                  animation: HeaderFloat.maybeOf(context)?.progress ?? kAlwaysDismissedAnimation,
+                  builder: (BuildContext context, Widget? _) {
+                    final double p = (HeaderFloat.maybeOf(context, listen: false)?.progress.value ?? 0).clamp(0.0, 1.0);
+                    double lerp(double a, double b) => a + (b - a) * p;
+                    return Padding(
+                      padding: EdgeInsets.fromLTRB(
+                        lerp(Space.lg, FloatingHeaderSpec.margin),
+                        0,
+                        lerp(14, FloatingHeaderSpec.margin),
+                        0,
+                      ),
+                      child: Center(
+                        child: SearchField(
+                          hint: widget.hint,
+                          controller: _controller,
+                          autofocus: true,
+                          height: lerp(IconSpec.tapTarget, FloatingHeaderSpec.pillHeight),
+                          onBack: _close,
+                          onChanged: widget.onChanged,
+                        ),
+                      ),
+                    );
+                  },
                 ),
               ),
             )

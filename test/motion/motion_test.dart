@@ -21,25 +21,15 @@ double scaleOf(WidgetTester t, Finder inside) {
 
 void main() {
   group('resolveMotionLevel', () {
-    test('system off wins over everything', () {
-      for (final MotionPreference p in MotionPreference.values) {
-        for (final DeviceClass d in DeviceClass.values) {
-          expect(resolveMotionLevel(p, d, systemOff: true), MotionLevel.off);
-        }
+    test('Remove animations wins over everything', () {
+      for (final DeviceClass d in DeviceClass.values) {
+        expect(resolveMotionLevel(d, systemOff: true), MotionLevel.off);
       }
     });
-    test('auto follows the device class', () {
-      expect(resolveMotionLevel(MotionPreference.auto, DeviceClass.low, systemOff: false), MotionLevel.subtle);
-      expect(resolveMotionLevel(MotionPreference.auto, DeviceClass.normal, systemOff: false), MotionLevel.expressive);
-      expect(resolveMotionLevel(MotionPreference.auto, DeviceClass.unknown, systemOff: false), MotionLevel.expressive);
-    });
-    test('explicit preferences map directly', () {
-      expect(resolveMotionLevel(MotionPreference.off, DeviceClass.normal, systemOff: false), MotionLevel.off);
-      expect(resolveMotionLevel(MotionPreference.subtle, DeviceClass.normal, systemOff: false), MotionLevel.subtle);
-      expect(
-        resolveMotionLevel(MotionPreference.expressive, DeviceClass.low, systemOff: false),
-        MotionLevel.expressive,
-      );
+    test('otherwise the device class decides', () {
+      expect(resolveMotionLevel(DeviceClass.low, systemOff: false), MotionLevel.subtle);
+      expect(resolveMotionLevel(DeviceClass.normal, systemOff: false), MotionLevel.expressive);
+      expect(resolveMotionLevel(DeviceClass.unknown, systemOff: false), MotionLevel.expressive);
     });
     test('device class cut is 3.5 GB or the low-RAM flag', () {
       expect(classifyDevice(ramMb: 3000), DeviceClass.low);
@@ -88,18 +78,15 @@ void main() {
       SharedPreferences.setMockInitialValues(<String, Object>{});
       final SharedPreferences prefs = await SharedPreferences.getInstance();
       final AppSettings d = AppSettings.read(prefs);
-      expect(d.motion, MotionPreference.auto);
       expect(d.haptics, isFalse);
       expect(d.floatingHeader, isTrue);
       expect(d.pillMode, PillMode.always);
       expect(d.deviceClass, DeviceClass.unknown);
-      await prefs.setString(AppSettings.kMotion, 'subtle');
       await prefs.setBool(AppSettings.kHaptics, true);
       await prefs.setBool(AppSettings.kFloatingHeader, false);
       await prefs.setString(AppSettings.kPillMode, 'scrollStop');
       await prefs.setString(AppSettings.kDeviceClass, 'low');
       final AppSettings s = AppSettings.read(prefs);
-      expect(s.motion, MotionPreference.subtle);
       expect(s.haptics, isTrue);
       expect(s.floatingHeader, isFalse);
       expect(s.pillMode, PillMode.scrollStop);

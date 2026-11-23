@@ -329,10 +329,6 @@ void main() {
     await tester.pump(const Duration(milliseconds: 300));
     await tester.tap(find.text('Floating header'));
     await tester.pump(const Duration(milliseconds: 300));
-    await tester.ensureVisible(find.text('Subtle'));
-    await tester.pump(const Duration(milliseconds: 300));
-    await tester.tap(find.text('Subtle'));
-    await tester.pump(const Duration(milliseconds: 300));
     // The pill choices are disabled with the header off; turn it back on.
     await tester.tap(find.text('Floating header'));
     await tester.pump(const Duration(milliseconds: 300));
@@ -345,7 +341,6 @@ void main() {
     expect(s.haptics, isTrue);
     expect(s.floatingHeader, isTrue);
     expect(s.pillMode, PillMode.scrollUp);
-    expect(s.motion.name, 'subtle');
   });
 
   testWidgets('Home, Theme and Settings fit 360x640 at text scale 2.0', (WidgetTester tester) async {
@@ -363,12 +358,12 @@ void main() {
     await tester.tap(find.text('Settings'), warnIfMissed: false);
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
-    await tester.tap(find.text('Saffron · System'));
+    await tester.tap(find.text('Theme'));
     // The Look previews never settle: step time instead.
     await tester.pump(const Duration(seconds: 1));
     await tester.pump(const Duration(seconds: 1));
     expect(tester.takeException(), isNull);
-    await tester.drag(find.byType(Scrollable).first, const Offset(0, -3000));
+    await tester.drag(find.byType(Scrollable).first, const Offset(0, -3000), warnIfMissed: false);
     await tester.pump(const Duration(seconds: 1));
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox());
