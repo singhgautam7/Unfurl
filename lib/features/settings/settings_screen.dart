@@ -1,9 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/explorer.dart';
-import '../../core/motion/motion.dart';
+import '../../core/motion/kit.dart';
 import '../../core/providers.dart';
 import '../../core/router/router.dart';
 import '../../core/theme/app_theme.dart';
@@ -17,6 +19,7 @@ import '../../design_system/app_snackbar.dart';
 import '../../design_system/buttons.dart';
 import '../../design_system/chips.dart';
 import '../../design_system/containers.dart';
+import '../../design_system/header_preview.dart';
 import '../../design_system/sheets.dart';
 import '../files/files_screen.dart' show askForAccess;
 import '../reader/reading_prefs.dart';
@@ -46,7 +49,7 @@ class SettingsScreen extends ConsumerWidget {
             ListRow(
               icon: AppIcons.palette,
               label: 'Theme',
-              subtitle: 'Colours, dark mode, floating header',
+              subtitle: 'Colours, dark mode, wallpaper',
               onTap: () => context.push(Routes.theme),
             ),
             ListRow(
@@ -60,6 +63,34 @@ class SettingsScreen extends ConsumerWidget {
               label: 'Controls',
               subtitle: 'Volume buttons for turning pages',
               onTap: () => context.push(Routes.controls),
+            ),
+            // Haptics and the floating header sit beside Theme, as in Kuber's Look and feel.
+            Consumer(
+              builder: (BuildContext context, WidgetRef ref, _) => ListRow(
+                icon: AppIcons.vibration,
+                label: 'Haptics',
+                subtitle: 'A light tap when you switch, select or confirm',
+                switchValue: ref.watch(settingsProvider.select((AppSettings s) => s.haptics)),
+                onChanged: (bool v) {
+                  unawaited(ref.read(settingsProvider.notifier).setHaptics(value: v));
+                  // The tick confirms the new state (it only sounds when on,
+                  // and never twice within 50 ms).
+                  Haptics.tick();
+                },
+              ),
+            ),
+            Consumer(
+              builder: (BuildContext context, WidgetRef ref, _) {
+                final (bool on, PillMode mode) = ref.watch(
+                  settingsProvider.select((AppSettings s) => (s.floatingHeader, s.pillMode)),
+                );
+                return ListRow(
+                  icon: AppIcons.viewDay,
+                  label: 'Floating header',
+                  subtitle: on ? _pillNames[mode]! : 'Off',
+                  onTap: () => _floatingHeader(context),
+                );
+              },
             ),
           ],
         ),
@@ -157,6 +188,60 @@ class SettingsScreen extends ConsumerWidget {
       ],
     );
   }
+
+  static const Map<PillMode, String> _pillNames = <PillMode, String>{
+    PillMode.always: 'Always',
+    PillMode.scrollUp: 'When scrolling up',
+    PillMode.scrollStop: 'When scrolling stops',
+  };
+
+  /// Kuber's floating header sheet: the switch, then when the pill shows. A
+  /// choice applies at once; the sheet stays open to compare.
+  static Future<void> _floatingHeader(BuildContext context) => showAppBottomSheet<void>(
+    context: context,
+    title: 'Floating header',
+    description: 'The title bar becomes a pill as you scroll',
+    builder: (BuildContext ctx) => Consumer(
+      builder: (BuildContext ctx, WidgetRef ref, _) {
+        final (bool on, PillMode mode) = ref.watch(
+          settingsProvider.select((AppSettings s) => (s.floatingHeader, s.pillMode)),
+        );
+        final SettingsController ctl = ref.read(settingsProvider.notifier);
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            ListContainer(
+              children: <Widget>[
+                ListRow(
+                  icon: AppIcons.viewDay,
+                  label: 'Use the floating header',
+                  subtitle: on ? 'On' : 'Off, the title bar scrolls away with the page',
+                  switchValue: on,
+                  onChanged: (bool v) => ctl.setFloatingHeader(value: v),
+                ),
+              ],
+            ),
+            const SizedBox(height: Space.lg),
+            const SectionHeader(label: 'Show the pill'),
+            for (final MapEntry<PillMode, String> e in _pillNames.entries) ...<Widget>[
+              const SizedBox(height: Space.sm),
+              HeaderPreviewCard(
+                label: e.value,
+                pillMode: e.key,
+                selected: on && mode == e.key,
+                enabled: on,
+                onTap: () {
+                  Haptics.tick();
+                  unawaited(ctl.setPillMode(e.key));
+                },
+              ),
+            ],
+          ],
+        );
+      },
+    ),
+  );
 
   static Future<bool> confirmClear(BuildContext context) async =>
       await showAppBottomSheet<bool>(

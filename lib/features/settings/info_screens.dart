@@ -22,7 +22,6 @@ import '../../design_system/buttons.dart';
 import '../../design_system/chips.dart';
 import '../../design_system/containers.dart';
 import '../../design_system/family_card.dart';
-import '../../design_system/header_preview.dart';
 import '../../design_system/states.dart';
 import '../reader/sheets.dart';
 import 'settings_controller.dart';
@@ -83,7 +82,7 @@ class ThemeScreen extends StatelessWidget {
       title: 'Theme',
       onBack: () => context.pop(),
       children: <Widget>[
-        const ThemeControls(look: true),
+        const ThemeControls(),
         const SizedBox(height: Space.section),
         const SectionHeader(label: 'Preview'),
         const SizedBox(height: Space.sm),
@@ -124,12 +123,10 @@ class ThemeScreen extends StatelessWidget {
 
 /// Every theme switch, shared by Settings › Theme and the welcome flow.
 class ThemeControls extends ConsumerStatefulWidget {
-  /// [look]: Settings › Theme adds the Look settings (haptics, the floating
-  /// header) under the theme. [modeOnly]: Light, Dark and System alone, as the
+  /// [modeOnly]: Light, Dark and System alone, as the
   /// welcome setup page asks for nothing else.
-  const ThemeControls({this.look = false, this.modeOnly = false, super.key});
+  const ThemeControls({this.modeOnly = false, super.key});
 
-  final bool look;
   final bool modeOnly;
 
   @override
@@ -242,62 +239,10 @@ class _ThemeControlsState extends ConsumerState<ThemeControls> {
               ],
             ),
           ],
-          if (widget.look) ...<Widget>[
-            const SizedBox(height: Space.section),
-            const SectionHeader(label: 'Look'),
-            const SizedBox(height: Space.md),
-            ListContainer(
-              children: <Widget>[
-                ListRow(
-                  icon: AppIcons.touchApp,
-                  label: 'Haptics',
-                  subtitle: 'A light tap when you switch, select or confirm',
-                  switchValue: s.haptics,
-                  onChanged: (bool v) {
-                    unawaited(ctl.setHaptics(value: v));
-                    // The tick confirms the new state (it only sounds when on,
-                    // and never twice within 50 ms).
-                    Haptics.tick();
-                  },
-                ),
-                ListRow(
-                  icon: AppIcons.viewDay,
-                  label: 'Floating header',
-                  subtitle: s.floatingHeader
-                      ? 'The title bar becomes a pill as you scroll'
-                      : 'The title bar scrolls away with the page',
-                  switchValue: s.floatingHeader,
-                  onChanged: (bool v) => ctl.setFloatingHeader(value: v),
-                ),
-              ],
-            ),
-            const SizedBox(height: Space.lg),
-            const SectionHeader(label: 'Show the pill'),
-            const SizedBox(height: Space.sm),
-            for (final (PillMode m, String name) in _pillChoices) ...<Widget>[
-              HeaderPreviewCard(
-                label: name,
-                pillMode: m,
-                selected: s.floatingHeader && s.pillMode == m,
-                enabled: s.floatingHeader,
-                onTap: () {
-                  Haptics.tick();
-                  unawaited(ctl.setPillMode(m));
-                },
-              ),
-              const SizedBox(height: Space.sm),
-            ],
-          ],
         ],
       ),
     );
   }
-
-  static const List<(PillMode, String)> _pillChoices = <(PillMode, String)>[
-    (PillMode.always, 'Always'),
-    (PillMode.scrollUp, 'When scrolling up'),
-    (PillMode.scrollStop, 'When scrolling stops'),
-  ];
 }
 
 /// About, as Mull's: a note from the developer, what it stands for as four

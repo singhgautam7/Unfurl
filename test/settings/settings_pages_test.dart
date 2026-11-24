@@ -66,6 +66,8 @@ void main() {
     await tester.tap(find.text('Theme'));
     await _settle(tester);
     _everyRowIsDescribed(tester);
+    expect(find.text('Haptics'), findsNothing, reason: 'beside Theme, as in Kuber, not inside it');
+    expect(find.text('Show the pill'), findsNothing);
     await tester.pumpWidget(const SizedBox());
   });
 
@@ -82,6 +84,8 @@ void main() {
     await tester.tap(find.text('Expressive colours'));
     await _settle(tester);
     expect(container.read(settingsProvider).expressive, isFalse, reason: 'flipped once, not twice');
+    await tester.pageBack();
+    await _settle(tester);
     expect(container.read(settingsProvider).haptics, isFalse);
     await tester.ensureVisible(find.text('Haptics'));
     await tester.pump(const Duration(milliseconds: 300));

@@ -103,8 +103,8 @@ python3 tool/make_fixtures.py                            # regenerate test/fixtu
   have 12 dp corners, unselected are outlined pills. Kuber is the source of truth for motion, press
   feel, shapes and widget behaviour; Mull's version where Kuber has the fault (menu, chips, sheets).
   **No Motion setting** (pass 2): the phone decides (Off under Remove animations, Subtle under 3584 MB
-  or a low-RAM flag, else Expressive); a stored `motion.preference` is ignored. Settings › Theme holds
-  Haptics, Floating header and Show the pill. Notes: `specs/app-polish/`, `specs/app-polish-2/`.
+  or a low-RAM flag, else Expressive); a stored `motion.preference` is ignored. Settings › Appearance holds
+  Haptics and Floating header (a sheet with Show the pill), beside Theme as in Kuber. Notes: `specs/app-polish/`, `specs/app-polish-2/`.
 - **Recents (pass 2):** a file from another app usually comes with a read grant that ends with the
   task. Unfurl records what Android says about it (`Sources.kt`, `FileSource`) and an exact location
   only from a storage or Downloads document URI or a MediaStore row, never guessed. When it can't be

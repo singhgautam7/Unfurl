@@ -120,6 +120,7 @@ abstract final class AppIcons {
   static const IconData delete = IconData(0xe92e, fontFamily: _family); // delete
   static const IconData add = IconData(0xe145, fontFamily: _family); // add
   static const IconData touchApp = IconData(0xe913, fontFamily: _family); // touch_app
+  static const IconData vibration = IconData(0xe62d, fontFamily: _family); // vibration
   static const IconData fitWidth = IconData(0xf779, fontFamily: _family); // fit_width
   static const IconData photo = IconData(0xe693, fontFamily: _family); // photo
   // v2 · Files tab (board 5).

@@ -10,7 +10,7 @@ import 'package:unfurl/core/theme/palette.dart';
 import 'package:unfurl/design_system/app_header.dart';
 import 'package:unfurl/design_system/app_icon.dart';
 import 'package:unfurl/design_system/buttons.dart';
-import 'package:unfurl/features/settings/info_screens.dart';
+import 'package:unfurl/features/settings/settings_screen.dart';
 import 'package:unfurl/features/settings/settings_controller.dart';
 
 import '../ui/shell_test.dart' show pumpApp;
@@ -315,7 +315,7 @@ void main() {
     await tester.pumpWidget(
       UncontrolledProviderScope(
         container: container,
-        child: MaterialApp(theme: AppTheme.of(ThemeFamily.saffron, Tone.light), home: const ThemeScreen()),
+        child: MaterialApp(theme: AppTheme.of(ThemeFamily.saffron, Tone.light), home: const SettingsScreen()),
       ),
     );
     await tester.pump(const Duration(milliseconds: 300));
@@ -327,12 +327,19 @@ void main() {
     expect(Haptics.enabled, isTrue);
     await tester.ensureVisible(find.text('Floating header'));
     await tester.pump(const Duration(milliseconds: 300));
+    expect(find.text('Always'), findsOneWidget);
     await tester.tap(find.text('Floating header'));
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 1));
+    await tester.pump(const Duration(seconds: 1));
+    final Finder toggle = find.text('Use the floating header');
+    await tester.tap(toggle);
     await tester.pump(const Duration(milliseconds: 300));
+    expect(container.read(settingsProvider).floatingHeader, isFalse);
     // The pill choices are disabled with the header off; turn it back on.
-    await tester.tap(find.text('Floating header'));
+    await tester.tap(toggle);
     await tester.pump(const Duration(milliseconds: 300));
-    await tester.scrollUntilVisible(find.text('When scrolling up'), 300, scrollable: find.byType(Scrollable).first);
+    await tester.ensureVisible(find.text('When scrolling up'));
     await tester.tap(find.text('When scrolling up'));
     await tester.pump(const Duration(milliseconds: 300));
     await tester.pumpWidget(const SizedBox());
