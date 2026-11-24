@@ -2,12 +2,13 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
-import '../core/motion/motion.dart';
+import '../core/motion/kit.dart';
 import '../core/theme/app_theme.dart';
 import '../core/theme/palette.dart';
 import '../core/theme/tokens.dart';
 import '../core/theme/typography.dart';
 import 'app_icon.dart';
+import 'buttons.dart';
 
 /// The toast message specification.
 class SnackMessage {
@@ -102,7 +103,7 @@ class _TimedSnackBarWidget extends StatefulWidget {
 
 class _TimedSnackBarWidgetState extends State<_TimedSnackBarWidget> with TickerProviderStateMixin {
   late final AnimationController _slideCtrl;
-  late final Animation<double> _slideAnim;
+  late final CurvedAnimation _slideAnim;
   late final AnimationController _progressCtrl;
   bool _actionFired = false;
 
@@ -114,12 +115,27 @@ class _TimedSnackBarWidgetState extends State<_TimedSnackBarWidget> with TickerP
   @override
   void initState() {
     super.initState();
-    _slideCtrl = AnimationController(vsync: this, duration: Motion.snackEnter, reverseDuration: Motion.snackExit);
-    _slideAnim = CurvedAnimation(parent: _slideCtrl, curve: Motion.decelerate);
+    _slideCtrl = AnimationController(vsync: this, reverseDuration: Motion.snackExit);
+    _slideAnim = CurvedAnimation(parent: _slideCtrl, curve: Motion.decelerate, reverseCurve: Motion.decelerate);
     _progressCtrl = AnimationController(vsync: this, duration: widget.message.effectiveDuration);
     widget.controller._attach(this);
-    _slideCtrl.forward();
     _progressCtrl.forward();
+  }
+
+  bool _entered = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_entered) return;
+    _entered = true;
+    // In on springDefault, clamped (no overshoot past the top edge); Subtle
+    // springSubtle; Off a short fade.
+    final MotionLevel level = Motion.levelOf(context);
+    final SpringCurve spring = Motion.spatialCurve(level, Motion.defaultCurve);
+    _slideCtrl.duration = level == MotionLevel.off ? Motion.fxInstant : spring.settle;
+    _slideAnim.curve = level == MotionLevel.off ? Motion.curveEffects : spring.clamped;
+    _slideCtrl.forward();
   }
 
   Future<void> _animateOut() async {
@@ -130,6 +146,7 @@ class _TimedSnackBarWidgetState extends State<_TimedSnackBarWidget> with TickerP
 
   @override
   void dispose() {
+    _slideAnim.dispose();
     _slideCtrl.dispose();
     _progressCtrl.dispose();
     super.dispose();
@@ -259,19 +276,22 @@ class _TimedSnackBarWidgetState extends State<_TimedSnackBarWidget> with TickerP
                       ),
                     ),
                     if (m.actionLabel != null)
-                      TextButton(
-                        onPressed: () => _handleAction(m.onAction),
-                        child: Text(
-                          m.actionLabel!.toUpperCase(),
-                          style: UnfurlType.label.copyWith(color: c.primary, letterSpacing: 0.24).weight(700),
+                      ConstrainedBox(
+                        constraints: const BoxConstraints(minWidth: IconSpec.tapTarget),
+                        child: AppButton(
+                          label: m.actionLabel!,
+                          type: AppButtonType.accent,
+                          height: 40,
+                          tight: true,
+                          onPressed: () => _handleAction(m.onAction),
                         ),
                       ),
-                    IconButton(
-                      icon: AppIcon(AppIcons.close, size: 18, color: c.onSurfaceVariant),
-                      tooltip: 'Dismiss',
+                    AppIconButton(
+                      icon: AppIcons.close,
+                      kind: AppIconButtonKind.plain,
+                      semanticLabel: 'Dismiss',
                       onPressed: widget.onRequestClose,
                     ),
-                    const SizedBox(width: Space.xs),
                   ],
                 ),
               ),

@@ -29,8 +29,9 @@ flutter build apk --profile --target-platform android-arm64 -t integration_test/
                                                          # on-device tests, run as the app (see the file header)
 flutter build apk --profile --target-platform android-arm64 -t integration_test/v3_test.dart
                                                          # v3 on-device round: formats, tracking, cards, comfort
-flutter build apk --profile --target-platform android-arm64 -t integration_test/v3_perf_test.dart
-                                                         # v3 timings ("perf:" lines in logcat)
+flutter build apk --profile --target-platform android-arm64 -t integration_test/perf_test.dart
+                                                         # the timings to compare (setup in the file header);
+                                                         # tool/perf_run.sh runs it, tool/perf_table.py compares
 PDFIUM_PATH=/path/to/libpdfium.so flutter test test/pdf  # PDF viewer tests on the host (else skipped;
                                                          # pdfium-binaries linux-x64, release pdfium_dart pins)
 dart run build_runner build --delete-conflicting-outputs # after drift table changes
@@ -85,14 +86,40 @@ python3 tool/make_fixtures.py                            # regenerate test/fixtu
 - **Positions and marks** are `Locator`s (text-quote anchor plus section/block/offset and
   page/char hints); per-document data is keyed by a fingerprint (size plus FNV-1a of the first
   and last 64 KB).
-- **DB:** drift, schema version 4, FTS5 over entry name, title and author kept by triggers. v3
+- **DB:** drift, schema version 5, FTS5 over entry name, title and author kept by triggers. v3
   tables: `reading_sessions` (raw, open ones recovered at launch), `daily_stats`, `book_stats`,
-  `book_days` (aggregates). `test/core/query_plans_test.dart` fails if a filtered query on a
+  `book_days` (aggregates). Schema 5: a Recents row keeps where its file came from (`FileSource`).
+  `test/core/query_plans_test.dart` fails if a filtered query on a
   growing table scans it.
 - **Tracking:** `core/tracking/`: a pure `LiveSession` accumulator, `ReadingSessionTracker`
   (owner-scoped sessions, idle, background, checkpoints every 60 s) and `StatsStore` folding each
   finished session into the aggregates in one transaction. Readers report through `TrackedPages`
   and `TrackActivity`.
+- **Motion (app polish, Nov 2026, Kuber 7.0.0):** `lib/core/motion/kit.dart` exports Kuber's kit
+  under Unfurl names: `Motion` springs and tokens, `MotionScope` levels (Expressive, Subtle, Off;
+  Auto = Off with Remove animations, Subtle under 3584 MB RAM or a low-RAM flag read once after
+  the first frame through the Kotlin channel), `Pressable`, `Haptics` (off by default; never call
+  `HapticFeedback`), `ThemeRipple`, `RollingNumber`, `ChartDrawIn`. Selected chips and segments
+  have 12 dp corners, unselected are outlined pills. Kuber is the source of truth for motion, press
+  feel, shapes and widget behaviour; Mull's version where Kuber has the fault (menu, chips, sheets).
+  **No Motion setting** (pass 2): the phone decides (Off under Remove animations, Subtle under 3584 MB
+  or a low-RAM flag, else Expressive); a stored `motion.preference` is ignored. Settings › Theme holds
+  Haptics, Floating header and Show the pill. Notes: `specs/app-polish/`, `specs/app-polish-2/`.
+- **Recents (pass 2):** a file from another app usually comes with a read grant that ends with the
+  task. Unfurl records what Android says about it (`Sources.kt`, `FileSource`) and an exact location
+  only from a storage or Downloads document URI or a MediaStore row, never guessed. When it can't be
+  read, `Library.locate` first looks for the same content in allowed folders, then `sortAccess`
+  (`core/library/access.dart`) sorts it: no access (Allow this folder, Open in file manager), unknown
+  (open it again from the app that sent it) or gone. "Gone" is said only when the exact place was
+  looked at: a held grant's provider, or from Android 11 the path itself (it can be looked up without
+  a permission). `DocId.grantable` knows which folders Android's picker refuses. Relinking moves the
+  Recents row (`Library.relink`); places, highlights and notes are keyed by fingerprint and stay.
+- **Floating header:** `AppScaffold` / `HeaderPage` (`design_system/floating_header.dart`): one
+  scroll listener, pill at 32 dp scrolled and back at 8 dp; only the header is sticky (chips scroll).
+- **Chapters:** `ReadingDocument.chapters` come from the TOC (shallowest level with two or more
+  entries), else one per section; a chapter inside a section starts a page; the footer's "End of
+  chapter" is `endsChapter(first, last)` of that page. Headings and bold label lines keep with
+  the next block. Word's on/off flags are read only through `formats/office/ooxml.dart`.
 - **Format registry:** one `FormatModule` per format declares extensions, MIME types, default
   view and capabilities; the UI omits controls a format cannot use.
 - **Icons:** Material Symbols Rounded, variable font bundled, drawn at weight 350 through
@@ -126,9 +153,10 @@ lib/app.dart             MaterialApp.router, cached themes, wallpaper seed, laun
 lib/core/theme/          oklch · tokens · palette · reading_theme (7 themes) · typography · app_theme ·
                          launcher_icon (v2 icon geometry, shared by the About mark and tool/make_icon)
 lib/core/motion/         motion (tokens, Reveal) · transitions (unfurlPage, predictive back)
-lib/core/router/         router (Routes) · nav_shell (tabs, pill hide, tab slide)
+lib/core/router/         router (Routes) · nav_shell (pill, pill hide) · branch_stack (tab slide, warm tabs)
 lib/core/db/             drift tables, FTS5 (database.g.dart is generated)
-lib/core/library/        library (folders, scan queue, positions, annotations) · enrich (covers)
+lib/core/library/        library (folders, scan queue, positions, annotations, relink) · access (states of a
+                         file that can't be opened) · enrich (covers, their in-memory index)
 lib/core/platform/       the Kotlin channel: SAF, all-files access, listing, intents, TTS, window flags
 lib/core/explorer.dart   all-files access (live), folder listings, per-folder session memory
 lib/core/                files (Fd, fingerprint) · locator · open (open flows) · providers ·
@@ -146,10 +174,13 @@ lib/features/            home · library · files (Files tab, pickers, file shee
 android/.../kotlin       MainActivity (channel, launch window), Storage, Scanner, Speech, Explorer,
                          Comics (zip, 7z, tar, RAR 4 through a duplicated descriptor)
 integration_test/        on-device tests: explorer (access, volumes, 5,000-file listing), v3 (formats,
-                         tracking, cards, comfort, rotation), v3_perf (timings); harness.dart
-test/                    theme tokens · parsers · locator, fingerprint, DB, migration · read aloud ·
+                         tracking, cards, comfort, rotation), v3_perf (timings); perf (pass 2: every tab, scroll,
+                         open, sheet, page turn and memory, on the app's own binding); harness.dart
+test/                    recents (access states, relinking) · perf (rebuild counts) · lists · settings · viewers ·
+                         theme tokens · parsers · locator, fingerprint, DB, migration · read aloud ·
                          page turns, table layout · shell
-tool/                    make_fixtures.py · make_icon.dart (launcher, splash, store PNG)
+tool/                    make_fixtures.py · make_icon.dart (launcher, splash, store PNG) · make_perf_fixtures.py ·
+                         perf_run.sh · perf_table.py
 docs/                    design-gaps.md · performance.md · mull-integration.md · v2-checklist.md ·
                          v3-checklist.md · v3-decisions.md · v3-review.md · v3-screens/ ·
                          play-all-files-declaration.md · store/ (Play Store icon)
@@ -162,20 +193,23 @@ If two elements share a layout they share a widget. One implementation each:
 | Need | Use |
 |---|---|
 | Screen with header and scrolling body | `AppScaffold` (`AppHeader` + `CollapseOnScroll`) |
-| Any round icon action (40 disc, 20 glyph, 48 target, as Mull) | `AppIconButton` |
+| Any round icon action (40 disc, 20 glyph, 48 target; circle to squircle while held) | `AppIconButton` (`kind`) |
 | Tooltip | `AppTooltip` |
 | Any glyph | `AppIcon(AppIcons.x)` |
-| Pill button (primary, secondary, text, accent) | `AppButton` |
-| Bottom sheet | `showAppBottomSheet` (reader: `showReaderSheet`) |
-| Overflow menu | `showAppMenu` + `AppMenuEntry` |
+| Pill button, 56 or 40 dp (primary, secondary, outline, text, accent, danger, dotted) | `AppButton` |
+| Bottom sheet | `showAppBottomSheet` (reader: `showReaderSheet`); any other shape: `pushHeldSheet` |
+| Overflow, long-press and point menus, an icon on every row | `showAppMenu` + `AppMenuEntry` (never `showMenu`) |
 | Toast with undo | `AppSnackbar` |
 | Text selection handle (reader and PDF) | `SelectionHandle` |
-| Filter / toggle chip, chip row | `PillChip`, `ChipRow` |
+| Filter / toggle chip (32 dp in a 48 dp hit region), chip row, chip wrap | `PillChip`, `ChipRow`, `ChipWrap` |
 | Segmented control | `SegmentedToggle` |
 | A reading control (sheet and the Settings › Reader page) | `TextSizeControl`, `LineSpacingControl`, `MarginsControl`, `AlignControl`, `LayoutControl`, `PageTurnControl`, `BrightnessRow` (`reader/sheets.dart`) |
 | Colour family card, two-column grid | `FamilyCard`, `TwoColumnGrid` |
 | Section header | `SectionHeader` |
-| Card, list container, row | `SurfaceCard`, `ListContainer`, `ListRow` |
+| Card (tappable with `onTap`), list container | `SurfaceCard`, `ListContainer` |
+| Row: 40 dp icon tile, title, description under it, chevron or whole-row switch | `ListRow` (`switchValue`) |
+| A row that draws itself (press scale, 10% state layer, no ink) | `PressableRow` |
+| A file that can't be opened | `AccessView` (Recents), `problemState` (damaged, DRM) |
 | Book cover, file tile, progress | `CoverArt`, `CoverTile`, `FormatTile`, `ProgressTrack` |
 | Blocking state (empty, unreadable, access lost) | `EmptyState` |
 | A file loading or heavy work (with progress) | `OpeningCard` |
@@ -184,6 +218,8 @@ If two elements share a layout they share a widget. One implementation each:
 | A text field in a sheet or dialog (owns its controller) | `TextControllerScope` |
 | Window size, grid columns, side panel | `SizeClass`, `CoverGrid`, `SidePanel` |
 | Content arriving (tiles, toolbars, sections) | `Reveal` (with `index` to stagger) |
+| Press feel on anything tappable (scale, corners, haptic) | `Pressable` (`core/motion/pressable.dart`) |
+| A number or count that changes | `RollingNumber` |
 | Nav | `NavPill` inside `NavShell`; hide with `navHiddenProvider` |
 
 ## Theme rules
@@ -216,9 +252,35 @@ through an `AnimatedSwitcher` on `Motion.fast`.
 
 ## Performance guidelines
 
-Budgets and measurements live in `docs/performance.md`; re-run `integration_test/v3_perf_test.dart`
+Budgets and measurements live in `docs/performance.md`; re-run `integration_test/perf_test.dart`
 after work on a reader, the library or Insights.
 
+- **Nothing lays out a whole document in one frame** (pass 2; a 700 KB text file froze the app for
+  5 s, a font step for 1.4 s). The reader's `Layout` and `DocxPaginator` are resumable: the page in
+  front first, the rest in 6 ms slices, one a frame, with the page boundaries of one full run.
+- **A book keeps where its pages break, not their painters** (`Fragment.release`): 200,000 words of
+  `TextPainter`s were 450 MB. A shown fragment lays its text out again.
+- **Tabs:** `BranchStack` slides finished layers (the repaint boundary inside the moving part) and its
+  clock starts after the frame that builds the page; so do sheets (`HeldSheetRoute`) and pushes
+  (`unfurlPage`). Library, Notes and More are built, laid out and painted unseen while Home idles
+  (`WarmTab`, after the streams they need have a value). Entrances (`Reveal`, `StaggeredEntrance`)
+  don't run in a tab built offstage.
+- **Watch fields, at the leaf.** No `ref.watch(settingsProvider)` whole; a screen's `build()` filters and
+  sorts nothing (memoise on identity, as `LibraryScreen._show`); Home is section consumers; page
+  position in the readers goes through listenables, not `setState` of the scaffold
+  (`test/perf/rebuild_counts_test.dart`).
+- **A tile never touches the disk.** Covers are an in-memory index read once off the UI isolate;
+  `Covers.watch(fingerprint)` repaints one tile.
+- **Writes to `entries`, `documents` or `folders` re-run the library's queries.** Write only what
+  changed (`touch`, `_scan`), batch the enricher's marks, and let position saves stay quiet;
+  `Library.documentsChanged` tells the lists once, when a document closes.
+- **Provider calls (stat, openFd, queries) run on `MainActivity.io`**, never the platform main thread.
+- A filter change never blanks a list: rows keyed by id (`findChildIndexCallback`), only new ones ease in.
+- Never tween a fill from `Colors.transparent` (use the target at alpha 0); no ink splash on a control
+  whose own fill changes; clip only the ends of a list card, not every row.
+- Search boxes wait `Motion.searchDelay`; bursts of data redraw at most every `Motion.coalesce`.
+- Measure with `integration_test/perf_test.dart` (a test binding draws every vsync and turns semantics
+  on, which hides idle costs). Judge build times on the emulator; API 36 AVD raster is host GPU noise.
 - Parsing, decoding, word counts and fingerprints run on an isolate, from a static or top-level
   function that takes plain data. Comic pages decode on the Kotlin side; Dart keeps an LRU of
   bytes and decodes at display size.
@@ -256,6 +318,8 @@ flutter build apk --release --split-per-abi --obfuscate --split-debug-info=build
 
 8 October 2026: the release manifest declares only `READ_EXTERNAL_STORAGE` (max SDK 29) and
 AndroidX's app-private receiver permission; all-files access is off (`kAllFilesAccess`).
+
+24 November 2026 (polish pass 2): arm64 31.5 MB, armeabi-v7a 26.9 MB, x86_64 33.3 MB.
 
 5 October 2026 (v3): arm64 31.1 MB, armeabi-v7a 26.6 MB, x86_64 32.9 MB (v2: 31.6, 27.3, 33.4 MB,
 without obfuscation). Check for the `✓ Built` line: a failed build leaves the previous APKs in

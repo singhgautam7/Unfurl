@@ -14,7 +14,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../core/layout.dart';
 import '../../core/library/enrich.dart';
-import '../../core/motion/motion.dart';
+import '../../core/motion/kit.dart';
 import '../../core/platform/platform.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/theme/palette.dart';
@@ -244,9 +244,13 @@ class _CardEditorState extends ConsumerState<CardEditor> {
       if (png == null) return;
       final String? uri = await Platform.saveImage(png, 'Unfurl card ${DateTime.now().millisecondsSinceEpoch}.png');
       if (!mounted) return;
-      uri == null
-          ? AppSnackbar.error(context, 'Couldn’t save the card. Use Share instead.')
-          : AppSnackbar.info(context, 'Saved to Pictures/Unfurl');
+      if (uri == null) {
+        Haptics.reject();
+        AppSnackbar.error(context, 'Couldn’t save the card. Use Share instead.');
+      } else {
+        Haptics.confirm();
+        AppSnackbar.info(context, 'Saved to Pictures/Unfurl');
+      }
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -397,11 +401,9 @@ class _CardEditorState extends ConsumerState<CardEditor> {
                   in <(String, bool, ValueChanged<bool>?)>[
                     ('Book title', s.showTitle, (bool v) => _set(s.copyWith(showTitle: v))),
                     ('Author', s.showAuthor, (bool v) => _set(s.copyWith(showAuthor: v))),
-                    (
-                      'Cover thumbnail',
-                      s.template == CardTemplate.cover || s.showCover,
-                      s.template == CardTemplate.cover ? null : (bool v) => _set(s.copyWith(showCover: v)),
-                    ),
+                    // The Cover template already is the cover: no thumbnail to switch there.
+                    if (s.template != CardTemplate.cover)
+                      ('Cover thumbnail', s.showCover, (bool v) => _set(s.copyWith(showCover: v))),
                     ('Page or location', s.showLocation, (bool v) => _set(s.copyWith(showLocation: v))),
                     ('Unfurl mark', s.showMark, (bool v) => _set(s.copyWith(showMark: v))),
                   ].indexed) ...<Widget>[

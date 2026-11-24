@@ -5,7 +5,7 @@ import 'dart:ui' show PathMetric;
 import 'package:flutter/material.dart';
 
 import '../core/library/enrich.dart';
-import '../core/motion/motion.dart';
+import '../core/motion/kit.dart';
 import '../core/theme/app_theme.dart';
 import '../core/theme/palette.dart';
 import '../core/theme/reading_theme.dart';
@@ -135,18 +135,15 @@ class CoverArt extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (badge == null) return _face(context);
-    final Widget tile = ValueListenableBuilder<int>(
-      valueListenable: Covers.changed,
-      builder: (BuildContext context, int _, Widget? child) {
-        final File? art = Covers.fileFor(fingerprint);
-        return FormatTile(
-          label: badge!,
-          icon: format.icon,
-          width: width,
-          height: height,
-          preview: art == null ? null : PreviewImage(art, width: width),
-        );
-      },
+    final Widget tile = ValueListenableBuilder<File?>(
+      valueListenable: Covers.watch(fingerprint),
+      builder: (BuildContext context, File? art, Widget? child) => FormatTile(
+        label: badge!,
+        icon: format.icon,
+        width: width,
+        height: height,
+        preview: art == null ? null : PreviewImage(art, width: width),
+      ),
     );
     if (issue == null) return tile;
     return Stack(
@@ -161,10 +158,9 @@ class CoverArt extends StatelessWidget {
     final UnfurlColors c = context.colors;
     final bool small = width < 70;
     final BorderRadius radius = BorderRadius.circular(small ? 4 : Radii.cover);
-    return ValueListenableBuilder<int>(
-      valueListenable: Covers.changed,
-      builder: (BuildContext context, int _, Widget? child) {
-        final File? art = Covers.fileFor(fingerprint);
+    return ValueListenableBuilder<File?>(
+      valueListenable: Covers.watch(fingerprint),
+      builder: (BuildContext context, File? art, Widget? child) {
         final double dpr = MediaQuery.devicePixelRatioOf(context);
         if (art != null) {
           return Container(
@@ -378,7 +374,8 @@ class DashedOutline extends CustomPainter {
 }
 
 /// A tile in a grid of books: the cover, the progress, the state line and
-/// where it lives. Long-press presses it in (scale 0.96, a primary ring).
+/// where it lives. A press scales the cover to 0.96 (Pressable); a long-press
+/// adds a primary ring.
 class CoverTile extends StatefulWidget {
   const CoverTile({
     required this.cover,
@@ -453,6 +450,7 @@ class _CoverTileState extends State<CoverTile> {
             ? null
             : () {
                 setState(() => _pressed = false);
+                Haptics.longPress();
                 widget.onLongPress!();
               },
         onLongPressDown: (_) => setState(() => _pressed = true),
@@ -464,10 +462,9 @@ class _CoverTileState extends State<CoverTile> {
           crossAxisAlignment: CrossAxisAlignment.start,
           spacing: 6,
           children: <Widget>[
-            AnimatedScale(
-              scale: _pressed ? 0.96 : 1,
-              duration: Motion.of(context, Motion.fast),
-              curve: Motion.curveOf(context, Motion.spring),
+            Pressable(
+              kind: PressKind.chip,
+              morphCorners: false,
               child: AnimatedContainer(
                 duration: Motion.of(context, Motion.fast),
                 foregroundDecoration: BoxDecoration(

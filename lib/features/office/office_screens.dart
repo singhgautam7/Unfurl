@@ -3,12 +3,13 @@ import 'dart:isolate';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/files.dart';
 import '../../core/locator.dart';
-import '../../core/motion/motion.dart';
+import '../../core/motion/kit.dart';
 import '../../core/platform/platform.dart';
 import '../../core/providers.dart';
 import '../../core/theme/app_theme.dart';
@@ -112,12 +113,26 @@ class _DocxScreenState extends ConsumerState<DocxScreen> {
   Locator? _readerStart;
   List<List<int>> _pages = const <List<int>>[];
   double _laidWidth = 0;
-  ReadingThemeId? _laidTheme;
   final ScrollController _scroll = ScrollController();
+
+  /// The pagination run in progress (null once done or cached), one slice per frame.
+  DocxPaginator? _pager;
+  Timer? _sliceTimer;
+  final Stopwatch _shown = Stopwatch()..start();
+
+  /// Finished page lists by page width: a rotation back, or a rebuild, costs nothing. Page heights do not
+  /// depend on the system text scale (the page is the document's own layout) or on the colours.
+  final Map<double, List<List<int>>> _paged = <double, List<List<int>>>{};
+
+  /// Time one frame gives to pagination, and the first, synchronous slice (the first pages show at once).
+  /// Work, then at least [_gap] free for frames.
+  static const Duration _slice = Duration(milliseconds: 4), _gap = Duration(milliseconds: 4);
 
   /// Reader mode's laid-out pages, kept while Page view shows.
   final ReaderLayoutCache _layouts = ReaderLayoutCache();
-  int _page = 0;
+  final ValueNotifier<int> _pageN = ValueNotifier<int>(0);
+  int get _page => _pageN.value;
+  set _page(int v) => _pageN.value = v;
   bool _searching = false;
   List<int> _hits = const <int>[];
   int _hit = 0;
@@ -134,7 +149,9 @@ class _DocxScreenState extends ConsumerState<DocxScreen> {
 
   @override
   void dispose() {
+    _sliceTimer?.cancel();
     _scroll.dispose();
+    _pageN.dispose();
     _layouts.dispose();
     super.dispose();
   }
@@ -162,7 +179,8 @@ class _DocxScreenState extends ConsumerState<DocxScreen> {
     final double pageH = _pageHeight + 16;
     final int p = (_scroll.offset / pageH).floor().clamp(0, _pages.length - 1);
     if (p != _page) {
-      setState(() => _page = p);
+      // Only the subtitle and the tracker listen: no rebuild of the screen.
+      _page = p;
       unawaited(
         ref
             .read(libraryProvider)
@@ -183,29 +201,71 @@ class _DocxScreenState extends ConsumerState<DocxScreen> {
   double _scale = 1;
   double get _pageHeight => (_docx?.pageHeight ?? 842) * _scale;
 
-  /// Lays the body out on pages: whole paragraphs, measured at the page's
-  /// text width in the document's own sizes.
+  /// Lays the body out on pages: whole paragraphs, measured at the page's text width in the document's own
+  /// sizes. The first slice runs now (called from layout, so no setState); the rest follows a slice per frame.
   void _paginate(double width, ReadingTheme theme) {
     final Docx d = _docx!;
-    _scale = width / d.pageWidth;
-    final double textW = (d.pageWidth - d.margin * 2) * _scale;
-    final double textH = (d.pageHeight - d.margin * 2) * _scale;
-    final List<List<int>> pages = <List<int>>[<int>[]];
-    double y = 0;
-    for (int i = 0; i < d.items.length; i++) {
-      final DocxItem it = d.items[i];
-      final double h = _measure(it, textW, theme) + (it.spaceBefore + it.spaceAfter) * _scale;
-      if ((y + h > textH || it.pageBreakBefore) && pages.last.isNotEmpty) {
-        pages.add(<int>[]);
-        y = 0;
-      }
-      pages.last.add(i);
-      y += h;
-    }
-    _pages = pages;
+    _sliceTimer?.cancel();
+    _pager = null;
     _laidWidth = width;
-    _laidTheme = theme.id;
+    _scale = width / d.pageWidth;
+    final List<List<int>>? cached = _paged[width];
+    if (cached != null) {
+      _pages = cached;
+      return;
+    }
+    final double textW = (d.pageWidth - d.margins.left - d.margins.right) * _scale;
+    final double textH = (d.pageHeight - d.margins.top - d.margins.bottom) * _scale;
+    final DocxPaginator pager = DocxPaginator(
+      d,
+      textH,
+      (DocxItem it) => _measure(it, textW, theme) + (it.spaceBefore + it.spaceAfter) * _scale,
+    );
+    _pages = pager.pages;
+    if (pager.run(_slice)) {
+      _paged[width] = pager.pages;
+    } else {
+      _pager = pager;
+      _scheduleSlice(theme);
+    }
   }
+
+  void _scheduleSlice(ReadingTheme theme) {
+    // Between frames and never while something moves; the page count catches
+    // up a few times a second.
+    _sliceTimer = Timer(_gap, () {
+      final DocxPaginator? p = _pager;
+      if (!mounted || p == null) return;
+      if (SchedulerBinding.instance.transientCallbackCount > 0 || Haptics.scrolling) {
+        _sliceTimer = Timer(Motion.warmRetry, () => _scheduleSlice(theme));
+        return;
+      }
+      final bool done = p.run(_slice);
+      if (done) {
+        _paged[_laidWidth] = p.pages;
+        _pager = null;
+      } else {
+        _scheduleSlice(theme);
+      }
+      if (done || _shown.elapsed >= Motion.coalesce) {
+        _shown.reset();
+        setState(() {});
+      }
+    });
+  }
+
+  /// The page holding an item, laying pages out as far as it if they aren't yet.
+  int _pageOfItem(int item) {
+    final DocxPaginator? p = _pager;
+    if (p != null && p.laid <= item && p.run(null, until: item)) {
+      _paged[_laidWidth] = p.pages;
+      _pager = null;
+    }
+    return math.max(0, _pages.indexWhere((List<int> ids) => ids.contains(item)));
+  }
+
+  /// "12" when the count is final, "12+" while pages are still being laid out.
+  String get _pageCount => '${_pages.length}${_pager == null ? '' : '+'}';
 
   /// Heights as `_DocxPage` draws them: the page is the document's own
   /// layout, so neither side applies the system font scale.
@@ -249,7 +309,7 @@ class _DocxScreenState extends ConsumerState<DocxScreen> {
       style: TextStyle(
         fontFamily: UnfurlType.sans,
         fontSize: base,
-        height: 1.5,
+        height: it.line.heightFor(base / _scale),
         color: theme.ink,
         fontWeight: it.heading > 0 ? FontWeight.w600 : FontWeight.w400,
         fontVariations: <FontVariation>[FontVariation('wght', it.heading > 0 ? 600 : 400)],
@@ -273,7 +333,7 @@ class _DocxScreenState extends ConsumerState<DocxScreen> {
   }
 
   void _toReader() {
-    final int item = _pages.isEmpty ? 0 : (_pages[_page].firstOrNull ?? 0);
+    final int item = _page >= _pages.length ? 0 : (_pages[_page].firstOrNull ?? 0);
     setState(() {
       _readerStart = Locator(page: item + 1, pageStart: 0);
       _reader = true;
@@ -286,7 +346,7 @@ class _DocxScreenState extends ConsumerState<DocxScreen> {
       _readerStart = at;
     });
     final int item = (at.page ?? 1) - 1;
-    final int p = math.max(0, _pages.indexWhere((List<int> ids) => ids.contains(item)));
+    final int p = _pageOfItem(item);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (_scroll.hasClients) _scroll.jumpTo(p * (_pageHeight + 16));
     });
@@ -308,7 +368,7 @@ class _DocxScreenState extends ConsumerState<DocxScreen> {
   }
 
   void _goToItem(int item) {
-    final int p = math.max(0, _pages.indexWhere((List<int> ids) => ids.contains(item)));
+    final int p = _pageOfItem(item);
     unawaited(
       _scroll.animateTo(
         p * (_pageHeight + 16),
@@ -326,14 +386,17 @@ class _DocxScreenState extends ConsumerState<DocxScreen> {
     if (d == null) return OpeningCard(ref: widget.doc.ref);
     // The page keeps the document's own look (paper and ink) in every app
     // theme; Reader mode takes the reading colours.
-    final ReadingTheme theme = ReadingTheme.of(ref.watch(settingsProvider).family, ReadingThemeId.light);
+    final ReadingTheme theme = ReadingTheme.of(
+      ref.watch(settingsProvider.select((AppSettings s) => s.family)),
+      ReadingThemeId.light,
+    );
     return UnfurlSwitcher(
       reader: _reader,
       anchorY: MediaQuery.paddingOf(context).top + 64,
-      page: TrackedPages(
-        fingerprint: widget.doc.fingerprint,
-        format: widget.doc.format.id,
-        page: _page,
+      page: ValueListenableBuilder<int>(
+        valueListenable: _pageN,
+        builder: (BuildContext context, int page, Widget? child) =>
+            TrackedPages(fingerprint: widget.doc.fingerprint, format: widget.doc.format.id, page: page, child: child!),
         child: _pageView(c, d, theme),
       ),
       readerChild: _reading == null
@@ -360,7 +423,8 @@ class _DocxScreenState extends ConsumerState<DocxScreen> {
       body: LayoutBuilder(
         builder: (BuildContext context, BoxConstraints box) {
           final double w = box.maxWidth - 24;
-          if (_laidWidth != w || _laidTheme != theme.id) _paginate(w, theme);
+          if (_laidWidth != w) _paginate(w, theme);
+          final Set<int> hitSet = _hits.toSet();
           final double top = MediaQuery.paddingOf(context).top + 64 + Space.lg;
           return Stack(
             children: <Widget>[
@@ -381,7 +445,7 @@ class _DocxScreenState extends ConsumerState<DocxScreen> {
                         scale: _scale,
                         theme: theme,
                         span: (DocxItem it) => _span(it, theme),
-                        hits: _hits.toSet(),
+                        hits: hitSet,
                       ),
                     ),
                   ),
@@ -453,39 +517,42 @@ class _DocxScreenState extends ConsumerState<DocxScreen> {
                       )
                     : ChromeSlide(
                         visible: _chrome,
-                        child: ReaderTopBar(
-                          title: widget.doc.ref.name,
-                          subtitle: 'p. ${_page + 1} of ${_pages.length}',
-                          onBack: () => Navigator.of(context).maybePop(),
-                          toggle: ModeToggle(reader: false, onChanged: (bool r) => r ? _toReader() : null),
-                          actions: <Widget>[
-                            AppIconButton(
-                              icon: AppIcons.search,
-                              filled: false,
-                              semanticLabel: 'Search in document',
-                              onPressed: () => setState(() => _searching = true),
-                            ),
-                            Builder(
-                              builder: (BuildContext b) => AppIconButton(
-                                icon: AppIcons.moreVert,
+                        child: ValueListenableBuilder<int>(
+                          valueListenable: _pageN,
+                          builder: (BuildContext context, int page, Widget? _) => ReaderTopBar(
+                            title: widget.doc.ref.name,
+                            subtitle: 'p. ${page + 1} of $_pageCount',
+                            onBack: () => Navigator.of(context).maybePop(),
+                            toggle: ModeToggle(reader: false, onChanged: (bool r) => r ? _toReader() : null),
+                            actions: <Widget>[
+                              AppIconButton(
+                                icon: AppIcons.search,
                                 filled: false,
-                                semanticLabel: 'More options',
-                                onPressed: () => officeOverflow(
-                                  context,
-                                  b,
-                                  widget.doc,
-                                  onReader: _toReader,
-                                  text: d.items.map((DocxItem i) => i.text).join('\n'),
-                                  facts: <(String, String)>[
-                                    ('Name', widget.doc.ref.name),
-                                    ('Size', '${Files.size(widget.doc.ref.size)} · DOCX'),
-                                    ('Pages', '${_pages.length}'),
-                                    if (d.author != null) ('Author', d.author!),
-                                  ],
+                                semanticLabel: 'Search in document',
+                                onPressed: () => setState(() => _searching = true),
+                              ),
+                              Builder(
+                                builder: (BuildContext b) => AppIconButton(
+                                  icon: AppIcons.moreVert,
+                                  filled: false,
+                                  semanticLabel: 'More options',
+                                  onPressed: () => officeOverflow(
+                                    context,
+                                    b,
+                                    widget.doc,
+                                    onReader: _toReader,
+                                    text: d.items.map((DocxItem i) => i.text).join('\n'),
+                                    facts: <(String, String)>[
+                                      ('Name', widget.doc.ref.name),
+                                      ('Size', '${Files.size(widget.doc.ref.size)} · DOCX'),
+                                      ('Pages', _pageCount),
+                                      if (d.author != null) ('Author', d.author!),
+                                    ],
+                                  ),
                                 ),
                               ),
-                            ),
-                          ],
+                            ],
+                          ),
                         ),
                       ),
               ),
@@ -519,7 +586,7 @@ class _DocxPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final UnfurlColors c = context.colors;
-    final double m = docx.margin * scale;
+    final EdgeInsetsPt m = docx.margins;
     return DecoratedBox(
       decoration: BoxDecoration(
         color: theme.paper,
@@ -527,7 +594,7 @@ class _DocxPage extends StatelessWidget {
       ),
       // The page is the document's own layout, at its own sizes.
       child: Padding(
-        padding: EdgeInsets.fromLTRB(m, m, m, m * 0.5),
+        padding: EdgeInsets.fromLTRB(m.left * scale, m.top * scale, m.right * scale, m.bottom * scale * 0.5),
         // Nothing inherited (the theme's tracking, height or features): the
         // page draws exactly what `_measure` measured.
         child: DefaultTextStyle(
@@ -625,7 +692,14 @@ class _DocxPage extends StatelessWidget {
       padding: pad,
       child: DecoratedBox(
         decoration: BoxDecoration(color: hit ? theme.handle.withValues(alpha: 0.18) : null),
-        child: Text.rich(span(it), textAlign: align),
+        // The span's own style is the paragraph's: an empty paragraph then
+        // draws the line height `_measure` measured, not the default one.
+        child: Builder(
+          builder: (BuildContext context) {
+            final InlineSpan text = span(it);
+            return Text.rich(text, style: text.style, textAlign: align);
+          },
+        ),
       ),
     );
   }
@@ -751,7 +825,8 @@ class _PptxScreenState extends ConsumerState<PptxScreen> {
 
   Widget _slides(UnfurlColors c, Pptx d) {
     final bool landscape = MediaQuery.orientationOf(context) == Orientation.landscape;
-    final String all = d.slides
+    // The whole deck's text, only when copy is chosen.
+    String all() => d.slides
         .expand((Slide s) => s.shapes)
         .expand((SlideShape s) => s.paragraphs)
         .map((SlideParagraph p) => p.text)
@@ -795,7 +870,7 @@ class _PptxScreenState extends ConsumerState<PptxScreen> {
               context,
               b,
               widget.doc,
-              text: all,
+              text: all(),
               facts: <(String, String)>[
                 ('Name', widget.doc.ref.name),
                 ('Size', '${Files.size(widget.doc.ref.size)} · PPTX'),
@@ -907,14 +982,18 @@ class _PptxScreenState extends ConsumerState<PptxScreen> {
                   padding: const EdgeInsets.symmetric(horizontal: Space.screen, vertical: 10),
                   itemCount: d.slides.length,
                   separatorBuilder: (BuildContext context, int i) => const SizedBox(width: Space.sm),
-                  itemBuilder: (BuildContext context, int i) => GestureDetector(
+                  itemBuilder: (BuildContext context, int i) => Pressable(
+                    kind: PressKind.card,
+                    semanticLabel: 'Slide ${i + 1}',
                     onTap: () => _goTo(i),
                     child: Container(
                       width: 64,
                       decoration: BoxDecoration(
                         border: Border.all(color: i == _slide ? c.primary : c.outline, width: i == _slide ? 2 : 1),
                       ),
-                      child: SlideView(deck: d, slide: d.slides[i]),
+                      child: RepaintBoundary(
+                        child: SlideView(deck: d, slide: d.slides[i]),
+                      ),
                     ),
                   ),
                 ),

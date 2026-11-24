@@ -4,7 +4,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 import '../../core/layout.dart';
-import '../../core/motion/motion.dart';
+import '../../core/motion/kit.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/theme/palette.dart';
 import '../../core/theme/reading_theme.dart';
@@ -168,18 +168,21 @@ class ModeToggle extends StatelessWidget {
           label: label,
           onTap: () => onChanged(isReader),
           excludeSemantics: true,
-          child: GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTap: () => onChanged(isReader),
-            child: SizedBox(
-              width: _w,
-              height: _h,
-              child: Center(
-                child: TweenAnimationBuilder<Color?>(
-                  tween: ColorTween(end: on ? c.onPrimary : c.onPrimaryContainer),
-                  duration: Motion.of(context, Motion.navIndicator),
-                  builder: (BuildContext context, Color? color, Widget? _) =>
-                      AppIcon(isReader ? AppIcons.wrapText : pageIcon, size: 20, color: color),
+          child: Pressable(
+            kind: PressKind.chip,
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () => onChanged(isReader),
+              child: SizedBox(
+                width: _w,
+                height: _h,
+                child: Center(
+                  child: TweenAnimationBuilder<Color?>(
+                    tween: ColorTween(end: on ? c.onPrimary : c.onPrimaryContainer),
+                    duration: Motion.of(context, Motion.navIndicator),
+                    builder: (BuildContext context, Color? color, Widget? _) =>
+                        AppIcon(isReader ? AppIcons.wrapText : pageIcon, size: 20, color: color),
+                  ),
                 ),
               ),
             ),
@@ -421,20 +424,23 @@ class FloatingChip extends StatelessWidget {
       child: Material(
         color: c.inverseSurface,
         shape: const StadiumBorder(),
-        child: InkWell(
-          onTap: onTap,
-          customBorder: const StadiumBorder(),
-          child: ConstrainedBox(
-            constraints: BoxConstraints(minHeight: onTap == null ? 0 : 40),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: Space.sm),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                spacing: 6,
-                children: <Widget>[
-                  if (icon != null) AppIcon(icon!, size: 16, color: c.onInverseSurface),
-                  Text(text, style: UnfurlType.monoLabel.copyWith(fontSize: 12, color: c.onInverseSurface)),
-                ],
+        child: Pressable(
+          kind: PressKind.button,
+          child: InkWell(
+            onTap: onTap,
+            customBorder: const StadiumBorder(),
+            child: ConstrainedBox(
+              constraints: BoxConstraints(minHeight: onTap == null ? 0 : 40),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: Space.sm),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  spacing: 6,
+                  children: <Widget>[
+                    if (icon != null) AppIcon(icon!, size: 16, color: c.onInverseSurface),
+                    Text(text, style: UnfurlType.monoLabel.copyWith(fontSize: 12, color: c.onInverseSurface)),
+                  ],
+                ),
               ),
             ),
           ),
@@ -545,14 +551,20 @@ class MiniPlayer extends StatelessWidget {
             label: 'Voice and speed, ${_rate(rate)}',
             onTap: onSpeed,
             excludeSemantics: true,
-            child: InkWell(
-              onTap: onSpeed,
-              customBorder: const StadiumBorder(),
-              child: Container(
-                constraints: const BoxConstraints(minHeight: IconSpec.tapTarget, minWidth: IconSpec.tapTarget),
-                padding: const EdgeInsets.symmetric(horizontal: 10),
-                alignment: Alignment.center,
-                child: Text(_rate(rate), style: UnfurlType.monoLabel.copyWith(fontSize: 12, color: c.onSurfaceVariant)),
+            child: Pressable(
+              kind: PressKind.chip,
+              child: InkWell(
+                onTap: onSpeed,
+                customBorder: const StadiumBorder(),
+                child: Container(
+                  constraints: const BoxConstraints(minHeight: IconSpec.tapTarget, minWidth: IconSpec.tapTarget),
+                  padding: const EdgeInsets.symmetric(horizontal: 10),
+                  alignment: Alignment.center,
+                  child: Text(
+                    _rate(rate),
+                    style: UnfurlType.monoLabel.copyWith(fontSize: 12, color: c.onSurfaceVariant),
+                  ),
+                ),
               ),
             ),
           ),
@@ -568,21 +580,29 @@ class MiniPlayer extends StatelessWidget {
             label: playing ? 'Pause' : 'Play',
             onTap: onToggle,
             excludeSemantics: true,
-            child: Material(
-              color: playing ? c.primary : c.primaryContainer,
-              shape: const CircleBorder(),
-              child: InkWell(
-                customBorder: const CircleBorder(),
-                onTap: onToggle,
-                child: SizedBox.square(
-                  dimension: 52,
-                  child: AnimatedSwitcher(
-                    duration: Motion.of(context, Motion.fast),
-                    child: AppIcon(
-                      playing ? AppIcons.pause : AppIcons.play,
-                      key: ValueKey<bool>(playing),
-                      fill: true,
-                      color: playing ? c.onPrimary : c.onPrimaryContainer,
+            // A circle that squares to 12 dp while held (Expressive).
+            child: Pressable(
+              kind: PressKind.fab,
+              restRadius: 26,
+              builder: (BuildContext context, double radius, double pressed) => Material(
+                color: playing ? c.primary : c.primaryContainer,
+                animationDuration: Duration.zero,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(radius)),
+                clipBehavior: Clip.antiAlias,
+                child: InkWell(
+                  onTap: onToggle,
+                  overlayColor: pressedLayer(c),
+                  splashFactory: NoSplash.splashFactory,
+                  child: SizedBox.square(
+                    dimension: 52,
+                    child: AnimatedSwitcher(
+                      duration: Motion.of(context, Motion.fast),
+                      child: AppIcon(
+                        playing ? AppIcons.pause : AppIcons.play,
+                        key: ValueKey<bool>(playing),
+                        fill: true,
+                        color: playing ? c.onPrimary : c.onPrimaryContainer,
+                      ),
                     ),
                   ),
                 ),
@@ -659,7 +679,7 @@ class SelectionToolbar extends StatelessWidget {
   Widget _bar(BuildContext context) {
     final UnfurlColors c = context.colors;
     return Material(
-      color: Colors.transparent,
+      color: c.surfaceContainerHigh.withValues(alpha: 0),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: Space.xs, vertical: Space.xs),
         decoration: BoxDecoration(
@@ -684,21 +704,24 @@ class SelectionToolbar extends StatelessWidget {
                     label: '${h.label} highlight',
                     onTap: () => onHighlight(h.index),
                     excludeSemantics: true,
-                    child: InkWell(
-                      onTap: () => onHighlight(h.index),
-                      customBorder: const CircleBorder(),
-                      child: SizedBox.square(
-                        dimension: IconSpec.tapTarget,
-                        child: Center(
-                          child: Container(
-                            width: 28,
-                            height: 28,
-                            decoration: BoxDecoration(
-                              color: theme.highlights[h.index],
-                              shape: BoxShape.circle,
-                              border: Border.all(
-                                color: selectedColor == h.index ? c.primary : c.outline,
-                                width: selectedColor == h.index ? 2 : 1,
+                    child: Pressable(
+                      kind: PressKind.chip,
+                      child: InkWell(
+                        onTap: () => onHighlight(h.index),
+                        customBorder: const CircleBorder(),
+                        child: SizedBox.square(
+                          dimension: IconSpec.tapTarget,
+                          child: Center(
+                            child: Container(
+                              width: 28,
+                              height: 28,
+                              decoration: BoxDecoration(
+                                color: theme.highlights[h.index],
+                                shape: BoxShape.circle,
+                                border: Border.all(
+                                  color: selectedColor == h.index ? c.primary : c.outline,
+                                  width: selectedColor == h.index ? 2 : 1,
+                                ),
                               ),
                             ),
                           ),
@@ -782,23 +805,26 @@ class _Tool extends StatelessWidget {
     label: semantic ?? label,
     onTap: onTap,
     excludeSemantics: true,
-    child: InkWell(
-      onTap: onTap,
-      borderRadius: Radii.thumbR,
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(minHeight: 60),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          spacing: Space.xs,
-          children: <Widget>[
-            glyph,
-            Text(
-              label,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: UnfurlType.label.copyWith(fontSize: 12, color: context.colors.onSurface),
-            ),
-          ],
+    child: Pressable(
+      kind: PressKind.chip,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: Radii.thumbR,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minHeight: 60),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            spacing: Space.xs,
+            children: <Widget>[
+              glyph,
+              Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: UnfurlType.label.copyWith(fontSize: 12, color: context.colors.onSurface),
+              ),
+            ],
+          ),
         ),
       ),
     ),

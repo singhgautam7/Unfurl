@@ -12,6 +12,7 @@ import '../../core/theme/tokens.dart';
 import '../../core/theme/typography.dart';
 import '../../design_system/app_icon.dart';
 import '../../design_system/buttons.dart';
+import '../../design_system/containers.dart';
 import '../../design_system/sheets.dart';
 import '../../formats/format_registry.dart';
 import '../insights/book_insights.dart';
@@ -177,7 +178,7 @@ class _ActionRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final UnfurlColors c = context.colors;
-    return InkWell(
+    return PressableRow(
       onTap: onTap,
       borderRadius: Radii.thumbR,
       child: SizedBox(

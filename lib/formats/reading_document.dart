@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/foundation.dart';
 
 /// The one model every Reader-mode format becomes (EPUB, Markdown, TXT,
@@ -107,6 +109,10 @@ class ReadingDocument {
       for (final Block b in s.blocks) b.text,
   ].join('\n');
 
+  /// [plainText] in lower case, made once (in-book search scans it on every
+  /// query; lower-casing a book's text each time is the cost it avoids).
+  late final String lowerText = plainText.toLowerCase();
+
   /// The block and offset holding global character index [index] of
   /// [plainText].
   (int, int, int) positionOfIndex(int index) {
@@ -119,14 +125,191 @@ class ReadingDocument {
     return (0, 0, 0);
   }
 
+  /// The reader's chapters: from the table of contents when there is one
+  /// (an EPUB spine file can hold several chapters, and a chapter can span
+  /// several files; Markdown, HTML and plain text are one section with
+  /// heading entries), else one per section. Entries at the shallowest TOC
+  /// level that has two or more; text before the first is chapter 0.
+  late final List<Chapter> chapters = _chapters();
+
+  List<Chapter> _chapters() {
+    int startOf(TocEntry e) {
+      final List<Block> blocks = sections[e.section].blocks;
+      return blocks.isEmpty ? sections[e.section].start : blocks[e.block.clamp(0, blocks.length - 1)].start;
+    }
+
+    final List<TocEntry> valid = <TocEntry>[
+      for (final TocEntry e in toc)
+        if (e.section >= 0 && e.section < sections.length) e,
+    ];
+    if (sections.isEmpty) return const <Chapter>[Chapter(title: '', section: 0, start: 0)];
+    if (valid.isEmpty) {
+      return <Chapter>[
+        for (int s = 0; s < sections.length; s++)
+          Chapter(title: sections[s].title, section: s, start: sections[s].start),
+      ];
+    }
+    final int deepest = valid.map((TocEntry e) => e.level).reduce(math.max);
+    int level = valid.map((TocEntry e) => e.level).reduce(math.min);
+    while (level < deepest && valid.where((TocEntry e) => e.level <= level).length < 2) {
+      level++;
+    }
+    final List<TocEntry> picked = valid.where((TocEntry e) => e.level <= level).toList();
+    // A lone shallower entry first (a Markdown `# Title` above `##` chapters)
+    // is the book's title, not a chapter of its own.
+    final List<TocEntry> shallower = picked.where((TocEntry e) => e.level < level).toList();
+    if (shallower.length == 1 && identical(shallower.single, picked.first)) picked.removeAt(0);
+    final List<Chapter> out = <Chapter>[];
+    for (final TocEntry e in picked) {
+      final int start = startOf(e);
+      if (out.any((Chapter c) => c.start == start)) continue;
+      final int block = sections[e.section].blocks.isEmpty
+          ? 0
+          : e.block.clamp(0, sections[e.section].blocks.length - 1);
+      out.add(Chapter(title: e.title, section: e.section, block: block, start: start));
+    }
+    out.sort((Chapter a, Chapter b) => a.start.compareTo(b.start));
+    if (out.first.start > 0) {
+      // Text before the first chapter is chapter 0, unless it is only
+      // headings (a title): those belong to the first chapter.
+      final bool titleOnly = <Block>[
+        for (final Section s in sections)
+          for (final Block b in s.blocks)
+            if (b.start < out.first.start) b,
+      ].every((Block b) => b.kind == BlockKind.heading || b.text.trim().isEmpty);
+      final Chapter c = out.first;
+      out[0] = titleOnly ? Chapter(title: c.title, section: 0, start: 0) : c;
+      if (!titleOnly) out.insert(0, const Chapter(title: '', section: 0, start: 0));
+    }
+    return out;
+  }
+
+  /// The chapter holding global index [global].
+  int chapterAt(int global) {
+    int lo = 0, hi = chapters.length - 1;
+    while (lo < hi) {
+      final int mid = (lo + hi + 1) >> 1;
+      if (chapters[mid].start <= global) {
+        lo = mid;
+      } else {
+        hi = mid - 1;
+      }
+    }
+    return lo;
+  }
+
+  /// Global index just past chapter [i]'s text (the next chapter's start).
+  int chapterEnd(int i) => i + 1 < chapters.length ? chapters[i + 1].start : length;
+
+  /// Whether a page from global [first] to [last] holds the end of its
+  /// chapter: nothing but whitespace is left between [last] and the next
+  /// chapter (or the end of the book).
+  bool endsChapter(int first, int last) {
+    final int end = chapterEnd(chapterAt(first));
+    if (last >= end - 1) return true;
+    // Walk forward from [last]: usually the first block decides.
+    for (int i = _blockAt(last); i < _flat.length && _flat[i].start < end; i++) {
+      final Block b = _flat[i];
+      if (b.kind == BlockKind.image || b.kind == BlockKind.rule || b.kind == BlockKind.table) {
+        if (b.start >= last) return false;
+        continue;
+      }
+      final int from = (last - b.start).clamp(0, b.text.length);
+      if (b.text.substring(from).trim().isNotEmpty) return false;
+    }
+    return true;
+  }
+
+  /// Words from global [from] to the end of its chapter, from per-block
+  /// counts made once (the footer asks on every page).
+  int wordsToChapterEnd(int from) {
+    final int end = chapterEnd(chapterAt(from));
+    final int i = _blockAt(from);
+    if (i >= _flat.length) return 0;
+    final Block b = _flat[i];
+    final int partial = _countWords(b.text, (from - b.start).clamp(0, b.text.length));
+    final int j = _blockAt(end); // the next chapter's first block, or the end
+    return partial + (j > i + 1 ? _wordsBefore[j] - _wordsBefore[i + 1] : 0);
+  }
+
+  late final List<Block> _flat = <Block>[for (final Section s in sections) ...s.blocks];
+
+  /// Words in the flat blocks before index i (length + 1 entries).
+  // ponytail: counted once on the UI isolate (a few ms for a very large book);
+  // move to an isolate if the first footer ever janks.
+  late final List<int> _wordsBefore = () {
+    final List<int> out = <int>[0];
+    for (final Block b in _flat) {
+      out.add(out.last + _countWords(b.text));
+    }
+    return out;
+  }();
+
+  /// Index of the flat block holding global [index] (or the count, past the end).
+  int _blockAt(int index) {
+    int lo = 0, hi = _flat.length;
+    while (lo < hi) {
+      final int mid = (lo + hi) >> 1;
+      if (_flat[mid].start + _flat[mid].text.length < index) {
+        lo = mid + 1;
+      } else {
+        hi = mid;
+      }
+    }
+    return lo;
+  }
+
+  /// Runs of non-whitespace in [s] from [from] to [to]: a scan, not a RegExp
+  /// (a tenth of the time, and it runs in a frame).
+  static int _countWords(String s, [int from = 0, int? to]) {
+    int n = 0;
+    bool inWord = false;
+    final int end = to ?? s.length;
+    for (int i = from; i < end; i++) {
+      final bool space = _isSpace(s.codeUnitAt(i));
+      if (!space && !inWord) n++;
+      inWord = !space;
+    }
+    return n;
+  }
+
+  /// RegExp's `\s`.
+  static bool _isSpace(int c) =>
+      c == 0x20 ||
+      (c >= 0x09 && c <= 0x0D) ||
+      (c >= 0xA0 &&
+          (c == 0xA0 ||
+              c == 0x1680 ||
+              (c >= 0x2000 && c <= 0x200A) ||
+              c == 0x2028 ||
+              c == 0x2029 ||
+              c == 0x202F ||
+              c == 0x205F ||
+              c == 0x3000 ||
+              c == 0xFEFF));
+
+  /// Blocks that open a chapter inside a section: pagination starts a page there.
+  late final Set<(int, int)> chapterBlocks = <(int, int)>{
+    for (final Chapter c in chapters)
+      if (c.block > 0) (c.section, c.block),
+  };
+
   /// Words, for the time-left estimate.
   int wordsBetween(int fromGlobal, int toGlobal) {
-    final String slice = plainText.substring(
-      fromGlobal.clamp(0, plainText.length),
-      toGlobal.clamp(0, plainText.length),
-    );
-    return slice.split(RegExp(r'\s+')).where((String w) => w.isNotEmpty).length;
+    final int n = plainText.length;
+    return _countWords(plainText, fromGlobal.clamp(0, n), toGlobal.clamp(0, n));
   }
+}
+
+/// Where a chapter starts: its (section, block) and global index.
+@immutable
+class Chapter {
+  const Chapter({required this.title, required this.section, required this.start, this.block = 0});
+
+  final String title;
+  final int section;
+  final int block;
+  final int start;
 }
 
 class Section {

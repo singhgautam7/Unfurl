@@ -1,12 +1,13 @@
 import 'package:flutter/material.dart';
 
-import '../../core/motion/motion.dart';
+import '../../core/motion/kit.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/theme/palette.dart';
 import '../../core/theme/tokens.dart';
 import '../../core/theme/typography.dart';
 import '../../design_system/app_icon.dart';
 import '../../design_system/buttons.dart';
+import '../../design_system/containers.dart';
 import '../../design_system/covers.dart' show DashedOutline, FormatBadge;
 
 /// Board 5's components for the Files tab: rows, the privacy card, quick
@@ -192,7 +193,12 @@ class ExplorerRow extends StatelessWidget {
                 status!,
                 style: UnfurlType.monoLabel.copyWith(color: statusOn ? c.accent : c.onSurfaceVariant).weight(600),
               ),
-            if (switchValue != null) Switch(value: switchValue!, onChanged: onSwitch),
+            if (switchValue != null)
+              IgnorePointer(
+                child: ExcludeSemantics(
+                  child: Switch(value: switchValue!, onChanged: onSwitch),
+                ),
+              ),
             if (trailing != null)
               SizedBox.square(
                 dimension: IconSpec.tapTarget,
@@ -204,13 +210,19 @@ class ExplorerRow extends StatelessWidget {
         ),
       ),
     );
-    // A switch row reads as one control: the name, then the switch's state.
-    if (onTap == null && onLongPress == null) return switchValue != null ? MergeSemantics(child: body) : body;
-    return Semantics(
-      button: true,
-      label: semanticLabel,
-      child: InkWell(onTap: onTap, onLongPress: onLongPress, child: body),
-    );
+    // A switch row is one control: the whole row taps, and it reads as its
+    // name, then the switch's state.
+    if (switchValue != null) {
+      return MergeSemantics(
+        child: Semantics(
+          toggled: switchValue,
+          enabled: onSwitch != null,
+          child: PressableRow(onTap: onSwitch == null ? null : () => onSwitch!(!switchValue!), child: body),
+        ),
+      );
+    }
+    if (onTap == null && onLongPress == null) return body;
+    return PressableRow(onTap: onTap, onLongPress: onLongPress, semanticLabel: semanticLabel, child: body);
   }
 }
 
@@ -270,9 +282,7 @@ class PrivacyCard extends StatelessWidget {
               spacing: 6,
               children: <Widget>[
                 AppIcon(AppIcons.block, size: 16, color: c.accent),
-                Flexible(
-                  child: Text(eyebrow!, style: UnfurlType.sectionHeader.copyWith(color: c.accent).weight(600)),
-                ),
+                Flexible(child: SectionHeader(label: eyebrow!, accent: true)),
               ],
             ),
           Row(
@@ -330,39 +340,29 @@ class QuickAccessCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final UnfurlColors c = context.colors;
-    return Material(
-      color: c.surfaceContainer,
-      shape: RoundedRectangleBorder(
-        borderRadius: Radii.cardR,
-        side: BorderSide(color: c.outline),
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: onTap,
-        child: SizedBox(
-          width: 128,
-          child: Padding(
-            padding: const EdgeInsets.all(Space.md),
-            child: Column(
+    return SurfaceCard(
+      onTap: onTap,
+      padding: const EdgeInsets.all(Space.md),
+      child: SizedBox(
+        width: 128 - 2 * Space.md,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          spacing: Space.sm,
+          children: <Widget>[
+            AppIcon(icon, color: c.icon),
+            Column(
               crossAxisAlignment: CrossAxisAlignment.start,
-              spacing: Space.sm,
               children: <Widget>[
-                AppIcon(icon, color: c.icon),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: <Widget>[
-                    Text(
-                      name,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: UnfurlType.titleSmall.copyWith(height: 1.25, color: c.onSurface).weight(600),
-                    ),
-                    Text(meta, style: UnfurlType.monoLabel.copyWith(color: c.onSurfaceVariant)),
-                  ],
+                Text(
+                  name,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: UnfurlType.titleSmall.copyWith(height: 1.25, color: c.onSurface).weight(600),
                 ),
+                Text(meta, style: UnfurlType.monoLabel.copyWith(color: c.onSurfaceVariant)),
               ],
             ),
-          ),
+          ],
         ),
       ),
     );

@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_riverpod/misc.dart' show ProviderListenable;
 import 'package:go_router/go_router.dart';
 
-import '../../design_system/nav_pill.dart' show kDestinations, tabOfBranch;
+import '../../design_system/nav_pill.dart' show NavDestination, kDestinations, tabOfBranch;
 import '../../features/files/files_screen.dart';
 import '../../features/folders/folder_screens.dart';
 import '../../features/home/home_screen.dart';
@@ -15,6 +17,8 @@ import '../../features/viewer/document_screen.dart';
 import '../../features/welcome/welcome_screen.dart';
 import '../motion/transitions.dart';
 import '../open.dart';
+import '../providers.dart';
+import 'branch_stack.dart';
 import 'nav_shell.dart';
 
 abstract final class Routes {
@@ -134,7 +138,14 @@ GoRouter buildRouter({required bool onboarded}) => GoRouter(
             : FolderScreen.explorer(root: s.uri.queryParameters['path']!, mode: FolderMode.picker),
       ),
     ),
-    StatefulShellRoute.indexedStack(
+    StatefulShellRoute(
+      // Only the tabs shown, in order: Files stays out while it is hidden.
+      navigatorContainerBuilder: (BuildContext _, StatefulNavigationShell shell, List<Widget> children) => BranchStack(
+        index: tabOfBranch(shell.currentIndex),
+        onSelect: (int i) => shell.goBranch(kDestinations[i].branch),
+        draggable: shell.shellRouteContext.routerState.uri.pathSegments.length <= 1,
+        children: <Widget>[for (final NavDestination d in kDestinations) children[d.branch]],
+      ),
       builder: (BuildContext context, GoRouterState state, StatefulNavigationShell shell) => NavShell(
         index: tabOfBranch(shell.currentIndex),
         // Inside a tab (a folder in Library or Files) the pill steps away.
@@ -156,10 +167,20 @@ GoRouter buildRouter({required bool onboarded}) => GoRouter(
           ],
         ),
         StatefulShellBranch(
+          preload: true,
           routes: <RouteBase>[
             GoRoute(
               path: Routes.library,
-              builder: (BuildContext c, GoRouterState s) => const LibraryScreen(),
+              builder: (BuildContext c, GoRouterState s) => WarmTab(
+                page: tabOfBranch(1),
+                order: 0,
+                needs: <ProviderListenable<AsyncValue<Object?>>>[
+                  booksProvider,
+                  foldersProvider,
+                  readableCountsProvider,
+                ],
+                child: const LibraryScreen(),
+              ),
               routes: _folderRoutes(Routes.library),
             ),
           ],
@@ -183,13 +204,27 @@ GoRouter buildRouter({required bool onboarded}) => GoRouter(
           ],
         ),
         StatefulShellBranch(
+          preload: true,
           routes: <RouteBase>[
-            GoRoute(path: Routes.notes, builder: (BuildContext c, GoRouterState s) => const NotesScreen()),
+            GoRoute(
+              path: Routes.notes,
+              builder: (BuildContext c, GoRouterState s) => WarmTab(
+                page: tabOfBranch(3),
+                order: 1,
+                needs: <ProviderListenable<AsyncValue<Object?>>>[allAnnotationsProvider],
+                child: const NotesScreen(),
+              ),
+            ),
           ],
         ),
         StatefulShellBranch(
+          preload: true,
           routes: <RouteBase>[
-            GoRoute(path: Routes.more, builder: (BuildContext c, GoRouterState s) => const MoreScreen()),
+            GoRoute(
+              path: Routes.more,
+              builder: (BuildContext c, GoRouterState s) =>
+                  WarmTab(page: tabOfBranch(4), order: 2, child: const MoreScreen()),
+            ),
           ],
         ),
       ],

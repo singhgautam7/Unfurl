@@ -48,5 +48,7 @@ app.*.map.json
 .widget_preview/
 
 # Specs and design handoffs are not versioned
-specs/
+specs/*
+!specs/app-polish/
+specs/app-polish/screenshots/private/
 docs/v2-screens/

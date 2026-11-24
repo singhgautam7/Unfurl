@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 
+import 'motion_level.dart';
+import 'spring.dart';
+
 /// The one motion set: Mull's durations and curves, plus Unfurl's four.
 ///
 /// Spring for anything the finger caused, decelerate for anything the system
@@ -8,6 +11,16 @@ abstract final class Motion {
   static const Duration instant = Duration(milliseconds: 90);
   static const Duration fast = Duration(milliseconds: 150);
   static const Duration navIndicator = Duration(milliseconds: 220);
+
+  /// Kuber's tab pager: whole pages side by side, ease in and out.
+  static const Duration tabSlide = Duration(milliseconds: 300);
+  static const Curve tabSlideCurve = Curves.easeInOut;
+
+  /// Tabs built ahead of their first visit: the first waits this long after
+  /// launch, each next one a step more; a busy moment is tried again later.
+  static const Duration warmDelay = Duration(milliseconds: 1500);
+  static const Duration warmStep = Duration(milliseconds: 700);
+  static const Duration warmRetry = Duration(milliseconds: 200);
   static const Duration containerTransform = Duration(milliseconds: 240);
   static const Duration sheet = Duration(milliseconds: 260);
   static const Duration navHide = Duration(milliseconds: 160);
@@ -41,8 +54,11 @@ abstract final class Motion {
 
   /// The step between neighbours revealed together, capped so long lists
   /// never wait.
-  static const Duration stagger = Duration(milliseconds: 28);
-  static const int staggerCap = 8;
+  static const Duration stagger = Duration(milliseconds: 30);
+  static const int staggerCap = 6;
+
+  /// Delay of item [index]: 30 ms steps, items past the 6th share the 6th's.
+  static Duration staggerDelay(int index) => stagger * (index < 0 ? 0 : (index < staggerCap ? index : staggerCap - 1));
 
   /// V3-COMFORT (`unfurl-v3-tokens.js`): a volume-key scroll of 90% of a
   /// screen, a held key's repeat, auto-scroll easing up to speed, its control
@@ -69,6 +85,12 @@ abstract final class Motion {
   /// Not animation: how long a position waits before it is written, and how
   /// long a zoomed PDF waits before sharper tiles are drawn.
   static const Duration saveDelay = Duration(milliseconds: 600);
+
+  /// Bursts of data (a folder scan) redraw at most this often.
+  static const Duration coalesce = Duration(milliseconds: 300);
+
+  /// How long typing rests before a search runs.
+  static const Duration searchDelay = Duration(milliseconds: 150);
   static const Duration sharpenDelay = Duration(milliseconds: 160);
 
   /// Anything the finger caused.
@@ -88,18 +110,120 @@ abstract final class Motion {
   /// (Kuber's), fading only in the first 30% of the open.
   static const Curve searchPillFade = Interval(0, 0.3);
 
-  /// Under OS reduced motion: transforms become cross-fades, springs go linear.
+  /// Under Subtle and Off: transforms become cross-fades, springs go linear.
   static const Duration reducedFade = Duration(milliseconds: 90);
 
-  static bool reduced(BuildContext context) {
-    final MediaQueryData mq = MediaQuery.of(context);
-    return mq.disableAnimations || mq.accessibleNavigation;
+  // ---- Effects (opacity, colour: never springs), from Kuber. ----
+  static const Duration fxInstant = instant;
+  static const Duration fxFast = fast;
+  static const Duration fxDefault = Duration(milliseconds: 200);
+
+  /// Every opacity and colour change.
+  static const Curve curveEffects = Cubic(0.33, 1, 0.68, 1);
+
+  static const Duration reflow = Duration(milliseconds: 230);
+
+  /// Kit internals: the content of an expanding section waits this long
+  /// before it fades in; rolling digits start this far apart (right to left);
+  /// a chart draws in over [chartDraw] (bars: [chartBar] each, staggered);
+  /// haptics are at least [hapticGap] apart.
+  static const Duration expandFadeDelay = Duration(milliseconds: 40);
+  static const Duration digitStep = Duration(milliseconds: 20);
+  static const Duration chartDraw = Duration(milliseconds: 400);
+  static const Duration chartBar = Duration(milliseconds: 300);
+  static const Duration hapticGap = Duration(milliseconds: 50);
+  static const Duration digitRoll = Duration(milliseconds: 300);
+
+  /// Theme change ripple: a timed reveal on an even ease-in-out. Subtle is
+  /// shorter; Off cross-fades the snapshot over [fxInstant].
+  static const Duration themeReveal = Duration(milliseconds: 800);
+  static const Duration themeRevealSubtle = Duration(milliseconds: 500);
+  static const Curve themeRevealCurve = Curves.easeInOutSine;
+
+  // ---- Springs (mass 1). Interruptible: retarget with `springTo`. ----
+  /// Small things: press, chips, radios, switch thumb, chevrons, menus.
+  static final SpringDescription springFast = SpringDescription.withDampingRatio(mass: 1, stiffness: 800, ratio: 0.6);
+
+  /// Medium things: enter, expand, list insert, dialogs, release of cards.
+  static final SpringDescription springDefault = SpringDescription.withDampingRatio(
+    mass: 1,
+    stiffness: 380,
+    ratio: 0.8,
+  );
+
+  /// Large surfaces: sheets opening, container transform.
+  static final SpringDescription springSlow = SpringDescription.withDampingRatio(mass: 1, stiffness: 200, ratio: 0.8);
+
+  /// Reflow with no visible bounce: heights, widths, closing.
+  static final SpringDescription springStandard = SpringDescription.withDampingRatio(
+    mass: 1,
+    stiffness: 700,
+    ratio: 0.9,
+  );
+
+  /// Every spatial motion at the Subtle level (critically damped).
+  static final SpringDescription springSubtle = SpringDescription.withDampingRatio(mass: 1, stiffness: 600, ratio: 1);
+
+  /// Cached spring curves for implicit animations (`.settle` as the duration,
+  /// `.clamped` for sizes).
+  static final SpringCurve fastCurve = SpringCurve(springFast);
+  static final SpringCurve defaultCurve = SpringCurve(springDefault);
+  static final SpringCurve slowCurve = SpringCurve(springSlow);
+  static final SpringCurve standardCurve = SpringCurve(springStandard);
+  static final SpringCurve subtleCurve = SpringCurve(springSubtle);
+
+  /// [expressive] at Expressive, [springSubtle] at Subtle. (Off: callers skip.)
+  static SpringDescription spatial(MotionLevel l, SpringDescription expressive) =>
+      l == MotionLevel.subtle ? springSubtle : expressive;
+
+  /// Curve counterpart of [spatial].
+  static SpringCurve spatialCurve(MotionLevel l, SpringCurve expressive) =>
+      l == MotionLevel.subtle ? subtleCurve : expressive;
+
+  // ---- Press amounts ----
+  static const double pressScaleCard = 0.98; // cards and list rows
+  static const double pressScaleSubtle = 0.99;
+  static const double pressScaleFab = 0.96;
+  static const double pressScaleChip = 0.96;
+  static const double buttonGroupWiden = 0.15;
+
+  /// Press corner radii (dp): buttons and icon buttons rest at 20, FAB 16,
+  /// chips 8, everything else 20 with no change.
+  static const double radiusRest = 20;
+  static const double radiusRestFab = 16;
+  static const double radiusRestChip = 8;
+  static const double radiusPressedButton = 8;
+  static const double radiusPressedIconButton = 12;
+  static const double radiusPressedFab = 12;
+  static const double radiusPressedChip = 6;
+
+  /// Effective level here: preference + device, and the phone's Remove
+  /// animations wins (Off). Cheap: reads one InheritedWidget. Without a
+  /// [MotionScope] (tests, startup) it is Expressive unless the phone asks
+  /// for no animations.
+  static MotionLevel levelOf(BuildContext context) {
+    final MotionScope? s = MotionScope.maybeOf(context);
+    if (s != null) return s.level;
+    final MediaQueryData? mq = MediaQuery.maybeOf(context);
+    return mq != null && (mq.disableAnimations || mq.accessibleNavigation) ? MotionLevel.off : MotionLevel.expressive;
   }
 
-  /// Duration to actually use, honouring reduced motion.
+  static bool isOff(BuildContext context) => levelOf(context) == MotionLevel.off;
+
+  /// Not Expressive: callers that only know "reduced" keep working.
+  static bool reduced(BuildContext context) => levelOf(context) != MotionLevel.expressive;
+
+  /// Duration to actually use: [reducedFade] at Subtle and Off (Kuber's `of`).
   static Duration of(BuildContext context, Duration full) => reduced(context) ? reducedFade : full;
 
   static Curve curveOf(BuildContext context, Curve full) => reduced(context) ? Curves.linear : full;
+
+  /// [base] at variable weight [wght] (`wght` axis; a static font snaps to
+  /// the nearest [FontWeight]).
+  static TextStyle weightStyle(TextStyle base, double wght) => base.copyWith(
+    fontWeight: FontWeight.lerp(FontWeight.w100, FontWeight.w900, ((wght - 100) / 800).clamp(0.0, 1.0)),
+    fontVariations: <FontVariation>[FontVariation('wght', wght)],
+  );
 }
 
 /// A control that comes and goes with a setting (Page turn under Paged):
@@ -125,7 +249,7 @@ class ShowHide extends StatelessWidget {
 
 /// Content arriving: fades in while rising 8dp and settling from 0.98
 /// scale, once, on first build. [index] staggers neighbours (tiles in a
-/// grid). Under reduced motion it is a plain fade.
+/// grid, 30 ms steps, 6 at most). Subtle: a plain fade. Off: instant.
 class Reveal extends StatefulWidget {
   const Reveal({required this.child, this.index = 0, super.key});
 
@@ -138,14 +262,23 @@ class Reveal extends StatefulWidget {
 
 class _RevealState extends State<Reveal> with SingleTickerProviderStateMixin {
   late final AnimationController _t = AnimationController(vsync: this);
+  late final CurvedAnimation _a = CurvedAnimation(parent: _t, curve: Motion.decelerate);
+  bool _started = false;
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    if (_t.duration != null) return;
-    _t.duration = Motion.of(context, Motion.reveal);
-    final Duration wait = Motion.stagger * widget.index.clamp(0, Motion.staggerCap);
-    if (wait == Duration.zero || Motion.reduced(context)) {
+    if (_started) return;
+    _started = true;
+    final MotionLevel level = Motion.levelOf(context);
+    // Built offstage (a tab warmed ahead of its visit): it is simply there.
+    if (level == MotionLevel.off || !TickerMode.getValuesNotifier(context).value.enabled) {
+      _t.value = 1;
+      return;
+    }
+    _t.duration = level == MotionLevel.subtle ? Motion.fast : Motion.reveal;
+    final Duration wait = level == MotionLevel.subtle ? Duration.zero : Motion.staggerDelay(widget.index);
+    if (wait == Duration.zero) {
       _t.forward();
     } else {
       Future<void>.delayed(wait, () {
@@ -156,20 +289,21 @@ class _RevealState extends State<Reveal> with SingleTickerProviderStateMixin {
 
   @override
   void dispose() {
+    _a.dispose();
     _t.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    final bool reduced = Motion.reduced(context);
-    final Animation<double> a = CurvedAnimation(parent: _t, curve: Motion.decelerate);
+    final bool plain = Motion.levelOf(context) != MotionLevel.expressive;
+    final Animation<double> a = _a;
     return AnimatedBuilder(
       animation: a,
       child: widget.child,
       builder: (BuildContext context, Widget? child) => Opacity(
         opacity: a.value,
-        child: reduced
+        child: plain
             ? child
             : Transform.translate(
                 offset: Offset(0, 8 * (1 - a.value)),

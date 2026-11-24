@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../core/db/database.dart';
 import '../../core/explorer.dart';
 import '../../core/motion/motion.dart';
 import '../../core/providers.dart';
@@ -20,7 +19,6 @@ import '../../design_system/chips.dart';
 import '../../design_system/containers.dart';
 import '../../design_system/sheets.dart';
 import '../files/files_screen.dart' show askForAccess;
-import '../files/files_widgets.dart';
 import '../reader/reading_prefs.dart';
 import '../reader/sheets.dart';
 import 'settings_controller.dart';
@@ -30,24 +28,12 @@ import 'settings_controller.dart';
 class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key});
 
-  /// "Wallpaper · System": the app theme as one line (Settings, More).
-  static String themeSummary(AppSettings s) =>
-      '${s.dynamicColor && s.wallpaperSeed != null ? 'Wallpaper' : s.family.name} · ${modeLabel(s.themeMode)}';
-
-  static String modeLabel(ThemeMode m) => switch (m) {
-    ThemeMode.light => 'Light',
-    ThemeMode.dark => 'Dark',
-    ThemeMode.system => 'System',
-  };
-
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final UnfurlColors c = context.colors;
-    final ReadingPrefs p = ref.watch(readingPrefsProvider);
-    final AppSettings s = ref.watch(settingsProvider);
+    // Only what this page shows: nothing else in the prefs rebuilds it.
+    final bool pdfReader = ref.watch(readingPrefsProvider.select((ReadingPrefs p) => p.pdfOpensReader));
     final ReadingPrefsController ctl = ref.read(readingPrefsProvider.notifier);
-    final int folders = (ref.watch(foldersProvider).value ?? const <Folder>[]).length;
-    final ReadingThemeId current = p.themeFor(darkChrome: c.isDark, amoledChrome: c.tone == Tone.amoled);
     return AppScaffold(
       title: 'Settings',
       onBack: () => context.pop(),
@@ -57,15 +43,22 @@ class SettingsScreen extends ConsumerWidget {
         const SizedBox(height: 10),
         ListContainer(
           children: <Widget>[
-            ListRow(label: 'Theme', value: themeSummary(s), onTap: () => context.push(Routes.theme)),
             ListRow(
+              icon: AppIcons.palette,
+              label: 'Theme',
+              subtitle: 'Colours, dark mode, floating header',
+              onTap: () => context.push(Routes.theme),
+            ),
+            ListRow(
+              icon: AppIcons.menuBook,
               label: 'Reader',
-              value: '${ReadingTheme.names[current.index]} · ${p.font.label} · ${p.size.round()}',
+              subtitle: 'Page colours, font, text size',
               onTap: () => context.push(Routes.reader),
             ),
             ListRow(
+              icon: AppIcons.touchApp,
               label: 'Controls',
-              value: p.volumeKeys ? 'Volume buttons on' : 'Taps and gestures',
+              subtitle: 'Volume buttons for turning pages',
               onTap: () => context.push(Routes.controls),
             ),
           ],
@@ -85,7 +78,7 @@ class SettingsScreen extends ConsumerWidget {
                   (false, 'Page', AppIcons.article),
                   (true, 'Reader', AppIcons.wrapText),
                 ],
-                selected: p.pdfOpensReader,
+                selected: pdfReader,
                 onChanged: (bool v) => ctl.update((ReadingPrefs x) => x.copyWith(pdfOpensReader: v)),
               ),
             ],
@@ -97,38 +90,35 @@ class SettingsScreen extends ConsumerWidget {
         Consumer(
           builder: (BuildContext context, WidgetRef ref, _) {
             final bool access = ref.watch(filesAccessProvider.select((FilesAccess a) => a.granted));
+            final bool findOnDevice = ref.watch(settingsProvider.select((AppSettings s) => s.findOnDevice));
+            final bool showHidden = ref.watch(settingsProvider.select((AppSettings s) => s.showHidden));
             return ListContainer(
               children: <Widget>[
                 if (kAllFilesAccess)
-                  ExplorerRow(
-                    name: 'All files access',
-                    meta: access
-                        ? 'Lets Files browse the whole phone'
-                        : 'Off. Needed to browse the whole phone and to find books everywhere.',
-                    sansMeta: true,
-                    status: access ? 'On' : 'Off',
-                    statusOn: access,
-                    trailing: AppIcons.openInNew,
+                  ListRow(
+                    icon: AppIcons.folderOpen,
+                    label: 'All files access',
+                    subtitle: access ? 'On, Files browses the whole phone' : 'Off, needed to browse the whole phone',
                     onTap: () => askForAccess(context, ref),
                   ),
                 // Left out while access is off: a control that can't apply.
                 if (kAllFilesAccess && access)
-                  ExplorerRow(
-                    name: 'Find books across this device',
-                    meta: 'Library lists every book on the phone',
-                    sansMeta: true,
-                    switchValue: s.findOnDevice,
-                    onSwitch: (bool v) async {
+                  ListRow(
+                    icon: AppIcons.search,
+                    label: 'Find books across this device',
+                    subtitle: 'Library lists every book on the phone',
+                    switchValue: findOnDevice,
+                    onChanged: (bool v) async {
                       await ref.read(settingsProvider.notifier).setFindOnDevice(value: v);
                       await ref.read(libraryProvider).setFindOnDevice(on: v);
                     },
                   ),
-                ExplorerRow(
-                  name: 'Show hidden files',
-                  meta: 'Default for every folder. Change it per folder from the folder menu.',
-                  sansMeta: true,
-                  switchValue: s.showHidden,
-                  onSwitch: (bool v) => ref.read(settingsProvider.notifier).setShowHidden(value: v),
+                ListRow(
+                  icon: AppIcons.visibility,
+                  label: 'Show hidden files',
+                  subtitle: 'Default for every folder',
+                  switchValue: showHidden,
+                  onChanged: (bool v) => ref.read(settingsProvider.notifier).setShowHidden(value: v),
                 ),
               ],
             );
@@ -139,9 +129,16 @@ class SettingsScreen extends ConsumerWidget {
         const SizedBox(height: 10),
         ListContainer(
           children: <Widget>[
-            ListRow(label: 'Folders', value: '$folders', onTap: () => context.push(Routes.folders)),
             ListRow(
+              icon: AppIcons.folder,
+              label: 'Folders',
+              subtitle: 'Where Unfurl looks for books',
+              onTap: () => context.push(Routes.folders),
+            ),
+            ListRow(
+              icon: AppIcons.delete,
               label: 'Clear recents',
+              subtitle: 'Home forgets what you opened',
               danger: true,
               onTap: () async {
                 final bool ok = await confirmClear(context);
@@ -168,7 +165,16 @@ class SettingsScreen extends ConsumerWidget {
         description: 'Home forgets what you opened. Reading positions, highlights and notes stay.',
         builder: (BuildContext ctx) => const SizedBox.shrink(),
         actions: <Widget>[
-          Builder(builder: (BuildContext ctx) => _DangerButton(onTap: () => Navigator.of(ctx).pop(true))),
+          Builder(
+            builder: (BuildContext ctx) => SizedBox(
+              width: double.infinity,
+              child: AppButton(
+                label: 'Clear recents',
+                type: AppButtonType.danger,
+                onPressed: () => Navigator.of(ctx).pop(true),
+              ),
+            ),
+          ),
           Builder(
             builder: (BuildContext ctx) =>
                 AppButton(label: 'Cancel', type: AppButtonType.text, onPressed: () => Navigator.of(ctx).pop(false)),
@@ -194,7 +200,7 @@ class SettingsScreen extends ConsumerWidget {
                   Semantics(
                     button: true,
                     selected: f == p.font,
-                    child: InkWell(
+                    child: PressableRow(
                       borderRadius: Radii.thumbR,
                       onTap: () {
                         ref.read(readingPrefsProvider.notifier).update((ReadingPrefs x) => x.copyWith(font: f));
@@ -284,17 +290,9 @@ class ReaderSettingsScreen extends ConsumerWidget {
               ),
             ),
             ListRow(
+              icon: AppIcons.textFields,
               label: 'Font',
-              trailing: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: <Widget>[
-                  Text(
-                    p.font.label,
-                    style: TextStyle(fontFamily: p.font.family, fontSize: 15, color: c.onSurfaceVariant),
-                  ),
-                  AppIcon(AppIcons.chevronRight, color: c.iconMuted),
-                ],
-              ),
+              subtitle: p.font.label,
               onTap: () => SettingsScreen.pickFont(context, ref),
             ),
             const _ControlRow(
@@ -310,19 +308,19 @@ class ReaderSettingsScreen extends ConsumerWidget {
               child: const _ControlRow(label: 'Page turn', stacked: true, child: PageTurnControl()),
             ),
             ListRow(
+              icon: AppIcons.wrapText,
               label: 'Hyphenation',
-              trailing: Switch(
-                value: p.hyphenate,
-                onChanged: (bool v) => ctl.update((ReadingPrefs x) => x.copyWith(hyphenate: v)),
-              ),
+              subtitle: 'Break long words at line ends',
+              switchValue: p.hyphenate,
+              onChanged: (bool v) => ctl.update((ReadingPrefs x) => x.copyWith(hyphenate: v)),
             ),
             const BrightnessRow(labelled: true, live: false, inset: Space.lg),
             ListRow(
+              icon: AppIcons.brightness,
               label: 'Keep screen on',
-              trailing: Switch(
-                value: p.keepScreenOn,
-                onChanged: (bool v) => ctl.update((ReadingPrefs x) => x.copyWith(keepScreenOn: v)),
-              ),
+              subtitle: 'The screen stays lit while you read',
+              switchValue: p.keepScreenOn,
+              onChanged: (bool v) => ctl.update((ReadingPrefs x) => x.copyWith(keepScreenOn: v)),
             ),
           ],
         ),
@@ -351,22 +349,19 @@ class ControlsScreen extends ConsumerWidget {
         ListContainer(
           children: <Widget>[
             ListRow(
+              icon: AppIcons.volumeUp,
               label: 'Turn pages with volume buttons',
-              subtitle: 'Paged: next or previous page. Scrolling: about a screen. Comics: next or previous page.',
-              trailing: Switch(
-                value: p.volumeKeys,
-                onChanged: (bool v) => ctl.update((ReadingPrefs x) => x.copyWith(volumeKeys: v)),
-              ),
+              subtitle: 'Next or previous page, or about a screen',
+              switchValue: p.volumeKeys,
+              onChanged: (bool v) => ctl.update((ReadingPrefs x) => x.copyWith(volumeKeys: v)),
             ),
             ListRow(
+              icon: AppIcons.swapVert,
               label: 'Invert direction',
               subtitle: 'Volume up goes forward',
-              trailing: Switch(
-                value: p.volumeInvert,
-                onChanged: p.volumeKeys
-                    ? (bool v) => ctl.update((ReadingPrefs x) => x.copyWith(volumeInvert: v))
-                    : null,
-              ),
+              switchValue: p.volumeInvert,
+              enabled: p.volumeKeys,
+              onChanged: (bool v) => ctl.update((ReadingPrefs x) => x.copyWith(volumeInvert: v)),
             ),
           ],
         ),
@@ -404,31 +399,6 @@ class _ControlRow extends StatelessWidget {
                 child,
               ],
             ),
-    );
-  }
-}
-
-class _DangerButton extends StatelessWidget {
-  const _DangerButton({required this.onTap});
-
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final UnfurlColors c = context.colors;
-    return Material(
-      color: c.dangerContainer,
-      shape: const StadiumBorder(),
-      child: InkWell(
-        customBorder: const StadiumBorder(),
-        onTap: onTap,
-        child: SizedBox(
-          height: 52,
-          child: Center(
-            child: Text('Clear recents', style: UnfurlType.titleMedium.copyWith(color: c.onDangerContainer)),
-          ),
-        ),
-      ),
     );
   }
 }

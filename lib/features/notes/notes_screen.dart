@@ -8,7 +8,7 @@ import '../../core/files.dart';
 import '../../core/layout.dart';
 import '../../core/library/library.dart';
 import '../../core/locator.dart';
-import '../../core/motion/motion.dart';
+import '../../core/motion/kit.dart';
 import '../../core/open.dart';
 import '../../core/platform/platform.dart';
 import '../../core/providers.dart';
@@ -25,7 +25,6 @@ import '../../design_system/buttons.dart';
 import '../../design_system/chips.dart';
 import '../../design_system/containers.dart';
 import '../../design_system/covers.dart' show kLiterata;
-import '../../design_system/search_field.dart';
 import '../../design_system/states.dart';
 import '../../formats/format_registry.dart';
 import '../cards/card_editor.dart';
@@ -44,210 +43,293 @@ class NotesScreen extends ConsumerStatefulWidget {
   ConsumerState<NotesScreen> createState() => _NotesScreenState();
 }
 
+/// One annotation with its search text lowercased once, not per keystroke.
+class _Mark {
+  _Mark(this.a, this.doc) : quote = a.quote.toLowerCase(), note = a.note?.toLowerCase();
+
+  final Annotation a;
+  final Document? doc;
+  final String quote;
+  final String? note;
+}
+
+/// Everything derived from the annotations alone: marks and chip counts.
+class _Index {
+  _Index(List<(Annotation, Document?)> all)
+    : marks = <_Mark>[for (final (Annotation a, Document? d) in all) _Mark(a, d)] {
+    for (final _Mark m in marks) {
+      if (m.a.kind == 'bookmark') {
+        bookmarks++;
+      } else if (m.a.kind == 'highlight' && m.a.color != null) {
+        colors[m.a.color!] = (colors[m.a.color!] ?? 0) + 1;
+      }
+    }
+  }
+
+  final List<_Mark> marks;
+  final Map<int, int> colors = <int, int>{};
+  int bookmarks = 0;
+}
+
+/// One line of the flat list: a document's header or one of its notes.
+sealed class _Line {
+  const _Line(this.key);
+
+  final Key key;
+}
+
+final class _Head extends _Line {
+  _Head(this.fingerprint, this.title, this.marks) : super(ValueKey<String>('head $fingerprint'));
+
+  final String fingerprint;
+  final String title;
+  final List<_Mark> marks;
+}
+
+final class _Entry extends _Line {
+  _Entry(this.mark, {required this.last, required this.first}) : super(ValueKey<int>(mark.a.id));
+
+  final _Mark mark;
+  final bool first;
+  final bool last;
+}
+
+/// The filtered, grouped list as one flat run of lines, so a book with
+/// hundreds of highlights stays lazy.
+class _View {
+  _View(this.lines, this.shown) {
+    for (int i = 0; i < lines.length; i++) {
+      indexOfKey[lines[i].key] = i;
+    }
+    for (final _Mark m in shown) {
+      byId[m.a.id] = m;
+    }
+  }
+
+  final List<_Line> lines;
+  final List<_Mark> shown;
+  final Map<Key, int> indexOfKey = <Key, int>{};
+  final Map<int, _Mark> byId = <int, _Mark>{};
+}
+
 class _NotesScreenState extends ConsumerState<NotesScreen> {
   /// A highlight colour index, -1 for bookmarks, null for all.
   int? _filter;
 
   /// Expanded windows: the note shown beside the list (board 6, V7).
   int? _selected;
-  bool _searching = false;
   String _query = '';
+  Timer? _debounce;
 
-  bool _keep(Annotation a) {
+  // Memo: the index on the data, the view on (index, filter, query).
+  List<(Annotation, Document?)>? _indexOf;
+  late _Index _index;
+  Object? _viewKey;
+  late _View _view;
+
+  /// Rows already built once: only a row new to the list eases in.
+  final Set<Key> _seen = <Key>{};
+
+  @override
+  void dispose() {
+    _debounce?.cancel();
+    super.dispose();
+  }
+
+  void _search(String q) {
+    _debounce?.cancel();
+    final String t = q.trim();
+    if (t.isEmpty) {
+      setState(() => _query = '');
+      return;
+    }
+    _debounce = Timer(Motion.searchDelay, () {
+      if (mounted) setState(() => _query = t);
+    });
+  }
+
+  bool _keep(_Mark m, String q) {
+    final Annotation a = m.a;
     if (_filter == -1 && a.kind != 'bookmark') return false;
     if (_filter != null && _filter! >= 0 && (a.kind != 'highlight' || a.color != _filter)) return false;
-    if (_query.isNotEmpty) {
-      final String q = _query.toLowerCase();
-      if (!a.quote.toLowerCase().contains(q) && !(a.note?.toLowerCase().contains(q) ?? false)) return false;
-    }
+    if (q.isNotEmpty && !m.quote.contains(q) && !(m.note?.contains(q) ?? false)) return false;
     return true;
+  }
+
+  _View _viewOf(List<(Annotation, Document?)> all) {
+    if (!identical(_indexOf, all)) {
+      _indexOf = all;
+      _index = _Index(all);
+      _viewKey = null;
+    }
+    final Object key = (_index, _filter, _query);
+    if (key == _viewKey) return _view;
+    _viewKey = key;
+    final String q = _query.toLowerCase();
+    final List<_Mark> shown = <_Mark>[
+      for (final _Mark m in _index.marks)
+        if (_keep(m, q)) m,
+    ];
+    // Groups by document, newest group first (the list is newest first).
+    final Map<String, List<_Mark>> groups = <String, List<_Mark>>{};
+    for (final _Mark m in shown) {
+      groups.putIfAbsent(m.a.fingerprint, () => <_Mark>[]).add(m);
+    }
+    final List<_Line> lines = <_Line>[];
+    for (final MapEntry<String, List<_Mark>> g in groups.entries) {
+      final Document? d = g.value.first.doc;
+      lines.add(_Head(g.key, d?.title ?? d?.name ?? 'Document', g.value));
+      for (int i = 0; i < g.value.length; i++) {
+        lines.add(_Entry(g.value[i], first: i == 0, last: i == g.value.length - 1));
+      }
+    }
+    _view = _View(lines, shown);
+    // A row that left the list eases in again if it comes back.
+    _seen.retainAll(_view.indexOfKey.keys);
+    return _view;
   }
 
   @override
   Widget build(BuildContext context) {
     final UnfurlColors c = context.colors;
-    final List<(Annotation, Document?)> all =
-        ref.watch(allAnnotationsProvider).value ?? const <(Annotation, Document?)>[];
-    final ReadingTheme theme = readingThemeOf(context, ref.watch(readingPrefsProvider), ref.watch(settingsProvider));
-    final List<(Annotation, Document?)> shown = all.where(((Annotation, Document?) x) => _keep(x.$1)).toList();
-    // Groups by document, newest group first (the list is newest first).
-    final Map<String, List<(Annotation, Document?)>> groups = <String, List<(Annotation, Document?)>>{};
-    for (final (Annotation, Document?) x in shown) {
-      groups.putIfAbsent(x.$1.fingerprint, () => <(Annotation, Document?)>[]).add(x);
-    }
-
-    if (all.isEmpty) {
+    final AsyncValue<List<(Annotation, Document?)>> data = ref.watch(allAnnotationsProvider);
+    // The reading theme needs the colour family and the chosen theme only.
+    ref.watch(
+      settingsProvider.select(
+        (AppSettings s) => s.dynamicColor && s.wallpaperSeed != null ? s.wallpaperSeed : s.familyId,
+      ),
+    );
+    final ReadingThemeId? picked = ref.watch(readingPrefsProvider.select((ReadingPrefs p) => p.theme));
+    final ReadingTheme theme = ReadingTheme.of(
+      ref.read(settingsProvider).family,
+      picked ??
+          (c.isDark ? (c.tone == Tone.amoled ? ReadingThemeId.amoled : ReadingThemeId.dark) : ReadingThemeId.light),
+    );
+    // Until the first value arrives there is nothing to say: just the header.
+    final List<(Annotation, Document?)>? all = data.value;
+    if (all == null) {
       return const Scaffold(
-        body: SafeArea(
-          bottom: false,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: <Widget>[
-              AppHeader(title: 'Notes'),
-              Expanded(
-                child: EmptyState(
-                  icon: AppIcons.notes,
-                  title: 'Nothing marked yet',
-                  message: 'Highlights, notes and bookmarks from every book collect here. Press and hold any passage while reading to start.',
-                ),
-              ),
-            ],
+        body: HeaderPage(
+          header: AppHeader(title: 'Notes'),
+          body: _noBody,
+        ),
+      );
+    }
+    if (all.isEmpty) {
+      return Scaffold(
+        body: HeaderPage(
+          header: const AppHeader(title: 'Notes'),
+          body: (BuildContext context, double inset) => HeaderPage.below(
+            const EmptyState(
+              icon: AppIcons.notes,
+              title: 'Nothing marked yet',
+              message: 'Highlights, notes and bookmarks from every book collect here. Press and hold any passage while reading to start.',
+            ),
           ),
         ),
       );
     }
 
+    final _View view = _viewOf(all);
+    final _Index index = _index;
     final bool split = SizeClass.of(context) == SizeClass.expanded;
-    final (Annotation, Document?)? picked = !split || shown.isEmpty
-        ? null
-        : shown.where(((Annotation, Document?) x) => x.$1.id == _selected).firstOrNull ?? shown.first;
-    final Widget list = SafeArea(
-      bottom: false,
-      child: CollapseOnScroll(
-        builder: (BuildContext context, bool collapsed) => Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: <Widget>[
-            AnimatedSwitcher(
-              duration: Motion.of(context, Motion.fast),
-              child: _searching
-                  ? Padding(
-                      key: const ValueKey<String>('search'),
-                      padding: const EdgeInsets.fromLTRB(Space.screen, Space.sm, 14, Space.sm),
-                      child: Row(
-                        children: <Widget>[
-                          Expanded(
-                            child: SearchField(
-                              hint: 'Search notes',
-                              autofocus: true,
-                              height: 48,
-                              onChanged: (String q) => setState(() => _query = q.trim()),
-                            ),
-                          ),
-                          AppIconButton(
-                            icon: AppIcons.close,
-                            filled: false,
-                            semanticLabel: 'Close search',
-                            onPressed: () => setState(() {
-                              _searching = false;
-                              _query = '';
-                            }),
-                          ),
-                        ],
-                      ),
-                    )
-                  : AppHeader(
-                      key: const ValueKey<String>('header'),
-                      title: 'Notes',
-                      collapsed: collapsed,
-                      actions: <Widget>[
-                        AppIconButton(
-                          icon: AppIcons.search,
-                          semanticLabel: 'Search notes',
-                          onPressed: () => setState(() => _searching = true),
-                        ),
-                      ],
-                    ),
-            ),
-            Expanded(
-              child: CustomScrollView(
-                slivers: <Widget>[
-                  SliverPadding(
-                    padding: const EdgeInsets.only(top: 6, bottom: Space.lg),
-                    sliver: SliverToBoxAdapter(
-                      child: ChipRow(
-                        children: <Widget>[
-                          PillChip(
-                            label: 'All',
-                            selected: _filter == null,
-                            count: all.length,
-                            onTap: () => setState(() => _filter = null),
-                          ),
-                          for (final HighlightColor h in HighlightColor.values)
-                            PillChip(
-                              label: h.label,
-                              selected: _filter == h.index,
-                              count: all
-                                  .where(
-                                    ((Annotation, Document?) x) => x.$1.kind == 'highlight' && x.$1.color == h.index,
-                                  )
-                                  .length,
-                              leading: Container(
-                                width: 14,
-                                height: 14,
-                                decoration: BoxDecoration(
-                                  color: theme.highlights[h.index],
-                                  shape: BoxShape.circle,
-                                  border: Border.all(color: c.outline),
-                                ),
-                              ),
-                              onTap: () => setState(() => _filter = _filter == h.index ? null : h.index),
-                            ),
-                          PillChip(
-                            label: 'Bookmarks',
-                            selected: _filter == -1,
-                            count: all.where(((Annotation, Document?) x) => x.$1.kind == 'bookmark').length,
-                            leading: const AppIcon(AppIcons.bookmark),
-                            onTap: () => setState(() => _filter = _filter == -1 ? null : -1),
-                          ),
-                        ],
-                      ),
-                    ),
+    final _Mark? current = !split || view.shown.isEmpty ? null : view.byId[_selected] ?? view.shown.first;
+    final Widget list = HeaderPage(
+      header: HeaderSearch(
+        hint: 'Search notes',
+        onChanged: _search,
+        builder: (BuildContext context, Widget? search) => AppHeader(title: 'Notes', actions: <Widget>[?search]),
+      ),
+      body: (BuildContext context, double inset) => CustomScrollView(
+        clipBehavior: Clip.none,
+        slivers: <Widget>[
+          SliverPadding(
+            key: const ValueKey<String>('chips'),
+            padding: EdgeInsets.only(top: inset + 2, bottom: Space.lg - 4),
+            sliver: SliverToBoxAdapter(
+              child: ChipRow(
+                children: <Widget>[
+                  PillChip(
+                    label: 'All',
+                    selected: _filter == null,
+                    count: all.length,
+                    onTap: () => setState(() => _filter = null),
                   ),
-                  if (groups.isEmpty)
-                    SliverToBoxAdapter(
-                      child: Padding(
-                        padding: const EdgeInsets.all(Space.screen),
-                        child: Text(
-                          _query.isEmpty ? 'Nothing in this colour yet.' : 'Nothing matches “$_query”.',
-                          style: UnfurlType.body.copyWith(color: c.onSurfaceVariant),
+                  for (final HighlightColor h in HighlightColor.values)
+                    PillChip(
+                      label: h.label,
+                      selected: _filter == h.index,
+                      count: index.colors[h.index] ?? 0,
+                      leading: Container(
+                        width: 14,
+                        height: 14,
+                        decoration: BoxDecoration(
+                          color: theme.highlights[h.index],
+                          shape: BoxShape.circle,
+                          border: Border.all(color: c.outline),
                         ),
                       ),
+                      onTap: () => setState(() => _filter = _filter == h.index ? null : h.index),
                     ),
-                  SliverPadding(
-                    padding: const EdgeInsets.fromLTRB(Space.screen, 0, Space.screen, Space.bottomSafe),
-                    sliver: SliverList.builder(
-                      itemCount: groups.length,
-                      itemBuilder: (BuildContext context, int i) {
-                        final List<(Annotation, Document?)> g = groups.values.elementAt(i);
-                        final Document? d = g.first.$2;
-                        final String title = d?.title ?? d?.name ?? 'Document';
-                        return Reveal(
-                          index: i < 6 ? i : 0,
-                          child: Padding(
-                            padding: const EdgeInsets.only(bottom: Space.lg),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.stretch,
-                              spacing: 10,
-                              children: <Widget>[
-                                SectionHeader(
-                                  label: '$title · ${g.length}',
-                                  action: _filter == null && _query.isEmpty ? 'Export' : null,
-                                  onAction: () => _export(title, g),
-                                ),
-                                ListContainer(
-                                  children: <Widget>[
-                                    for (final (Annotation a, Document? doc) in g)
-                                      _NoteRow(
-                                        annotation: a,
-                                        doc: doc,
-                                        theme: theme,
-                                        selected: picked?.$1.id == a.id,
-                                        onSelect: split ? () => setState(() => _selected = a.id) : null,
-                                      ),
-                                  ],
-                                ),
-                              ],
-                            ),
-                          ),
-                        );
-                      },
-                    ),
+                  PillChip(
+                    label: 'Bookmarks',
+                    selected: _filter == -1,
+                    count: index.bookmarks,
+                    leading: const AppIcon(AppIcons.bookmark),
+                    onTap: () => setState(() => _filter = _filter == -1 ? null : -1),
                   ),
                 ],
               ),
             ),
-          ],
-        ),
+          ),
+          if (view.lines.isEmpty)
+            SliverToBoxAdapter(
+              key: const ValueKey<String>('none'),
+              child: Padding(
+                padding: const EdgeInsets.all(Space.screen),
+                child: Text(
+                  _query.isEmpty ? 'Nothing in this colour yet.' : 'Nothing matches “$_query”.',
+                  style: UnfurlType.body.copyWith(color: c.onSurfaceVariant),
+                ),
+              ),
+            ),
+          SliverPadding(
+            key: const ValueKey<String>('lines'),
+            padding: const EdgeInsets.fromLTRB(Space.screen, 0, Space.screen, Space.bottomSafe),
+            sliver: SliverList.builder(
+              itemCount: view.lines.length,
+              findChildIndexCallback: (Key k) => view.indexOfKey[k],
+              itemBuilder: (BuildContext context, int i) {
+                final _Line line = view.lines[i];
+                final bool ease = i < 6 && _seen.add(line.key);
+                final bool filtered = _filter != null || _query.isNotEmpty;
+                final Widget child = switch (line) {
+                  _Head() => Padding(
+                    padding: EdgeInsets.only(top: i == 0 ? 0 : Space.lg, bottom: 10),
+                    child: SectionHeader(
+                      label: '${line.title} · ${line.marks.length}',
+                      action: filtered ? null : 'Export',
+                      onAction: () => _export(line.title, line.marks),
+                    ),
+                  ),
+                  _Entry() => ListGroupRow(
+                    first: line.first,
+                    last: line.last,
+                    child: _NoteRow(
+                      annotation: line.mark.a,
+                      doc: line.mark.doc,
+                      theme: theme,
+                      selected: current?.a.id == line.mark.a.id,
+                      onSelect: split ? () => setState(() => _selected = line.mark.a.id) : null,
+                    ),
+                  ),
+                };
+                // Always the same wrapper, so a row that stays keeps its element.
+                return StaggeredEntrance(key: line.key, index: i, animate: ease, child: child);
+              },
+            ),
+          ),
+        ],
       ),
     );
     if (!split) return Scaffold(body: list);
@@ -262,9 +344,14 @@ class _NotesScreenState extends ConsumerState<NotesScreen> {
             child: AnimatedSwitcher(
               duration: Motion.of(context, Motion.fast),
               switchInCurve: Motion.decelerate,
-              child: picked == null
+              child: current == null
                   ? const SizedBox.expand()
-                  : _NoteDetail(key: ValueKey<int>(picked.$1.id), annotation: picked.$1, doc: picked.$2, theme: theme),
+                  : _NoteDetail(
+                      key: ValueKey<int>(current.a.id),
+                      annotation: current.a,
+                      doc: current.doc,
+                      theme: theme,
+                    ),
             ),
           ),
         ],
@@ -272,9 +359,11 @@ class _NotesScreenState extends ConsumerState<NotesScreen> {
     );
   }
 
-  Future<void> _export(String title, List<(Annotation, Document?)> g) async {
+  static Widget _noBody(BuildContext context, double inset) => const SizedBox.shrink();
+
+  Future<void> _export(String title, List<_Mark> g) async {
     final StringBuffer md = StringBuffer('# $title\n');
-    final List<Annotation> items = g.map(((Annotation, Document?) x) => x.$1).toList()
+    final List<Annotation> items = g.map((_Mark x) => x.a).toList()
       ..sort((Annotation a, Annotation b) => a.progress.compareTo(b.progress));
     for (final Annotation a in items) {
       if (a.kind == 'bookmark') {
@@ -372,9 +461,9 @@ class _NoteRow extends ConsumerWidget {
     final UnfurlColors c = context.colors;
     final Annotation a = annotation;
     final bool bookmark = a.kind == 'bookmark';
-    return Material(
-      color: selected ? c.surfaceContainerHigh : Colors.transparent,
-      child: InkWell(
+    return ColoredBox(
+      color: selected ? c.surfaceContainerHigh : c.surfaceContainerHigh.withAlpha(0),
+      child: PressableRow(
         onTap: onSelect ?? (doc == null ? null : () => _open(context)),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: Space.lg, vertical: 14),

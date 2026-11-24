@@ -16,7 +16,7 @@ import '../../core/library/enrich.dart';
 import '../../core/reflow_cache.dart';
 import '../../core/library/library.dart';
 import '../../core/locator.dart';
-import '../../core/motion/motion.dart';
+import '../../core/motion/kit.dart';
 import '../../core/platform/platform.dart';
 import '../../core/providers.dart';
 import '../../core/theme/app_theme.dart';
@@ -30,6 +30,7 @@ import '../../design_system/app_menu.dart';
 import '../../design_system/app_snackbar.dart';
 import '../../design_system/buttons.dart';
 import '../../design_system/chips.dart';
+import '../../design_system/containers.dart';
 import '../../design_system/covers.dart';
 import '../../design_system/search_field.dart';
 import '../../design_system/selection_handle.dart';
@@ -109,7 +110,17 @@ class _PdfScreenState extends ConsumerState<PdfScreen> with WidgetsBindingObserv
   final GlobalKey<PdfPagesState> _pagesKey = GlobalKey<PdfPagesState>();
   final GlobalKey _bodyKey = GlobalKey();
   bool _chrome = false;
-  int _page = 1;
+
+  /// The page on screen. A notifier: only the chip, scrubber, subtitle and bookmark button listen, so a scroll
+  /// across pages does not rebuild the screen.
+  final ValueNotifier<int> _pageN = ValueNotifier<int>(1);
+  int get _page => _pageN.value;
+  set _page(int v) => _pageN.value = v;
+
+  /// Search results changed (hits, index progress, current hit): only the search bar and results panel listen.
+  final ValueNotifier<int> _searchTick = ValueNotifier<int>(0);
+  Timer? _searchTimer;
+  Stopwatch _hitsClock = Stopwatch();
 
   // V3-COMFORT: auto-scroll (continuous) or auto page turn (paged), and the
   // sleep timer that stops it.
@@ -208,6 +219,9 @@ class _PdfScreenState extends ConsumerState<PdfScreen> with WidgetsBindingObserv
     _renderer?.dispose();
     _layouts.dispose();
     _reflowProgress.dispose();
+    _pageN.dispose();
+    _searchTick.dispose();
+    _searchTimer?.cancel();
     unawaited(_pdf?.dispose());
     if (_fd != null) unawaited(Platform.closeFd(_fd!));
     unawaited(Platform.keepScreenOn(on: false));
@@ -586,14 +600,15 @@ class _PdfScreenState extends ConsumerState<PdfScreen> with WidgetsBindingObserv
     _page = page;
     _pageOffset = offset;
     if (changed) {
-      setState(() {
-        // A turned page takes its selection with it (continuous keeps it:
-        // the page is still there to scroll back to).
-        if (ref.read(readingPrefsProvider).pdfLayout == PdfLayout.paged) {
+      // A turned page takes its selection with it (continuous keeps it:
+      // the page is still there to scroll back to).
+      if (_selection != null && ref.read(readingPrefsProvider).pdfLayout == PdfLayout.paged) {
+        setState(() {
           _selection = null;
           _anchor = null;
-        }
-      });
+        });
+      }
+      if (ref.read(readingPrefsProvider).pdfCrop) _ensureCrops();
       unawaited(_text(page));
     }
     _saveTimer?.cancel();
@@ -676,7 +691,7 @@ class _PdfScreenState extends ConsumerState<PdfScreen> with WidgetsBindingObserv
     final int? i = t.indexAt(fraction);
     if (i == null) return;
     final (int a, int b) = t.wordAt(i);
-    unawaited(HapticFeedback.selectionClick());
+    Haptics.longPress();
     setState(() {
       _selection = (page, a, b);
       _anchor = (a, b);
@@ -892,16 +907,26 @@ class _PdfScreenState extends ConsumerState<PdfScreen> with WidgetsBindingObserv
 
   // ------------------------------------------------------------ search
 
+  /// A keystroke: wait [Motion.searchDelay] for the next one before scanning.
+  void _searchSoon(String q) {
+    _searchTimer?.cancel();
+    _searchTimer = Timer(Motion.searchDelay, () => unawaited(_search(q)));
+  }
+
   Future<void> _search(String q) async {
     final String needle = q.trim().toLowerCase();
+    // One rebuild clears the old hits drawn on the pages.
     setState(() {
       _query = needle;
       _hits = const <(int, int)>[];
       _hit = 0;
       _indexed = 0;
     });
+    _searchTick.value++;
     if (needle.length < 2) return;
     final List<(int, int)> hits = <(int, int)>[];
+    _hitsClock = Stopwatch()..start();
+    bool went = false;
     for (int p = 1; p <= _pages; p++) {
       if (_query != needle || !mounted) return;
       final String hay = (await _text(p)).text.toLowerCase();
@@ -912,12 +937,19 @@ class _PdfScreenState extends ConsumerState<PdfScreen> with WidgetsBindingObserv
         hits.add((p, at));
         from = at + needle.length;
       }
-      // The count updates as the index builds.
-      setState(() {
+      // The count updates as the index builds, about five times a second, and
+      // only the search bar and results panel rebuild.
+      _indexed = p;
+      if (_hitsClock.elapsedMilliseconds >= 200 || p == _pages) {
+        _hitsClock.reset();
         _hits = List<(int, int)>.of(hits);
-        _indexed = p;
-      });
-      if (hits.isNotEmpty && hits.length == hits.where(((int, int) h) => h.$1 == p).length && p == hits.first.$1) {
+        _searchTick.value++;
+        // The pages draw the final set of hits once, not once per page indexed.
+        if (p == _pages && mounted) setState(() {});
+      }
+      if (!went && hits.isNotEmpty) {
+        went = true;
+        _hits = List<(int, int)>.of(hits);
         _goToHit(0);
       }
     }
@@ -926,6 +958,7 @@ class _PdfScreenState extends ConsumerState<PdfScreen> with WidgetsBindingObserv
   void _goToHit(int i) {
     if (_hits.isEmpty) return;
     setState(() => _hit = i % _hits.length);
+    _searchTick.value++;
     final (int p, int idx) = _hits[_hit];
     final PageText? t = _texts[p];
     _goToPage(p, fraction: t != null && idx < t.rects.length ? math.max(0, t.rects[idx].top - 0.1) : 0);
@@ -1118,7 +1151,7 @@ class _PdfScreenState extends ConsumerState<PdfScreen> with WidgetsBindingObserv
         kReaderModeEntry,
         AppMenuEntry<String>(value: 'info', label: 'Book info', icon: AppIcons.info),
         kInsightsEntry,
-        AppMenuEntry<String>(value: 'auto', label: 'Auto-scroll or page turn', icon: AppIcons.schedule),
+        AppMenuEntry<String>(value: 'auto', label: 'Auto-scroll or page turn', icon: AppIcons.autoplay),
         AppMenuEntry<String>(value: 'share', label: 'Share file', icon: AppIcons.share),
         AppMenuEntry<String>.divider(),
         AppMenuEntry<String>(value: 'other', label: 'Open in another app', icon: AppIcons.openInNew),
@@ -1148,10 +1181,20 @@ class _PdfScreenState extends ConsumerState<PdfScreen> with WidgetsBindingObserv
     final UnfurlColors c = context.colors;
     final PdfDocument? pdf = _pdf;
     if (pdf == null) return OpeningCard(ref: doc.ref);
-    final ReadingPrefs prefs = ref.watch(readingPrefsProvider);
-    ref.watch(settingsProvider);
-    if (prefs.pdfCrop) _ensureCrops();
-    final Widget page = _pageView(c, prefs);
+    // Only what the page view reads: layout, crop, and what decides the recolour look.
+    final (PdfLayout, bool, bool, ReadingThemeId) prefs = ref.watch(
+      readingPrefsProvider.select(
+        (ReadingPrefs p) => (
+          p.pdfLayout,
+          p.pdfCrop,
+          p.pdfRecolour,
+          p.themeFor(darkChrome: c.isDark, amoledChrome: c.tone == Tone.amoled),
+        ),
+      ),
+    );
+    ref.watch(settingsProvider.select((AppSettings s) => s.family));
+    if (prefs.$2) _ensureCrops();
+    final Widget page = _pageView(c, prefs.$1, prefs.$2);
     final Widget? reader = !_reader && _reflow == null
         ? null
         : AnimatedSwitcher(
@@ -1237,8 +1280,7 @@ class _PdfScreenState extends ConsumerState<PdfScreen> with WidgetsBindingObserv
     );
   }
 
-  Widget _pageView(UnfurlColors c, ReadingPrefs prefs) {
-    final Annotation? bookmark = _bookmarkHere;
+  Widget _pageView(UnfurlColors c, PdfLayout layout, bool crop) {
     final bool selecting = _selection != null;
     final String title = doc.record.title ?? _stem(doc.ref.name);
     return PopScope(
@@ -1262,10 +1304,11 @@ class _PdfScreenState extends ConsumerState<PdfScreen> with WidgetsBindingObserv
           key: _bodyKey,
           children: <Widget>[
             Positioned.fill(
-              child: TrackedPages(
-                fingerprint: doc.fingerprint,
-                format: doc.format.id,
-                page: _page - 1,
+              child: ValueListenableBuilder<int>(
+                valueListenable: _pageN,
+                // The tracker only needs the page number; the child (the page surface) is built once.
+                builder: (BuildContext context, int page, Widget? child) =>
+                    TrackedPages(fingerprint: doc.fingerprint, format: doc.format.id, page: page - 1, child: child!),
                 child: Listener(
                   onPointerDown: (_) {
                     if (_auto.running) _auto.pause(byTouch: true);
@@ -1276,16 +1319,16 @@ class _PdfScreenState extends ConsumerState<PdfScreen> with WidgetsBindingObserv
                     pdf: _pdf!,
                     renderer: _renderer!,
                     initialPage: _page,
-                    paged: prefs.pdfLayout == PdfLayout.paged,
+                    paged: layout == PdfLayout.paged,
                     topInset: MediaQuery.paddingOf(context).top + (_chrome ? 64 : 0) + Space.md,
                     lookFor: (int p) => _look(page: p),
                     paintFor: _paintFor,
                     pageAspect: (int p) {
                       final PdfPage pg = _pdf!.pages[p - 1];
-                      final Rect crop = (prefs.pdfCrop ? _crops[p] : null) ?? const Rect.fromLTRB(0, 0, 1, 1);
-                      return (pg.width * crop.width) / (pg.height * crop.height);
+                      final Rect box = (crop ? _crops[p] : null) ?? const Rect.fromLTRB(0, 0, 1, 1);
+                      return (pg.width * box.width) / (pg.height * box.height);
                     },
-                    cropFor: (int p) => prefs.pdfCrop ? _crops[p] : null,
+                    cropFor: (int p) => crop ? _crops[p] : null,
                     needText: (int p) => unawaited(_text(p)),
                     onPage: _onPageChanged,
                     onTap: (int page, Offset fraction, double x) async {
@@ -1324,10 +1367,10 @@ class _PdfScreenState extends ConsumerState<PdfScreen> with WidgetsBindingObserv
                           return _tapHighlight(page, fraction);
                         }
                       }
-                      if (prefs.pdfLayout == PdfLayout.paged && x < 0.25) {
+                      if (layout == PdfLayout.paged && x < 0.25) {
                         return _goToPage(_page - _step, animate: true);
                       }
-                      if (prefs.pdfLayout == PdfLayout.paged && x > 0.75) {
+                      if (layout == PdfLayout.paged && x > 0.75) {
                         return _goToPage(_page + _step, animate: true);
                       }
                       _toggleChrome();
@@ -1346,7 +1389,11 @@ class _PdfScreenState extends ConsumerState<PdfScreen> with WidgetsBindingObserv
                 left: 0,
                 right: 0,
                 child: Center(
-                  child: TimedChip(key: ValueKey<int>(_page), text: '$_page / $_pages', duration: Motion.chipPage),
+                  child: ValueListenableBuilder<int>(
+                    valueListenable: _pageN,
+                    builder: (BuildContext context, int page, Widget? _) =>
+                        TimedChip(key: ValueKey<int>(page), text: '$page / $_pages', duration: Motion.chipPage),
+                  ),
                 ),
               ),
             Positioned(
@@ -1357,27 +1404,30 @@ class _PdfScreenState extends ConsumerState<PdfScreen> with WidgetsBindingObserv
                   ? _searchBar(c)
                   : ChromeSlide(
                       visible: _chrome,
-                      child: ReaderTopBar(
-                        title: title,
-                        subtitle: 'p. $_page of $_pages',
-                        onBack: () => Navigator.of(context).maybePop(),
-                        toggle: ModeToggle(reader: false, onChanged: (bool r) => r ? _toReader() : null),
-                        actions: <Widget>[
-                          AppIconButton(
-                            icon: AppIcons.search,
-                            filled: false,
-                            semanticLabel: 'Search in PDF',
-                            onPressed: () => setState(() => _searching = true),
-                          ),
-                          Builder(
-                            builder: (BuildContext b) => AppIconButton(
-                              icon: AppIcons.moreVert,
+                      child: ValueListenableBuilder<int>(
+                        valueListenable: _pageN,
+                        builder: (BuildContext context, int page, Widget? _) => ReaderTopBar(
+                          title: title,
+                          subtitle: 'p. $page of $_pages',
+                          onBack: () => Navigator.of(context).maybePop(),
+                          toggle: ModeToggle(reader: false, onChanged: (bool r) => r ? _toReader() : null),
+                          actions: <Widget>[
+                            AppIconButton(
+                              icon: AppIcons.search,
                               filled: false,
-                              semanticLabel: 'More options',
-                              onPressed: () => _overflow(b),
+                              semanticLabel: 'Search in PDF',
+                              onPressed: () => setState(() => _searching = true),
                             ),
-                          ),
-                        ],
+                            Builder(
+                              builder: (BuildContext b) => AppIconButton(
+                                icon: AppIcons.moreVert,
+                                filled: false,
+                                semanticLabel: 'More options',
+                                onPressed: () => _overflow(b),
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
             ),
@@ -1392,25 +1442,28 @@ class _PdfScreenState extends ConsumerState<PdfScreen> with WidgetsBindingObserv
                       fromTop: false,
                       child: ReaderBottomBar(
                         children: <Widget>[
-                          PageScrubber(
-                            value: _pages <= 1 ? 0 : (_page - 1) / (_pages - 1),
-                            tick: _lastPage == null ? null : (_lastPage! - 1) / math.max(1, _pages - 1),
-                            startLabel: (double v) => '${(v * (_pages - 1)).round() + 1}',
-                            endLabel: '$_pages',
-                            label: (double v) {
-                              final int p = (v * (_pages - 1)).round() + 1;
-                              final String? section = _sectionTitle(p);
-                              return section == null ? 'p. $p' : 'p. $p · $section';
-                            },
-                            preview: (double v) {
-                              final int p = (v * (_pages - 1)).round() + 1;
-                              return _Thumb(renderer: _renderer!, page: p, look: _look(), width: 96);
-                            },
-                            onDragging: (bool d) {
-                              if (d) _lastPage = _page;
-                              setState(() {});
-                            },
-                            onChanged: (double v) => _jumpWithBack((v * (_pages - 1)).round() + 1),
+                          ValueListenableBuilder<int>(
+                            valueListenable: _pageN,
+                            builder: (BuildContext context, int page, Widget? _) => PageScrubber(
+                              value: _pages <= 1 ? 0 : (page - 1) / (_pages - 1),
+                              tick: _lastPage == null ? null : (_lastPage! - 1) / math.max(1, _pages - 1),
+                              startLabel: (double v) => '${(v * (_pages - 1)).round() + 1}',
+                              endLabel: '$_pages',
+                              label: (double v) {
+                                final int p = (v * (_pages - 1)).round() + 1;
+                                final String? section = _sectionTitle(p);
+                                return section == null ? 'p. $p' : 'p. $p · $section';
+                              },
+                              preview: (double v) {
+                                final int p = (v * (_pages - 1)).round() + 1;
+                                return _Thumb(renderer: _renderer!, page: p, look: _look(), width: 96);
+                              },
+                              onDragging: (bool d) {
+                                if (d) _lastPage = _page;
+                                setState(() {});
+                              },
+                              onChanged: (double v) => _jumpWithBack((v * (_pages - 1)).round() + 1),
+                            ),
                           ),
                           Row(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -1430,23 +1483,29 @@ class _PdfScreenState extends ConsumerState<PdfScreen> with WidgetsBindingObserv
                               AppIconButton(
                                 icon: AppIcons.crop,
                                 filled: false,
-                                active: prefs.pdfCrop,
-                                semanticLabel: prefs.pdfCrop ? 'Show margins' : 'Crop margins',
+                                active: crop,
+                                semanticLabel: crop ? 'Show margins' : 'Crop margins',
                                 onPressed: _toggleCrop,
                               ),
                               AppIconButton(
-                                icon: AppIcons.tune,
+                                icon: AppIcons.displaySettings,
                                 filled: false,
                                 semanticLabel: 'Page settings',
                                 onPressed: () => showReadingSettings(context, pdf: true),
                               ),
-                              AppIconButton(
-                                icon: bookmark != null ? AppIcons.bookmark : AppIcons.bookmarkAdd,
-                                fill: bookmark != null,
-                                tint: bookmark != null ? c.primary : null,
-                                filled: false,
-                                semanticLabel: bookmark != null ? 'Remove bookmark' : 'Bookmark this page',
-                                onPressed: _toggleBookmark,
+                              ValueListenableBuilder<int>(
+                                valueListenable: _pageN,
+                                builder: (BuildContext context, int page, Widget? _) {
+                                  final Annotation? bookmark = _bookmarkHere;
+                                  return AppIconButton(
+                                    icon: bookmark != null ? AppIcons.bookmark : AppIcons.bookmarkAdd,
+                                    fill: bookmark != null,
+                                    tint: bookmark != null ? c.primary : null,
+                                    filled: false,
+                                    semanticLabel: bookmark != null ? 'Remove bookmark' : 'Bookmark this page',
+                                    onPressed: _toggleBookmark,
+                                  );
+                                },
                               ),
                             ],
                           ),
@@ -1575,7 +1634,9 @@ class _PdfScreenState extends ConsumerState<PdfScreen> with WidgetsBindingObserv
     );
   }
 
-  Widget _searchBar(UnfurlColors c) => Container(
+  Widget _searchBar(UnfurlColors c) => ListenableBuilder(listenable: _searchTick, builder: (_, _) => _searchBarBody(c));
+
+  Widget _searchBarBody(UnfurlColors c) => Container(
     decoration: BoxDecoration(
       color: c.surface,
       border: Border(bottom: BorderSide(color: c.outline)),
@@ -1589,7 +1650,7 @@ class _PdfScreenState extends ConsumerState<PdfScreen> with WidgetsBindingObserv
             hint: 'Search in PDF',
             autofocus: true,
             height: 48,
-            onChanged: (String q) => unawaited(_search(q)),
+            onChanged: _searchSoon,
             trailing: _query.length < 2
                 ? null
                 : Text(
@@ -1616,7 +1677,9 @@ class _PdfScreenState extends ConsumerState<PdfScreen> with WidgetsBindingObserv
     ),
   );
 
-  Widget _results(UnfurlColors c) {
+  Widget _results(UnfurlColors c) => ListenableBuilder(listenable: _searchTick, builder: (_, _) => _resultsBody(c));
+
+  Widget _resultsBody(UnfurlColors c) {
     if (_hits.isEmpty) return const SizedBox.shrink();
     final int pages = _hits.map(((int, int) h) => h.$1).toSet().length;
     return Container(
@@ -1629,92 +1692,89 @@ class _PdfScreenState extends ConsumerState<PdfScreen> with WidgetsBindingObserv
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
-          InkWell(
-            onTap: () => setState(() => _resultsOpen = !_resultsOpen),
+          PressableRow(
+            onTap: () {
+              _resultsOpen = !_resultsOpen;
+              _searchTick.value++;
+            },
             child: Padding(
               padding: const EdgeInsets.fromLTRB(Space.screen, 0, Space.screen, Space.sm),
               child: Row(
                 children: <Widget>[
                   Expanded(
-                    child: Text(
-                      '${_hits.length} ${_hits.length == 1 ? 'RESULT' : 'RESULTS'} · $pages ${pages == 1 ? 'PAGE' : 'PAGES'}',
-                      style: UnfurlType.sectionHeader.copyWith(color: c.onSurfaceVariant),
+                    child: SectionHeader(
+                      label:
+                          '${_hits.length} ${_hits.length == 1 ? 'result' : 'results'} · $pages ${pages == 1 ? 'page' : 'pages'}',
                     ),
                   ),
-                  AppIcon(
-                    _resultsOpen ? AppIcons.expandMore : AppIcons.expandLess,
-                    size: 18,
-                    color: c.onSurfaceVariant,
-                  ),
+                  ChevronTurn(expanded: _resultsOpen, openDegrees: 180, size: 18, color: c.onSurfaceVariant),
                 ],
               ),
             ),
           ),
-          AnimatedSize(
-            duration: Motion.of(context, Motion.fast),
-            child: !_resultsOpen
-                ? const SizedBox(width: double.infinity)
-                : ConstrainedBox(
-                    constraints: const BoxConstraints(maxHeight: 220),
-                    child: ListView.builder(
-                      shrinkWrap: true,
-                      padding: EdgeInsets.zero,
-                      itemCount: _hits.length,
-                      itemBuilder: (BuildContext context, int i) {
-                        final (int p, int at) = _hits[i];
-                        final String t = (_texts[p]?.text ?? '').replaceAll(RegExp(r'\s'), ' ');
-                        final int a = math.max(0, at - 24), b = math.min(t.length, at + _query.length + 36);
-                        final bool cur = i == _hit;
-                        return Material(
-                          color: cur ? c.primaryContainer : Colors.transparent,
-                          child: InkWell(
-                            onTap: () => _goToHit(i),
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: Space.screen, vertical: 10),
-                              child: Row(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                spacing: Space.md,
-                                children: <Widget>[
-                                  SizedBox(
-                                    width: 40,
-                                    child: Text(
-                                      'p. $p',
-                                      style: UnfurlType.monoLabel.copyWith(
-                                        color: cur ? c.onPrimaryContainer : c.onSurfaceVariant,
-                                      ),
-                                    ),
-                                  ),
-                                  Expanded(
-                                    child: Text.rich(
-                                      TextSpan(
-                                        children: <TextSpan>[
-                                          TextSpan(text: '…${t.substring(a, at)}'),
-                                          TextSpan(
-                                            text: t.substring(at, math.min(t.length, at + _query.length)),
-                                            style: const TextStyle(
-                                              fontWeight: FontWeight.w700,
-                                              fontVariations: <FontVariation>[FontVariation('wght', 700)],
-                                            ),
-                                          ),
-                                          TextSpan(text: '${t.substring(math.min(t.length, at + _query.length), b)}…'),
-                                        ],
-                                      ),
-                                      maxLines: 2,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: UnfurlType.note.copyWith(
-                                        height: 1.4,
-                                        color: cur ? c.onPrimaryContainer : c.onSurface,
-                                      ),
-                                    ),
-                                  ),
-                                ],
+          ExpandCollapse(
+            expanded: _resultsOpen,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: 220),
+              child: ListView.builder(
+                shrinkWrap: true,
+                padding: EdgeInsets.zero,
+                itemCount: _hits.length,
+                itemBuilder: (BuildContext context, int i) {
+                  final (int p, int at) = _hits[i];
+                  final String t = (_texts[p]?.text ?? '').replaceAll(RegExp(r'\s'), ' ');
+                  final int a = math.max(0, at - 24), b = math.min(t.length, at + _query.length + 36);
+                  final bool cur = i == _hit;
+                  return ColoredBox(
+                    color: c.primaryContainer.withValues(alpha: cur ? 1 : 0),
+                    child: PressableRow(
+                      onTap: () => _goToHit(i),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: Space.screen, vertical: 10),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          spacing: Space.md,
+                          children: <Widget>[
+                            SizedBox(
+                              width: 40,
+                              child: Text(
+                                'p. $p',
+                                style: UnfurlType.monoLabel.copyWith(
+                                  color: cur ? c.onPrimaryContainer : c.onSurfaceVariant,
+                                ),
                               ),
                             ),
-                          ),
-                        );
-                      },
+                            Expanded(
+                              child: Text.rich(
+                                TextSpan(
+                                  children: <TextSpan>[
+                                    TextSpan(text: '…${t.substring(a, at)}'),
+                                    TextSpan(
+                                      text: t.substring(at, math.min(t.length, at + _query.length)),
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.w700,
+                                        fontVariations: <FontVariation>[FontVariation('wght', 700)],
+                                      ),
+                                    ),
+                                    TextSpan(text: '${t.substring(math.min(t.length, at + _query.length), b)}…'),
+                                  ],
+                                ),
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: UnfurlType.note.copyWith(
+                                  height: 1.4,
+                                  color: cur ? c.onPrimaryContainer : c.onSurface,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
                     ),
-                  ),
+                  );
+                },
+              ),
+            ),
           ),
         ],
       ),
@@ -1900,40 +1960,43 @@ class _ThumbnailsState extends State<_Thumbnails> {
                   return Semantics(
                     button: true,
                     label: 'Page $p${cur ? ', current' : ''}',
-                    child: GestureDetector(
-                      onTap: () => Navigator.of(context).pop(p),
-                      child: Column(
-                        spacing: 6,
-                        children: <Widget>[
-                          Expanded(
-                            child: AspectRatio(
-                              aspectRatio: widget.aspect(p),
-                              child: Container(
-                                decoration: BoxDecoration(
-                                  border: Border.all(color: cur ? c.primary : c.outline, width: cur ? 3 : 1),
-                                ),
-                                child: Stack(
-                                  fit: StackFit.expand,
-                                  children: <Widget>[
-                                    _Thumb(renderer: widget.renderer, page: p, look: widget.look, width: 110),
-                                    if (widget.bookmarked.contains(p))
-                                      Positioned(
-                                        top: -2,
-                                        right: 4,
-                                        child: AppIcon(AppIcons.bookmark, fill: true, size: 20, color: c.primary),
-                                      ),
-                                  ],
+                    child: Pressable(
+                      kind: PressKind.card,
+                      child: GestureDetector(
+                        onTap: () => Navigator.of(context).pop(p),
+                        child: Column(
+                          spacing: 6,
+                          children: <Widget>[
+                            Expanded(
+                              child: AspectRatio(
+                                aspectRatio: widget.aspect(p),
+                                child: Container(
+                                  decoration: BoxDecoration(
+                                    border: Border.all(color: cur ? c.primary : c.outline, width: cur ? 3 : 1),
+                                  ),
+                                  child: Stack(
+                                    fit: StackFit.expand,
+                                    children: <Widget>[
+                                      _Thumb(renderer: widget.renderer, page: p, look: widget.look, width: 110),
+                                      if (widget.bookmarked.contains(p))
+                                        Positioned(
+                                          top: -2,
+                                          right: 4,
+                                          child: AppIcon(AppIcons.bookmark, fill: true, size: 20, color: c.primary),
+                                        ),
+                                    ],
+                                  ),
                                 ),
                               ),
                             ),
-                          ),
-                          Text(
-                            '$p',
-                            style: UnfurlType.monoLabel
-                                .copyWith(color: cur ? c.accent : c.onSurfaceVariant)
-                                .copyWith(fontWeight: cur ? FontWeight.w700 : FontWeight.w500),
-                          ),
-                        ],
+                            Text(
+                              '$p',
+                              style: UnfurlType.monoLabel
+                                  .copyWith(color: cur ? c.accent : c.onSurfaceVariant)
+                                  .copyWith(fontWeight: cur ? FontWeight.w700 : FontWeight.w500),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                   );

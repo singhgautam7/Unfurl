@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:collection';
 import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui' as ui;
@@ -23,6 +24,24 @@ class TableCell {
   int get end => start + length;
 }
 
+/// A fragment's laid-out text: the painter, the map from block offsets to its
+/// own (indent and soft hyphens shift them), the bullet and the hyphens.
+class FragmentText {
+  FragmentText({required this.painter, required this.map, this.bullet, this.hyphens = const <Offset>[], this.hyphen});
+
+  final TextPainter painter;
+  final List<int> map;
+  final TextPainter? bullet;
+  final List<Offset> hyphens;
+  final TextPainter? hyphen;
+
+  void dispose() {
+    painter.dispose();
+    bullet?.dispose();
+    hyphen?.dispose();
+  }
+}
+
 /// A laid-out piece of one block on one page: a run of its text (between
 /// [start] and [end]), an image, a rule, or some rows of a table. Text
 /// fragments keep their [TextPainter] and a map from block offsets to the
@@ -36,15 +55,12 @@ class Fragment {
     required this.start,
     required this.end,
     required this.rect,
-    this.painter,
-    this.map,
+    this._text,
+    this.lay,
     this.rowStart = 0,
     this.rowEnd = 0,
     this.columnWidths,
     this.rowHeights,
-    this.bulletPainter,
-    this.hyphens = const <Offset>[],
-    this.hyphenPainter,
     this.cells,
     this.scroll,
   });
@@ -59,10 +75,28 @@ class Fragment {
 
   /// Where it sits on the page (content coordinates).
   final Rect rect;
-  final TextPainter? painter;
+
+  /// Lays the text out again (see [release]); null when there is no text.
+  /// Laying out the same text at the same width gives the same lines.
+  final FragmentText Function(Fragment f)? lay;
+
+  /// Null while released. A book keeps where its pages break, not every
+  /// painter: 200,000 words of them took 450 MB.
+  FragmentText? _text;
+
+  FragmentText? get _laid => _text ??= lay?.call(this);
+
+  TextPainter? get painter => _laid?.painter;
 
   /// Block offset minus [start], to painter offset.
-  final List<int>? map;
+  List<int>? get map => _laid?.map;
+
+  /// Drops the laid-out text until it is asked for again.
+  void release() {
+    if (lay == null) return;
+    _text?.dispose();
+    _text = null;
+  }
 
   /// Table rows on this fragment.
   final int rowStart;
@@ -71,13 +105,13 @@ class Fragment {
   final List<double>? rowHeights;
 
   /// A list item's bullet or number.
-  final TextPainter? bulletPainter;
+  TextPainter? get bulletPainter => _laid?.bullet;
 
   /// Where a line ends at a soft hyphen, the hyphen to draw (the painter
   /// breaks there but draws nothing), in fragment coordinates at the
   /// baseline. It hangs into the margin, as in hand-set books.
-  final List<Offset> hyphens;
-  final TextPainter? hyphenPainter;
+  List<Offset> get hyphens => _laid?.hyphens ?? const <Offset>[];
+  TextPainter? get hyphenPainter => _laid?.hyphen;
 
   /// A table's cells on this fragment: real text, so selection, highlights
   /// and read aloud reach it like any paragraph.
@@ -102,7 +136,7 @@ class Fragment {
     }
   }
 
-  bool get isText => painter != null || cells != null;
+  bool get isText => lay != null || cells != null;
 
   int _toPainter(int offset) {
     final List<int> m = map!;
@@ -198,9 +232,8 @@ class Fragment {
   }
 
   void dispose() {
-    painter?.dispose();
-    bulletPainter?.dispose();
-    hyphenPainter?.dispose();
+    _text?.dispose();
+    _text = null;
     for (final TableCell c in cells ?? const <TableCell>[]) {
       c.painter.dispose();
     }
@@ -247,6 +280,12 @@ class ReaderPage {
       out.addAll(f.boxes((a - base).clamp(0, f.block.text.length), (b - base).clamp(0, f.block.text.length)));
     }
     return out;
+  }
+
+  void release() {
+    for (final Fragment f in fragments) {
+      f.release();
+    }
   }
 
   void dispose() {
@@ -433,10 +472,21 @@ class Layout {
   /// scroll layout): book paragraphs indent after a paragraph.
   final Block? before;
 
-  /// Pages per section; null until laid out.
+  /// Pages per section; null until its layout has begun. A section being laid
+  /// out has the pages finished so far (see [_paginate]); [isDone] says which.
   late final List<List<ReaderPage>?> sections = List<List<ReaderPage>?>.filled(doc.sections.length, null);
 
-  bool get complete => !sections.contains(null);
+  late final List<bool> _done = List<bool>.filled(doc.sections.length, false);
+
+  /// Sections part way through, each a paused [_paginate].
+  final Map<int, Iterator<void>> _running = <int, Iterator<void>>{};
+
+  /// Blocks laid out so far, over all sections (progress, tests).
+  int blocksLaid = 0;
+
+  bool get complete => !_done.contains(false);
+
+  bool isDone(int section) => _done[section];
 
   int get knownPages => sections.fold<int>(0, (int n, List<ReaderPage>? s) => n + (s?.length ?? 0));
 
@@ -466,9 +516,22 @@ class Layout {
     return sections[s]?.elementAtOrNull(p);
   }
 
-  /// The global page holding a position, laying its section out first.
+  /// Whether the pages laid out so far reach past (or hold) a position, so
+  /// [pageOf] needs no more layout. Pages end only where pagination has
+  /// passed, and a page is finished once the next begins, so the last page's
+  /// end decides it.
+  bool covers(int section, int block, int offset) {
+    if (_done[section]) return true;
+    final List<ReaderPage>? pages = sections[section];
+    if (pages == null || pages.isEmpty) return false;
+    final (int ls, int lb, int lo) = pages.last.last;
+    return ls == section && (lb > block || (lb == block && lo > offset));
+  }
+
+  /// The global page holding a position. Lays the section out as far as the
+  /// position needs (not past it) before answering, all at once.
   int pageOf(int section, int block, int offset) {
-    ensure(section);
+    _advance(section, () => covers(section, block, offset));
     final List<ReaderPage> pages = sections[section]!;
     for (int i = 0; i < pages.length; i++) {
       if (pages[i].contains(section, block, offset)) return firstPageOf(section) + i;
@@ -478,24 +541,82 @@ class Layout {
     return firstPageOf(section) + math.max(0, pages.length - 1);
   }
 
-  void ensure(int section) {
-    sections[section] ??= _paginate(section);
+  /// Lays a whole section out, all at once.
+  void ensure(int section) => _advance(section, () => false);
+
+  /// Lays out toward a position for at most [budget]; true once it is covered.
+  bool advanceTo(int section, int block, int offset, Duration budget) {
+    final Stopwatch sw = Stopwatch()..start();
+    _advance(section, () => covers(section, block, offset) || sw.elapsed >= budget);
+    return covers(section, block, offset);
   }
 
-  /// Lays out the next section not yet done; false when all are.
+  /// Lays out on from the page at [global] until [count] pages after it are
+  /// known or the book ends, so a turn always has a page to turn to, however
+  /// little of the rest is laid out.
+  void ahead(int global, int count) {
+    final int need = global + count + 1;
+    for (int s = sectionPageOf(global).$1; s < sections.length; s++) {
+      final int first = firstPageOf(s);
+      _advance(s, () => first + sections[s]!.length >= need);
+      if (first + sections[s]!.length >= need) return;
+    }
+  }
+
+  /// Lays out more, nearest [around] first, for at most [budget]; false when
+  /// every section is done. Pagination resumes where it paused, so page
+  /// boundaries are those of one uninterrupted layout.
+  bool step(int around, Duration budget) {
+    final Stopwatch sw = Stopwatch()..start();
+    while (sw.elapsed < budget) {
+      final int? s = _nextUndone(around);
+      if (s == null) return false;
+      _advance(s, () => sw.elapsed >= budget);
+    }
+    return _nextUndone(around) != null;
+  }
+
+  /// Lays out the next section not yet done, whole; false when all are.
   bool layoutNext(int around) {
+    final int? s = _nextUndone(around);
+    if (s == null) return false;
+    ensure(s);
+    return true;
+  }
+
+  int? _nextUndone(int around) {
     for (int d = 0; d < sections.length; d++) {
-      for (final int s in <int>[around + d, around - d]) {
-        if (s >= 0 && s < sections.length && sections[s] == null) {
-          sections[s] = _paginate(s);
-          return true;
-        }
+      // Back first: [ahead] already keeps the pages to come.
+      for (final int s in <int>[around - d, around + d]) {
+        if (s >= 0 && s < sections.length && !_done[s]) return s;
       }
     }
-    return false;
+    return null;
   }
 
+  /// Runs [section]'s pagination, a block at a time, until [stop] says so or
+  /// the section is done.
+  void _advance(int section, bool Function() stop) {
+    if (_done[section]) return;
+    final List<ReaderPage> pages = sections[section] ??= <ReaderPage>[];
+    final Iterator<void> it = _running[section] ??= _paginate(section, pages).iterator;
+    while (!stop()) {
+      if (!it.moveNext()) {
+        _done[section] = true;
+        _running.remove(section);
+        return;
+      }
+    }
+  }
+
+  /// The page a paused section is still filling.
+  final Map<int, List<Fragment>> _unfinished = <int, List<Fragment>>{};
+
   void dispose() {
+    for (final List<Fragment> f in _unfinished.values) {
+      ReaderPage(f).dispose();
+    }
+    _unfinished.clear();
     for (final List<ReaderPage>? pages in sections) {
       for (final ReaderPage p in pages ?? const <ReaderPage>[]) {
         p.dispose();
@@ -505,23 +626,40 @@ class Layout {
 
   // ------------------------------------------------------------ pagination
 
-  List<ReaderPage> _paginate(int s) {
+  /// Paginates section [s] into [pages], pausing after each block (and each
+  /// page of a block too long for one). It is one uninterrupted layout run in
+  /// pieces: nothing a page holds depends on when the pieces ran, so the page
+  /// boundaries equal those of a single synchronous pass. Pages up to the
+  /// last one are final as they are added. A section cannot be paginated from
+  /// its middle (where a page starts depends on every page before it), so a
+  /// far position is reached by running on from the start in slices.
+  Iterable<void> _paginate(int s, List<ReaderPage> pages) sync* {
     final List<Block> blocks = doc.sections[s].blocks;
     final double w = pageSize.width, h = pageSize.height;
-    final List<ReaderPage> pages = <ReaderPage>[];
-    List<Fragment> cur = <Fragment>[];
+    List<Fragment> cur = _unfinished[s] = <Fragment>[];
     double y = 0;
 
     void newPage() {
-      if (cur.isNotEmpty) pages.add(ReaderPage(cur));
-      cur = <Fragment>[];
+      // Where it breaks is kept; its text is laid out again when it is shown.
+      if (cur.isNotEmpty) pages.add(ReaderPage(cur)..release());
+      cur = _unfinished[s] = <Fragment>[];
       y = 0;
     }
 
+    final Set<(int, int)> chapterStarts = doc.chapterBlocks;
     for (int i = 0; i < blocks.length; i++) {
       final Block b = blocks[i];
       final Block? prev = i > 0 ? blocks[i - 1] : before;
       double gap() => cur.isEmpty ? 0 : style.spaceBefore(b, prev);
+      // A chapter that starts inside a section (a TOC entry mid file, a
+      // heading chapter in Markdown) starts on a new page.
+      // (A page holding only headings so far, a book title, keeps them.)
+      if (chapterStarts.contains((s, i)) && cur.any((Fragment f) => f.block.kind != BlockKind.heading)) newPage();
+      // Text with nothing to show never opens a page: no blank last page,
+      // no empty lines at a page's top.
+      final bool blank =
+          b.kind != BlockKind.image && b.kind != BlockKind.rule && b.kind != BlockKind.table && b.text.trim().isEmpty;
+      if (blank && cur.isEmpty) continue;
       switch (b.kind) {
         case BlockKind.image:
           final Size? natural = images[b.image ?? ''];
@@ -553,15 +691,17 @@ class Layout {
         default:
           int from = 0;
           bool first = true;
+          int most = _probeChars;
           while (true) {
             final double g = first ? gap() : 0;
             final double inset = style.insetFor(b);
+            final int to = b.kind == BlockKind.code ? b.text.length : _wordEnd(b.text, from + most);
             final Fragment probe = _text(
               s,
               i,
               b,
               from,
-              b.text.length,
+              to,
               Offset(inset, 0),
               w - inset,
               first ? style.indentFor(b, prev) : 0,
@@ -569,6 +709,28 @@ class Layout {
             );
             final TextPainter tp = probe.painter!;
             final double ph = tp.height + (b.kind == BlockKind.code ? 20 : 0);
+            // A heading keeps with the next block: it moves to the next page
+            // unless two of that block's lines fit under it.
+            final Block? following = i + 1 < blocks.length ? blocks[i + 1] : null;
+            final bool lonely =
+                _headingLike(b, following) &&
+                first &&
+                cur.isNotEmpty &&
+                following != null &&
+                following.kind != BlockKind.heading &&
+                !chapterStarts.contains((s, i + 1)) &&
+                y + g + ph + style.spaceBefore(following, b) + 2 * style.size * style.lineHeight > h + 0.5;
+            if (lonely) {
+              probe.dispose();
+              newPage();
+              continue;
+            }
+            if (to < b.text.length && y + g + ph <= h + 0.5) {
+              // More fits than was tried (very short lines): try more.
+              probe.dispose();
+              most *= 2;
+              continue;
+            }
             if (y + g + ph <= h + 0.5) {
               cur.add(_place(probe, y + g + (b.kind == BlockKind.code ? 10 : 0)));
               y += g + ph;
@@ -592,6 +754,8 @@ class Layout {
                 fit = lines.length - 2;
               } else if (cur.isNotEmpty) {
                 probe.dispose();
+                // Whitespace that doesn't fit is dropped, not carried onto a page of its own.
+                if (blank) break;
                 newPage();
                 continue;
               } else if (fit == 0) {
@@ -626,13 +790,44 @@ class Layout {
               from++;
             }
             if (from >= b.text.length) break;
+            yield null;
           }
       }
       if (y >= h - 0.5) newPage();
+      blocksLaid++;
+      yield null;
     }
     newPage();
     if (pages.isEmpty) pages.add(ReaderPage(<Fragment>[]));
-    return pages;
+  }
+
+  /// Characters that are sure to overflow a page, with lines to spare for the
+  /// widow rule. A long paragraph is tried no further than this: lines break
+  /// greedily, so those on the page come out as they would from the whole
+  /// text, and laying all of it out again for every page is quadratic (a PDF
+  /// that reflows into one paragraph per chapter froze for seconds).
+  late final int _probeChars =
+      ((pageSize.height / (style.size * style.lineHeight) + 8) * math.max(8, pageSize.width / (style.size * 0.2)))
+          .ceil();
+
+  /// The end of the word at [at], or the end of the text.
+  static int _wordEnd(String text, int at) {
+    if (at >= text.length) return text.length;
+    while (at < text.length && text.codeUnitAt(at) != 0x20 && text.codeUnitAt(at) != 0x0A) {
+      at++;
+    }
+    return at;
+  }
+
+  /// A heading, or a line that labels what follows the way Word and Google
+  /// Docs files without heading styles do: short and all in bold, or short,
+  /// starting in bold and introducing a list. It keeps with the next block.
+  static bool _headingLike(Block b, Block? following) {
+    if (b.kind == BlockKind.heading) return true;
+    if (b.kind != BlockKind.paragraph || b.text.trim().isEmpty || b.text.length > 100) return false;
+    final Iterable<Inline> runs = b.runs.where((Inline r) => r.text.trim().isNotEmpty);
+    if (runs.isEmpty || !runs.first.bold) return false;
+    return (b.text.length <= 80 && runs.every((Inline r) => r.bold)) || following?.kind == BlockKind.listItem;
   }
 
   Fragment _place(Fragment f, double y) => Fragment(
@@ -642,11 +837,8 @@ class Layout {
     start: f.start,
     end: f.end,
     rect: f.rect.shift(Offset(0, y)),
-    painter: f.painter,
-    map: f.map,
-    bulletPainter: f.bulletPainter,
-    hyphens: f.hyphens,
-    hyphenPainter: f.hyphenPainter,
+    text: f._text,
+    lay: f.lay,
     cells: f.cells,
     scroll: f.scroll,
   );
@@ -813,6 +1005,34 @@ class Layout {
     double indent, {
     required bool bullet,
   }) {
+    final FragmentText t = _layText(b, from, to, width, indent, bullet: bullet);
+    return Fragment(
+      section: s,
+      blockIndex: i,
+      block: b,
+      start: from,
+      end: to,
+      rect: Rect.fromLTWH(origin.dx, origin.dy, width, t.painter.height),
+      text: t,
+      lay: (Fragment f) {
+        _live.add(f);
+        while (_live.length > maxLive) {
+          _live.removeFirst().release();
+        }
+        return _layText(b, from, to, width, indent, bullet: bullet);
+      },
+    );
+  }
+
+  /// Fragments laid out again to be shown, oldest first. Far more than the
+  /// pages on screen and their neighbours hold (three spreads of one-line
+  /// paragraphs are about 250), so nothing on screen is laid out twice.
+  final Queue<Fragment> _live = Queue<Fragment>();
+
+  @visibleForTesting
+  static const int maxLive = 600;
+
+  FragmentText _layText(Block b, int from, int to, double width, double indent, {required bool bullet}) {
     final TextStyle base = style.styleFor(b);
     final List<InlineSpan> spans = <InlineSpan>[];
     final List<int> map = List<int>.filled(to - from + 1, 0);
@@ -881,18 +1101,12 @@ class Layout {
         textDirection: TextDirection.ltr,
       )..layout();
     }
-    return Fragment(
-      section: s,
-      blockIndex: i,
-      block: b,
-      start: from,
-      end: to,
-      rect: Rect.fromLTWH(origin.dx, origin.dy, width, tp.height),
+    return FragmentText(
       painter: tp,
       map: map,
-      bulletPainter: bulletPainter,
+      bullet: bulletPainter,
       hyphens: hyphens,
-      hyphenPainter: hyphens.isEmpty
+      hyphen: hyphens.isEmpty
           ? null
           : (TextPainter(
               text: TextSpan(text: '-', style: base),

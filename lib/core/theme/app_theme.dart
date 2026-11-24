@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../design_system/app_icon.dart';
 import 'palette.dart';
 import 'tokens.dart';
 import 'typography.dart';
@@ -64,15 +65,35 @@ abstract final class AppTheme {
         selectionHandleColor: c.primary,
       ),
       progressIndicatorTheme: ProgressIndicatorThemeData(color: c.primary),
+      // Mull's switch: a check in the thumb when on, the accent track; off, a
+      // visible mid-tone outline and thumb (`onSurfaceMuted`: `outline` here
+      // is a hairline and read as disabled). Disabled keeps Material's own.
       switchTheme: SwitchThemeData(
         thumbColor: WidgetStateProperty.resolveWith(
-          (Set<WidgetState> s) => s.contains(WidgetState.selected) ? c.onPrimary : c.onSurfaceVariant,
+          (Set<WidgetState> s) => s.contains(WidgetState.disabled)
+              ? null
+              : s.contains(WidgetState.selected)
+              ? c.onPrimary
+              : c.onSurfaceMuted,
         ),
         trackColor: WidgetStateProperty.resolveWith(
-          (Set<WidgetState> s) => s.contains(WidgetState.selected) ? c.primary : c.surfaceContainerHigh,
+          (Set<WidgetState> s) => s.contains(WidgetState.disabled)
+              ? null
+              : s.contains(WidgetState.selected)
+              ? c.primary
+              : c.surfaceContainerHigh,
         ),
         trackOutlineColor: WidgetStateProperty.resolveWith(
-          (Set<WidgetState> s) => s.contains(WidgetState.selected) ? c.primary : c.outline,
+          (Set<WidgetState> s) => s.contains(WidgetState.disabled)
+              ? null
+              : s.contains(WidgetState.selected)
+              ? c.primary
+              : c.onSurfaceMuted,
+        ),
+        thumbIcon: WidgetStateProperty.resolveWith(
+          (Set<WidgetState> s) => s.contains(WidgetState.selected)
+              ? Icon(AppIcons.check, size: 16, color: c.primary, weight: IconSpec.weight, opticalSize: 16)
+              : null,
         ),
       ),
     );

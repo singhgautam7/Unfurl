@@ -149,7 +149,7 @@ void main() {
     expect(find.bySemanticsLabel('This week: 46 min'), findsOneWidget);
     expect(find.text('46 min'), findsWidgets);
     expect(find.text('28 Sep – 4 Oct'), findsOneWidget);
-    expect(find.bySemanticsLabel(RegExp('Reader mode: —, after 30 min in Reader')), findsOneWidget);
+    expect(find.bySemanticsLabel(RegExp('Reader mode: None yet, after 30 min in Reader')), findsOneWidget);
     await tester.scrollUntilVisible(find.textContaining('appear after 7 days'), 300, scrollable: insightsList);
     expect(find.textContaining('appear after 7 days with reading'), findsOneWidget);
   });

@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart' show ScrollCacheExtent;
 
 import '../../core/motion/motion.dart';
+import '../../core/motion/pressable.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/theme/palette.dart';
 import '../../core/theme/tokens.dart';
@@ -585,6 +586,8 @@ class _ComicScrubberState extends State<ComicScrubber> {
                       slider: true,
                       label: 'Page',
                       value: 'Page ${cur + 1} of $n',
+                      increasedValue: 'Page ${math.min(n, cur + 2)} of $n',
+                      decreasedValue: 'Page ${math.max(1, cur)} of $n',
                       onIncrease: () => widget.onJump(math.min(n - 1, cur + 1)),
                       onDecrease: () => widget.onJump(math.max(0, cur - 1)),
                       child: GestureDetector(
@@ -665,44 +668,48 @@ class _Thumb extends StatelessWidget {
   Widget build(BuildContext context) {
     final UnfurlColors c = context.colors;
     final double w = current ? 34 : 28, h = current ? 50 : 41;
-    return GestureDetector(
+    return Pressable(
+      kind: PressKind.chip,
+      semanticLabel: 'Page ${index + 1}',
       onTap: onTap,
-      child: AnimatedContainer(
-        duration: Motion.of(context, Motion.fast),
-        curve: Motion.decelerate,
-        width: w,
-        height: h,
-        clipBehavior: Clip.antiAlias,
-        decoration: BoxDecoration(
-          color: c.surfaceContainerHigh,
-          borderRadius: BorderRadius.circular(3),
-          border: Border.all(color: current ? c.primary : c.outline, width: current ? 2 : 1),
-        ),
-        child: Stack(
-          fit: StackFit.expand,
-          children: <Widget>[
-            FutureBuilder<File?>(
-              initialData: pages.thumbNow(index),
-              future: pages.thumb(index),
-              builder: (BuildContext context, AsyncSnapshot<File?> s) => s.data == null
-                  ? const SizedBox.shrink()
-                  : Image(
-                      image: ResizeImage(FileImage(s.data!), width: ComicPages.thumbWidth),
-                      fit: BoxFit.cover,
-                      gaplessPlayback: true,
-                    ),
-            ),
-            Positioned(
-              left: 0,
-              right: 0,
-              bottom: 2,
-              child: Text(
-                '${index + 1}',
-                textAlign: TextAlign.center,
-                style: UnfurlType.badge.copyWith(fontSize: 8, color: c.onSurface),
+      child: RepaintBoundary(
+        child: AnimatedContainer(
+          duration: Motion.of(context, Motion.fast),
+          curve: Motion.decelerate,
+          width: w,
+          height: h,
+          clipBehavior: Clip.antiAlias,
+          decoration: BoxDecoration(
+            color: c.surfaceContainerHigh,
+            borderRadius: BorderRadius.circular(3),
+            border: Border.all(color: current ? c.primary : c.outline, width: current ? 2 : 1),
+          ),
+          child: Stack(
+            fit: StackFit.expand,
+            children: <Widget>[
+              FutureBuilder<File?>(
+                initialData: pages.thumbNow(index),
+                future: pages.thumb(index),
+                builder: (BuildContext context, AsyncSnapshot<File?> s) => s.data == null
+                    ? const SizedBox.shrink()
+                    : Image(
+                        image: ResizeImage(FileImage(s.data!), width: ComicPages.thumbWidth),
+                        fit: BoxFit.cover,
+                        gaplessPlayback: true,
+                      ),
               ),
-            ),
-          ],
+              Positioned(
+                left: 0,
+                right: 0,
+                bottom: 2,
+                child: Text(
+                  '${index + 1}',
+                  textAlign: TextAlign.center,
+                  style: UnfurlType.badge.copyWith(fontSize: 8, color: c.onSurface),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );

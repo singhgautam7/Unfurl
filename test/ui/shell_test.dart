@@ -83,9 +83,7 @@ void main() {
     }
   });
 
-  testWidgets('at the largest font on a 320dp phone the active tab drops its label for a tooltip (N1)', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('at the largest font on a 320dp phone the active tab drops its label (N1)', (WidgetTester tester) async {
     await at360(tester, 2, width: 320);
     await pumpApp(tester);
     await tester.tap(find.bySemanticsLabel('Library'));
@@ -96,7 +94,8 @@ void main() {
       findsOneWidget,
       reason: 'the label is the content description',
     );
-    expect(find.byTooltip('Library'), findsOneWidget);
+    // No long press on tabs (Kuber): the label is announced, not shown on hold.
+    expect(find.byTooltip('Library'), findsNothing);
     expect(tester.getSize(find.byType(NavPill)).width, lessThanOrEqualTo(320 - 32));
   });
 
@@ -220,8 +219,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('Settings'));
     await tester.pumpAndSettle();
-    // Appearance › Theme, by its value (the Reader section has a "Theme" too).
-    await tester.tap(find.text('Saffron · System'));
+    await tester.tap(find.text('Theme').first);
     await tester.pumpAndSettle();
     expect(find.text('Mull'), findsWidgets);
     await tester.tap(find.bySemanticsLabel('Back'));

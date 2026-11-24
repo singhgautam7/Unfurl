@@ -17,8 +17,6 @@ import '../../design_system/containers.dart';
 import '../insights/insights_data.dart';
 import '../insights/insights_widgets.dart';
 import 'info_screens.dart';
-import 'settings_controller.dart';
-import 'settings_screen.dart';
 
 /// Board 2, A5: Mull's grouped rows. Settings (folders live there), About and Licences
 /// are pushed pages; the nav hides under them. Then the sibling app. Groups,
@@ -28,8 +26,6 @@ class MoreScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final AppSettings settings = ref.watch(settingsProvider);
-    final String? version = ref.watch(appVersionProvider).value;
     return AppScaffold(
       title: 'More',
       children: <Widget>[
@@ -43,10 +39,10 @@ class MoreScreen extends ConsumerWidget {
         ListContainer(
           children: <Widget>[
             ListRow(
-              icon: AppIcons.tune,
+              icon: AppIcons.settings,
               label: 'Settings',
-              value: SettingsScreen.themeSummary(settings),
-              minHeight: 60,
+              subtitle: 'Theme, reader, controls, library',
+              minHeight: 72,
               onTap: () => context.push(Routes.settings),
             ),
           ],
@@ -59,27 +55,29 @@ class MoreScreen extends ConsumerWidget {
             ListRow(
               icon: AppIcons.privacy,
               label: 'Privacy',
-              value: 'Offline only',
-              minHeight: 60,
+              subtitle: 'Nothing leaves your phone',
+              minHeight: 72,
               onTap: () => context.push(Routes.privacy),
             ),
             ListRow(
               icon: AppIcons.key,
               label: 'Permissions',
-              minHeight: 60,
+              subtitle: 'What Unfurl asks for',
+              minHeight: 72,
               onTap: () => context.push(Routes.permissions),
             ),
             ListRow(
               icon: AppIcons.license,
               label: 'Licences',
-              minHeight: 60,
+              subtitle: 'Fonts and packages it uses',
+              minHeight: 72,
               onTap: () => context.push(Routes.licences),
             ),
             ListRow(
               icon: AppIcons.info,
               label: 'About',
-              value: version?.split(' ').first,
-              minHeight: 60,
+              subtitle: 'Version, developer, feedback',
+              minHeight: 72,
               onTap: () => context.push(Routes.about),
             ),
           ],
@@ -124,7 +122,11 @@ class MullCard extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final UnfurlColors c = context.colors;
     final bool installed = ref.watch(mullInstalledProvider).value ?? false;
+    void open() =>
+        unawaited(installed ? Platform.openApp(Platform.mullPackage) : Platform.openStore(Platform.mullPackage));
     return SurfaceCard(
+      onTap: open,
+      semanticLabel: 'Mull, an offline dictionary, ${installed ? 'Open' : 'Get'}',
       child: Row(
         spacing: 14,
         children: <Widget>[
@@ -144,24 +146,16 @@ class MullCard extends ConsumerWidget {
               ],
             ),
           ),
-          Material(
-            color: c.surfaceContainerHigh,
-            shape: const StadiumBorder(),
-            child: InkWell(
-              customBorder: const StadiumBorder(),
-              onTap: () => unawaited(
-                installed ? Platform.openApp(Platform.mullPackage) : Platform.openStore(Platform.mullPackage),
-              ),
-              child: Container(
-                height: 40,
-                constraints: const BoxConstraints(minWidth: 56),
-                padding: const EdgeInsets.symmetric(horizontal: Space.lg),
-                alignment: Alignment.center,
-                child: Text(
-                  installed ? 'Open' : 'Get',
-                  style: UnfurlType.titleMedium.copyWith(fontSize: 14, color: c.onSurface),
-                ),
-              ),
+          // Only the look of a button: the whole card takes the tap.
+          Container(
+            height: 40,
+            constraints: const BoxConstraints(minWidth: 56),
+            padding: const EdgeInsets.symmetric(horizontal: Space.lg),
+            alignment: Alignment.center,
+            decoration: BoxDecoration(color: c.surfaceContainerHigh, borderRadius: Radii.fullR),
+            child: Text(
+              installed ? 'Open' : 'Get',
+              style: UnfurlType.titleMedium.copyWith(fontSize: 14, color: c.onSurface),
             ),
           ),
         ],

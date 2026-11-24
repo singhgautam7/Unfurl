@@ -1,12 +1,15 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
-import '../core/motion/motion.dart';
+import '../core/motion/kit.dart';
 import '../core/theme/app_theme.dart';
 import '../core/theme/palette.dart';
 import '../core/theme/tokens.dart';
 import '../core/theme/typography.dart';
 import 'app_icon.dart';
 import 'buttons.dart';
+import 'chips.dart' show kSelectedRadius;
 
 /// Board 6's option group: a label (and its current value) over a row of
 /// tiles. The Comic settings sheet and the card editor share it.
@@ -59,9 +62,10 @@ class OptionGroup extends StatelessWidget {
 }
 
 /// One choice: text and/or an icon on a 14-radius tile (round for colour
-/// swatches); selected is `primaryContainer` with a 2dp primary ring. A tile
-/// with its own [background] (a reading theme, a card colour) keeps it and
-/// carries a 1dp outline.
+/// swatches); selected is `primaryContainer` with a 2dp primary ring and
+/// 12dp corners (the shape morphs on `fastCurve`, as a chip's). A tile with
+/// its own [background] (a reading theme, a card colour) keeps it and
+/// carries a 1dp outline. Presses like a card.
 class OptionTile extends StatelessWidget {
   const OptionTile({
     required this.selected,
@@ -97,22 +101,41 @@ class OptionTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final UnfurlColors c = context.colors;
+    final MotionLevel level = Motion.levelOf(context);
+    final SpringCurve shape = Motion.spatialCurve(level, Motion.fastCurve);
     final Color bg = background ?? (selected ? c.primaryContainer : c.surfaceContainer);
     final Color fg = foreground ?? (selected ? c.onPrimaryContainer : c.onSurface);
+    final Color edge = selected ? c.primary : (background != null ? c.outline : bg);
+    final double restRadius = round ? math.min(width ?? height, height) / 2 : Radii.thumb;
+    final Duration fade = level == MotionLevel.off ? Motion.fxInstant : Motion.fxFast;
     // Drawn at the spec's size (a 40dp swatch, a 44dp tile) inside a 48dp
     // touch target, as v2 did for the boards' 44dp controls (gap v2-13).
-    final Widget face = AnimatedContainer(
-      duration: Motion.of(context, Motion.fast),
-      curve: Motion.decelerate,
-      width: width ?? double.infinity,
-      height: height,
-      decoration: BoxDecoration(
-        color: bg,
-        borderRadius: round ? Radii.fullR : BorderRadius.circular(14),
-        border: Border.all(
-          color: selected ? c.primary : (background != null ? c.outline : bg),
-          width: selected ? 2 : 1,
+    final Widget face = TweenAnimationBuilder<double>(
+      // A colour swatch stays round (board 6); its ring says it is picked.
+      tween: Tween<double>(end: selected && !round ? 1 : 0),
+      duration: level == MotionLevel.expressive ? shape.settle : Duration.zero,
+      curve: shape.clamped,
+      builder: (BuildContext context, double sq, Widget? child) => TweenAnimationBuilder<Color?>(
+        tween: ColorTween(end: bg),
+        duration: fade,
+        curve: Motion.curveEffects,
+        builder: (BuildContext context, Color? fill, Widget? child) => TweenAnimationBuilder<Color?>(
+          tween: ColorTween(end: edge),
+          duration: fade,
+          curve: Motion.curveEffects,
+          builder: (BuildContext context, Color? ring, Widget? child) => Container(
+            width: width ?? double.infinity,
+            height: height,
+            decoration: BoxDecoration(
+              color: fill,
+              borderRadius: BorderRadius.circular(restRadius + (kSelectedRadius - restRadius) * sq),
+              border: Border.all(color: ring!, width: selected ? 2 : 1),
+            ),
+            child: child,
+          ),
+          child: child,
         ),
+        child: child,
       ),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
@@ -137,11 +160,18 @@ class OptionTile extends StatelessWidget {
       excludeSemantics: true,
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
-        onTap: onTap,
-        child: SizedBox(
-          width: width == null ? null : (width! < IconSpec.tapTarget ? IconSpec.tapTarget : width),
-          height: height < IconSpec.tapTarget ? IconSpec.tapTarget : height,
-          child: Center(child: face),
+        onTap: () {
+          if (!selected) Haptics.tick();
+          onTap();
+        },
+        child: Pressable(
+          kind: PressKind.card,
+          haptic: false,
+          child: SizedBox(
+            width: width == null ? null : (width! < IconSpec.tapTarget ? IconSpec.tapTarget : width),
+            height: height < IconSpec.tapTarget ? IconSpec.tapTarget : height,
+            child: Center(child: face),
+          ),
         ),
       ),
     );

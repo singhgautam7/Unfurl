@@ -13,7 +13,7 @@ import '../../core/files.dart';
 import '../../core/layout.dart';
 import '../../core/library/library.dart';
 import '../../core/locator.dart';
-import '../../core/motion/motion.dart';
+import '../../core/motion/kit.dart';
 import '../../core/platform/platform.dart';
 import '../../core/providers.dart';
 import '../../core/theme/app_theme.dart';
@@ -26,6 +26,7 @@ import '../../design_system/app_icon.dart';
 import '../../design_system/app_menu.dart';
 import '../../design_system/app_snackbar.dart';
 import '../../design_system/buttons.dart';
+import '../../design_system/containers.dart' show SectionHeader;
 import '../../design_system/covers.dart';
 import '../../design_system/search_field.dart';
 import '../../formats/format_registry.dart';
@@ -123,7 +124,8 @@ class ReaderScaffoldState extends ConsumerState<ReaderScaffold> with WidgetsBind
   late final AutoAdvance _auto;
 
   /// The section End of chapter was set in.
-  int? _sleepSection;
+  /// The chapter the sleep timer's "end of chapter" waits on.
+  int? _sleepChapter;
   String? _backChip;
   (int, int, int)? _backTo;
   int? _sizeChip;
@@ -197,6 +199,7 @@ class ReaderScaffoldState extends ConsumerState<ReaderScaffold> with WidgetsBind
     unawaited(_tracker.close(this));
     unawaited(_saveWords());
     _saveTimer?.cancel();
+    _searchTimer?.cancel();
     _hideTimer?.cancel();
     unawaited(_annotationSub?.cancel());
     unawaited(_volumeSub?.cancel());
@@ -236,13 +239,23 @@ class ReaderScaffoldState extends ConsumerState<ReaderScaffold> with WidgetsBind
       _saveTimer = Timer(Motion.saveDelay, _save);
       _tracker.readerAt(controller.globalIndex, jump: _jumping);
       _jumping = false;
-      final int? sleepSection = _sleepSection;
-      if (sleepSection != null && controller.position.$1 > sleepSection && !(_tts?.playing ?? false)) {
+      final int? sleepChapter = _sleepChapter;
+      if (sleepChapter != null &&
+          reading.chapterAt(controller.globalIndex) > sleepChapter &&
+          !(_tts?.playing ?? false)) {
         _sleep.chapterEnded();
       }
     }
-    if (mounted) setState(() {});
+    // The scaffold itself rebuilds only for what it lays out from the
+    // selection; what shows the position (top bar, bottom bar, the pages'
+    // footers) listens to the controller on its own.
+    if (mounted && controller.selection != _selection) {
+      _selection = controller.selection;
+      setState(() {});
+    }
   }
+
+  (int, int)? _selection;
 
   /// For book insights' "Estimated time left". Static work on plain data in
   /// an isolate: counting a long book's words is not trivial.
@@ -271,8 +284,9 @@ class ReaderScaffoldState extends ConsumerState<ReaderScaffold> with WidgetsBind
     final SourceRef? src = reading.sections[s].blocks[b].source;
     final String? page = src == null ? null : widget.pageLabel?.call(src);
     if (page != null) return page;
-    final String title = reading.sections[s].title;
-    return title.isNotEmpty ? title : '${reading.unitLabel} ${s + 1}';
+    final int c = reading.chapterAt(controller.globalIndex);
+    final String title = reading.chapters[c].title;
+    return title.isNotEmpty ? title : '${reading.unitLabel} ${c + 1}';
   }
 
   Future<void> _save({bool force = false}) async {
@@ -290,19 +304,28 @@ class ReaderScaffoldState extends ConsumerState<ReaderScaffold> with WidgetsBind
     );
   }
 
-  /// "6 min left in chapter", at this book's measured speed, else the
-  /// reader's own (Insights), else v2's saved pace, else 230 wpm.
-  String _timeLeft((int, int, int) at) {
+  int _global((int, int, int) at) => reading.sections[at.$1].blocks[at.$2].start + at.$3;
+
+  /// "6 min left in chapter" for the page from [first] to [last], at this
+  /// book's measured speed, else the reader's own (Insights), else v2's
+  /// saved pace, else 230 wpm. "End of chapter" exactly when the page holds
+  /// the chapter's last words (chapters from the TOC, `ReadingDocument.chapters`).
+  String _timeLeft((int, int, int) first, (int, int, int) last) {
     final Document d = doc.record;
     final double wpm = _wpm ?? ((d.readMs > 60000 && d.readWords > 50) ? d.readWords / (d.readMs / 60000) : 230);
-    final Section s = reading.sections[at.$1];
-    final int end = s.blocks.isEmpty ? s.start : s.blocks.last.start + s.blocks.last.text.length;
-    final int from = reading.sections[at.$1].blocks[at.$2].start + at.$3;
-    final int words = reading.wordsBetween(from, end);
-    final int min = (words / math.max(60, wpm)).ceil();
+    final int from = _global(first);
     final String unit = reading.unitLabel.toLowerCase();
-    if (words < 30) return 'End of $unit';
+    if (reading.endsChapter(from, _global(last))) return 'End of $unit';
+    final int min = math.max(1, (reading.wordsToChapterEnd(from) / math.max(60, wpm)).ceil());
     return '$min min left in $unit';
+  }
+
+  /// The chapter's title, else the section's, else the book's.
+  String _runningHead((int, int, int) at) {
+    final String chapter = reading.chapters[reading.chapterAt(_global(at))].title;
+    if (chapter.isNotEmpty) return chapter;
+    if (reading.sections[at.$1].title.isNotEmpty) return reading.sections[at.$1].title;
+    return reading.title.isEmpty ? doc.ref.name : reading.title;
   }
 
   // ------------------------------------------------------------ marks
@@ -358,9 +381,10 @@ class ReaderScaffoldState extends ConsumerState<ReaderScaffold> with WidgetsBind
     final String pct = '${(reading.progressAt(s, b, 0) * 100).round()}%';
     final String? page = src == null ? null : widget.pageLabel?.call(src);
     if (page != null) return page;
-    final String title = reading.sections[s].title;
+    final int c = reading.chapterAt(global);
+    final String title = reading.chapters[c].title;
     final String short = title.replaceFirst(RegExp('^${reading.unitLabel} ', caseSensitive: false), '');
-    return '${title.isEmpty ? '${reading.unitLabel.substring(0, math.min(3, reading.unitLabel.length))}. ${s + 1}' : (short.length < 6 ? 'Ch. $short' : title)} · $pct';
+    return '${title.isEmpty ? '${reading.unitLabel.substring(0, math.min(3, reading.unitLabel.length))}. ${c + 1}' : (short.length < 6 ? 'Ch. $short' : title)} · $pct';
   }
 
   Future<int> _addHighlight((int, int) sel, int color) async {
@@ -634,10 +658,10 @@ class ReaderScaffoldState extends ConsumerState<ReaderScaffold> with WidgetsBind
 
   void _onSleep() {
     if (!_sleep.chapter) {
-      _sleepSection = null;
+      _sleepChapter = null;
     } else {
       final (int, int)? spoken = _tts?.current;
-      _sleepSection ??= spoken == null ? controller.position.$1 : reading.positionOfIndex(spoken.$1).$1;
+      _sleepChapter ??= reading.chapterAt(spoken == null ? controller.globalIndex : spoken.$1);
     }
   }
 
@@ -652,12 +676,12 @@ class ReaderScaffoldState extends ConsumerState<ReaderScaffold> with WidgetsBind
 
   /// "Chapter 3 · about 6 min left", at read-aloud pace if it is playing.
   String _chapterLeft() {
-    final (int s, int b, int o) = controller.position;
-    final Section sec = reading.sections[s];
-    final int end = sec.blocks.isEmpty ? sec.start : sec.blocks.last.start + sec.blocks.last.text.length;
-    final int words = reading.wordsBetween(sec.blocks[b].start + o, end);
+    final int from = controller.globalIndex;
+    final int c = reading.chapterAt(from);
+    final int words = reading.wordsToChapterEnd(from);
     final double wpm = (_tts?.active ?? false) ? 160 * (_tts?.rate ?? 1) : (_wpm ?? 230);
-    final String name = sec.title.isEmpty ? '${reading.unitLabel} ${s + 1}' : sec.title;
+    final String title = reading.chapters[c].title;
+    final String name = title.isEmpty ? '${reading.unitLabel} ${c + 1}' : title;
     return '$name · about ${math.max(1, (words / wpm).ceil())} min left';
   }
 
@@ -695,8 +719,8 @@ class ReaderScaffoldState extends ConsumerState<ReaderScaffold> with WidgetsBind
     // While read aloud plays, the volume keys set the volume.
     unawaited(Platform.volumeKeys(on: ref.read(readingPrefsProvider).volumeKeys && !t.playing));
     final (int, int)? spoken = t.current;
-    final int? sleepSection = _sleepSection;
-    if (sleepSection != null && spoken != null && reading.positionOfIndex(spoken.$1).$1 > sleepSection) {
+    final int? sleepChapter = _sleepChapter;
+    if (sleepChapter != null && spoken != null && reading.chapterAt(spoken.$1) > sleepChapter) {
       _sleep.chapterEnded();
     }
     if (t.error != null && mounted) {
@@ -708,9 +732,19 @@ class ReaderScaffoldState extends ConsumerState<ReaderScaffold> with WidgetsBind
 
   // ------------------------------------------------------------ search
 
+  Timer? _searchTimer;
+
+  /// Typing: the scan waits for a pause (the first query lower-cases the text
+  /// once; after that a scan is an indexOf loop, capped at 500 hits).
+  void _searchTyped(String q) {
+    _searchTimer?.cancel();
+    _searchTimer = Timer(Motion.searchDelay, () => _search(q));
+  }
+
   void _search(String q) {
+    _searchTimer?.cancel();
     final String needle = q.trim().toLowerCase();
-    final String hay = reading.plainText.toLowerCase();
+    final String hay = reading.lowerText;
     final List<int> hits = <int>[];
     if (needle.length >= 2) {
       int from = 0;
@@ -842,7 +876,7 @@ class ReaderScaffoldState extends ConsumerState<ReaderScaffold> with WidgetsBind
       facts: <(String, String)>[
         ('Location', doc.ref.name),
         ('Size', '${Files.size(doc.ref.size)} · ${Formats.labelOf(doc.ref.name)}'),
-        ('${reading.unitLabel}s', '${reading.sections.length}'),
+        ('${reading.unitLabel}s', '${reading.chapters.length}'),
         ('Progress', '${(controller.progress * 100).round()}% · $_where'),
         ('Highlights', '${hl.length}${notes > 0 ? ' · $notes ${notes == 1 ? 'note' : 'notes'}' : ''}'),
         ('Added', Files.when(doc.record.addedAt.millisecondsSinceEpoch)),
@@ -859,13 +893,13 @@ class ReaderScaffoldState extends ConsumerState<ReaderScaffold> with WidgetsBind
       entries: <AppMenuEntry<String>>[
         const AppMenuEntry<String>(value: 'info', label: 'Book info', icon: AppIcons.info),
         if (format.annotations)
-          const AppMenuEntry<String>(value: 'export', label: 'Export highlights', icon: AppIcons.share),
+          const AppMenuEntry<String>(value: 'export', label: 'Export highlights', icon: AppIcons.fileExport),
         kInsightsEntry,
         const AppMenuEntry<String>(value: 'sleep', label: 'Sleep timer', icon: AppIcons.bedtime),
         AppMenuEntry<String>(
           value: 'auto',
           label: ref.read(readingPrefsProvider).layout == ReaderLayout.paged ? 'Auto page turn' : 'Auto-scroll',
-          icon: AppIcons.schedule,
+          icon: AppIcons.autoplay,
           switchValue: _auto.enabled,
         ),
         const AppMenuEntry<String>(value: 'share', label: 'Share file', icon: AppIcons.share),
@@ -901,9 +935,17 @@ class ReaderScaffoldState extends ConsumerState<ReaderScaffold> with WidgetsBind
   @override
   Widget build(BuildContext context) {
     final UnfurlColors c = context.colors;
-    final ReadingPrefs prefs = ref.watch(readingPrefsProvider);
-    final AppSettings settings = ref.watch(settingsProvider);
-    final ReadingTheme theme = readingThemeOf(context, prefs, settings);
+    // Only what the page is built from: a voice or brightness change does not
+    // rebuild the reader.
+    ref.watch(
+      readingPrefsProvider.select(
+        (ReadingPrefs p) =>
+            (p.theme, p.font, p.size, p.lineHeight, p.margin, p.justify, p.hyphenate, p.layout, p.pageTurn),
+      ),
+    );
+    ref.watch(settingsProvider.select((AppSettings s) => s.family));
+    final ReadingPrefs prefs = ref.read(readingPrefsProvider);
+    final ReadingTheme theme = readingThemeOf(context, prefs, ref.read(settingsProvider));
     ref.listen<ReadingPrefs>(readingPrefsProvider, (ReadingPrefs? a, ReadingPrefs b) {
       if (a?.theme != b.theme) {
         WidgetsBinding.instance.addPostFrameCallback((_) => _refreshMarks());
@@ -931,9 +973,7 @@ class ReaderScaffoldState extends ConsumerState<ReaderScaffold> with WidgetsBind
       book: format == Formats.epub || format == Formats.pdf,
       mono: reading.mono,
     );
-    final (int s, int _, int _) = controller.position;
     final ReadAloud? tts = _tts;
-    final Annotation? bookmark = _bookmarkHere;
     final bool selecting = controller.selection != null && _selectionRects.isNotEmpty;
 
     return PopScope(
@@ -977,14 +1017,12 @@ class ReaderScaffoldState extends ConsumerState<ReaderScaffold> with WidgetsBind
                           onMarkTap: (int id, Offset at) => id >= 0 ? _highlightMenu(id, at) : null,
                           onSelection: (List<Rect> r) => setState(() => _selectionRects = r),
                           onFontStep: _fontStep,
-                          runningHead: ((int, int, int) at) => reading.sections[at.$1].title.isEmpty
-                              ? (reading.title.isEmpty ? doc.ref.name : reading.title)
-                              : reading.sections[at.$1].title,
-                          footer: ((int, int, int) at) {
+                          runningHead: _runningHead,
+                          footer: ((int, int, int) at, (int, int, int) last) {
                             final SourceRef? src = reading.sections[at.$1].blocks[at.$2].source;
                             final String? page = src == null ? null : widget.pageLabel?.call(src);
                             final String pct = '${(reading.progressAt(at.$1, at.$2, at.$3) * 100).round()}%';
-                            return (page == null ? pct : '$page · $pct', _timeLeft(controller.position));
+                            return (page == null ? pct : '$page · $pct', _timeLeft(at, last));
                           },
                         ),
                       ),
@@ -1023,43 +1061,49 @@ class ReaderScaffoldState extends ConsumerState<ReaderScaffold> with WidgetsBind
                     ? _searchBar(c)
                     : ChromeSlide(
                         visible: _chrome,
-                        child: ReaderTopBar(
-                          title: reading.title.isEmpty ? doc.ref.name : reading.title,
-                          subtitle: _where,
-                          onBack: () => Navigator.of(context).maybePop(),
-                          toggle: widget.onPageMode == null
-                              ? null
-                              : ModeToggle(
-                                  reader: true,
-                                  pageIcon: widget.pageIcon,
-                                  onChanged: (bool r) => r ? null : widget.onPageMode!(here),
+                        child: ListenableBuilder(
+                          listenable: controller,
+                          builder: (BuildContext context, Widget? _) {
+                            final Annotation? bookmark = _bookmarkHere;
+                            return ReaderTopBar(
+                              title: reading.title.isEmpty ? doc.ref.name : reading.title,
+                              subtitle: _where,
+                              onBack: () => Navigator.of(context).maybePop(),
+                              toggle: widget.onPageMode == null
+                                  ? null
+                                  : ModeToggle(
+                                      reader: true,
+                                      pageIcon: widget.pageIcon,
+                                      onChanged: (bool r) => r ? null : widget.onPageMode!(here),
+                                    ),
+                              actions: <Widget>[
+                                if (format.search)
+                                  AppIconButton(
+                                    icon: AppIcons.search,
+                                    filled: false,
+                                    semanticLabel: 'Search in book',
+                                    onPressed: () => setState(() => _searching = true),
+                                  ),
+                                if (format.annotations && widget.onPageMode == null)
+                                  AppIconButton(
+                                    icon: bookmark != null ? AppIcons.bookmark : AppIcons.bookmarkAdd,
+                                    fill: bookmark != null,
+                                    tint: bookmark != null ? c.primary : null,
+                                    filled: false,
+                                    semanticLabel: bookmark != null ? 'Remove bookmark' : 'Bookmark this page',
+                                    onPressed: _toggleBookmark,
+                                  ),
+                                Builder(
+                                  builder: (BuildContext b) => AppIconButton(
+                                    icon: AppIcons.moreVert,
+                                    filled: false,
+                                    semanticLabel: 'More options',
+                                    onPressed: () => _overflow(b),
+                                  ),
                                 ),
-                          actions: <Widget>[
-                            if (format.search)
-                              AppIconButton(
-                                icon: AppIcons.search,
-                                filled: false,
-                                semanticLabel: 'Search in book',
-                                onPressed: () => setState(() => _searching = true),
-                              ),
-                            if (format.annotations && widget.onPageMode == null)
-                              AppIconButton(
-                                icon: bookmark != null ? AppIcons.bookmark : AppIcons.bookmarkAdd,
-                                fill: bookmark != null,
-                                tint: bookmark != null ? c.primary : null,
-                                filled: false,
-                                semanticLabel: bookmark != null ? 'Remove bookmark' : 'Bookmark this page',
-                                onPressed: _toggleBookmark,
-                              ),
-                            Builder(
-                              builder: (BuildContext b) => AppIconButton(
-                                icon: AppIcons.moreVert,
-                                filled: false,
-                                semanticLabel: 'More options',
-                                onPressed: () => _overflow(b),
-                              ),
-                            ),
-                          ],
+                              ],
+                            );
+                          },
                         ),
                       ),
               ),
@@ -1073,65 +1117,73 @@ class ReaderScaffoldState extends ConsumerState<ReaderScaffold> with WidgetsBind
                     : ChromeSlide(
                         visible: _chrome && !(tts?.active ?? false),
                         fromTop: false,
-                        child: ReaderBottomBar(
-                          children: <Widget>[
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        child: ListenableBuilder(
+                          listenable: controller,
+                          builder: (BuildContext context, Widget? _) {
+                            final Annotation? bookmark = _bookmarkHere;
+                            final int chapter = reading.chapterAt(controller.globalIndex);
+                            return ReaderBottomBar(
                               children: <Widget>[
-                                Text(
-                                  '${reading.unitLabel} ${s + 1} of ${reading.sections.length}',
-                                  style: UnfurlType.monoLabel.copyWith(color: c.onSurfaceVariant),
+                                Row(
+                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                  children: <Widget>[
+                                    Text(
+                                      '${reading.unitLabel} ${chapter + 1} of ${reading.chapters.length}',
+                                      style: UnfurlType.monoLabel.copyWith(color: c.onSurfaceVariant),
+                                    ),
+                                    Text(
+                                      '${(controller.progress * 100).round()}%',
+                                      style: UnfurlType.monoLabel.copyWith(color: c.onSurfaceVariant),
+                                    ),
+                                  ],
                                 ),
-                                Text(
-                                  '${(controller.progress * 100).round()}%',
-                                  style: UnfurlType.monoLabel.copyWith(color: c.onSurfaceVariant),
+                                PageScrubber(
+                                  value: controller.progress,
+                                  tick: controller.progress,
+                                  label: (double v) {
+                                    final (int ss, int sb, int so) = reading.positionAt(v);
+                                    final int at = reading.chapterAt(_global((ss, sb, so)));
+                                    final String t = reading.chapters[at].title;
+                                    return t.isEmpty ? '${reading.unitLabel} ${at + 1}' : t;
+                                  },
+                                  onChanged: (double v) => _jumpWithBack(reading.positionAt(v)),
+                                ),
+                                Row(
+                                  mainAxisAlignment: MainAxisAlignment.spaceAround,
+                                  children: <Widget>[
+                                    AppIconButton(
+                                      icon: AppIcons.toc,
+                                      filled: false,
+                                      semanticLabel: 'Contents',
+                                      onPressed: _contents,
+                                    ),
+                                    AppIconButton(
+                                      icon: AppIcons.textFields,
+                                      filled: false,
+                                      semanticLabel: 'Reading settings',
+                                      onPressed: () => showReadingSettings(context),
+                                    ),
+                                    if (format.tts)
+                                      AppIconButton(
+                                        icon: AppIcons.headphones,
+                                        filled: false,
+                                        semanticLabel: 'Read aloud',
+                                        onPressed: _confirmReadAloud,
+                                      ),
+                                    if (format.annotations && widget.onPageMode != null)
+                                      AppIconButton(
+                                        icon: bookmark != null ? AppIcons.bookmark : AppIcons.bookmarkAdd,
+                                        fill: bookmark != null,
+                                        tint: bookmark != null ? c.primary : null,
+                                        filled: false,
+                                        semanticLabel: bookmark != null ? 'Remove bookmark' : 'Bookmark this page',
+                                        onPressed: _toggleBookmark,
+                                      ),
+                                  ],
                                 ),
                               ],
-                            ),
-                            PageScrubber(
-                              value: controller.progress,
-                              tick: controller.progress,
-                              label: (double v) {
-                                final (int ss, int _, int _) = reading.positionAt(v);
-                                final String t = reading.sections[ss].title;
-                                return t.isEmpty ? '${reading.unitLabel} ${ss + 1}' : t;
-                              },
-                              onChanged: (double v) => _jumpWithBack(reading.positionAt(v)),
-                            ),
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceAround,
-                              children: <Widget>[
-                                AppIconButton(
-                                  icon: AppIcons.toc,
-                                  filled: false,
-                                  semanticLabel: 'Contents',
-                                  onPressed: _contents,
-                                ),
-                                AppIconButton(
-                                  icon: AppIcons.textFields,
-                                  filled: false,
-                                  semanticLabel: 'Reading settings',
-                                  onPressed: () => showReadingSettings(context),
-                                ),
-                                if (format.tts)
-                                  AppIconButton(
-                                    icon: AppIcons.headphones,
-                                    filled: false,
-                                    semanticLabel: 'Read aloud',
-                                    onPressed: _confirmReadAloud,
-                                  ),
-                                if (format.annotations && widget.onPageMode != null)
-                                  AppIconButton(
-                                    icon: bookmark != null ? AppIcons.bookmark : AppIcons.bookmarkAdd,
-                                    fill: bookmark != null,
-                                    tint: bookmark != null ? c.primary : null,
-                                    filled: false,
-                                    semanticLabel: bookmark != null ? 'Remove bookmark' : 'Bookmark this page',
-                                    onPressed: _toggleBookmark,
-                                  ),
-                              ],
-                            ),
-                          ],
+                            );
+                          },
                         ),
                       ),
               ),
@@ -1243,7 +1295,7 @@ class ReaderScaffoldState extends ConsumerState<ReaderScaffold> with WidgetsBind
             hint: 'Search in book',
             autofocus: true,
             height: 48,
-            onChanged: _search,
+            onChanged: _searchTyped,
             trailing: _query.isEmpty
                 ? null
                 : Text(
@@ -1283,101 +1335,101 @@ class ReaderScaffoldState extends ConsumerState<ReaderScaffold> with WidgetsBind
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
-          InkWell(
+          Pressable(
+            kind: PressKind.row,
             onTap: () => setState(() => _resultsOpen = !_resultsOpen),
             child: Padding(
               padding: const EdgeInsets.fromLTRB(Space.screen, 0, Space.screen, Space.sm),
               child: Row(
                 children: <Widget>[
                   Expanded(
-                    child: Text(
-                      '${_hits.length} ${_hits.length == 1 ? 'RESULT' : 'RESULTS'} · $sections ${reading.unitLabel.toUpperCase()}${sections == 1 ? '' : 'S'}',
-                      style: UnfurlType.sectionHeader.copyWith(color: c.onSurfaceVariant),
+                    child: SectionHeader(
+                      label:
+                          '${_hits.length} ${_hits.length == 1 ? 'result' : 'results'} · $sections ${reading.unitLabel}${sections == 1 ? '' : 's'}',
                     ),
                   ),
-                  AppIcon(
-                    _resultsOpen ? AppIcons.expandMore : AppIcons.expandLess,
+                  ChevronTurn(
+                    expanded: _resultsOpen,
+                    openDegrees: 180,
                     size: 18,
-                    color: c.onSurfaceVariant,
+                    child: AppIcon(AppIcons.expandLess, size: 18, color: c.onSurfaceVariant),
                   ),
                 ],
               ),
             ),
           ),
-          AnimatedSize(
-            duration: Motion.of(context, Motion.fast),
-            curve: Motion.decelerate,
-            child: !_resultsOpen
-                ? const SizedBox(width: double.infinity)
-                : ConstrainedBox(
-                    constraints: const BoxConstraints(maxHeight: 220),
-                    child: ListView.builder(
-                      shrinkWrap: true,
-                      padding: EdgeInsets.zero,
-                      itemCount: _hits.length,
-                      itemBuilder: (BuildContext context, int i) {
-                        final int h = _hits[i];
-                        final int a = math.max(0, h - 28), b = math.min(t.length, h + _query.length + 40);
-                        return Material(
-                          color: i == _hit ? c.primaryContainer : Colors.transparent,
-                          child: InkWell(
-                            onTap: () {
-                              setState(() => _hit = i);
-                              _refreshMarks();
-                              _jumping = true;
-                              controller.goToIndex(h);
-                            },
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: Space.screen, vertical: 10),
-                              child: Row(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                spacing: Space.md,
-                                children: <Widget>[
-                                  SizedBox(
-                                    width: 64,
-                                    child: Text(
-                                      _labelFor(h).split(' · ').first,
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: UnfurlType.monoLabel.copyWith(
-                                        color: i == _hit ? c.onPrimaryContainer : c.onSurfaceVariant,
-                                      ),
-                                    ),
-                                  ),
-                                  Expanded(
-                                    child: Text.rich(
-                                      TextSpan(
-                                        children: <TextSpan>[
-                                          TextSpan(text: '…${t.substring(a, h).replaceAll('\n', ' ')}'),
-                                          TextSpan(
-                                            text: t.substring(h, math.min(t.length, h + _query.length)),
-                                            style: const TextStyle(
-                                              fontWeight: FontWeight.w700,
-                                              fontVariations: <FontVariation>[FontVariation('wght', 700)],
-                                            ),
-                                          ),
-                                          TextSpan(
-                                            text:
-                                                '${t.substring(math.min(t.length, h + _query.length), b).replaceAll('\n', ' ')}…',
-                                          ),
-                                        ],
-                                      ),
-                                      maxLines: 2,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: UnfurlType.note.copyWith(
-                                        height: 1.4,
-                                        color: i == _hit ? c.onPrimaryContainer : c.onSurface,
-                                      ),
-                                    ),
-                                  ),
-                                ],
+          ExpandCollapse(
+            expanded: _resultsOpen,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: 220),
+              child: ListView.builder(
+                shrinkWrap: true,
+                padding: EdgeInsets.zero,
+                itemCount: _hits.length,
+                itemBuilder: (BuildContext context, int i) {
+                  final int h = _hits[i];
+                  final int a = math.max(0, h - 28), b = math.min(t.length, h + _query.length + 40);
+                  return Material(
+                    color: i == _hit ? c.primaryContainer : c.primaryContainer.withValues(alpha: 0),
+                    child: Pressable(
+                      kind: PressKind.row,
+                      onTap: () {
+                        setState(() => _hit = i);
+                        _refreshMarks();
+                        _jumping = true;
+                        controller.goToIndex(h);
+                      },
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: Space.screen, vertical: 10),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          spacing: Space.md,
+                          children: <Widget>[
+                            SizedBox(
+                              width: 64,
+                              child: Text(
+                                _labelFor(h).split(' · ').first,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: UnfurlType.monoLabel.copyWith(
+                                  color: i == _hit ? c.onPrimaryContainer : c.onSurfaceVariant,
+                                ),
                               ),
                             ),
-                          ),
-                        );
-                      },
+                            Expanded(
+                              child: Text.rich(
+                                TextSpan(
+                                  children: <TextSpan>[
+                                    TextSpan(text: '…${t.substring(a, h).replaceAll('\n', ' ')}'),
+                                    TextSpan(
+                                      text: t.substring(h, math.min(t.length, h + _query.length)),
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.w700,
+                                        fontVariations: <FontVariation>[FontVariation('wght', 700)],
+                                      ),
+                                    ),
+                                    TextSpan(
+                                      text:
+                                          '${t.substring(math.min(t.length, h + _query.length), b).replaceAll('\n', ' ')}…',
+                                    ),
+                                  ],
+                                ),
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: UnfurlType.note.copyWith(
+                                  height: 1.4,
+                                  color: i == _hit ? c.onPrimaryContainer : c.onSurface,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
                     ),
-                  ),
+                  );
+                },
+              ),
+            ),
           ),
         ],
       ),

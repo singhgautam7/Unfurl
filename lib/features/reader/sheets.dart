@@ -6,7 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/db/database.dart';
-import '../../core/motion/motion.dart';
+import '../../core/motion/kit.dart';
 import '../../core/platform/platform.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/theme/palette.dart';
@@ -116,16 +116,9 @@ Future<T?> showReaderSheet<T>(
   bool scrim = true,
   double? heightFactor,
   bool surface = false,
-}) => showModalBottomSheet<T>(
+}) => pushHeldSheet<T>(
   context: context,
-  useRootNavigator: true,
-  isScrollControlled: true,
-  backgroundColor: Colors.transparent,
   barrierColor: scrim ? context.colors.scrim : Colors.transparent,
-  sheetAnimationStyle: AnimationStyle(
-    duration: Motion.of(context, Motion.sheet),
-    curve: Motion.curveOf(context, Motion.decelerate),
-  ),
   builder: (BuildContext ctx) => Padding(
     padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(ctx).bottom),
     child: ReaderSheet(
@@ -141,16 +134,9 @@ Future<T?> showReaderSheet<T>(
 /// Reading settings (R7): opens at about half height over the live page,
 /// which re-renders on every change. [pdf] swaps typography for layout,
 /// crop and recolour ("Page settings").
-Future<void> showReadingSettings(BuildContext context, {bool pdf = false}) => showModalBottomSheet<void>(
+Future<void> showReadingSettings(BuildContext context, {bool pdf = false}) => pushHeldSheet<void>(
   context: context,
-  useRootNavigator: true,
-  isScrollControlled: true,
-  backgroundColor: Colors.transparent,
   barrierColor: Colors.transparent,
-  sheetAnimationStyle: AnimationStyle(
-    duration: Motion.of(context, Motion.sheet),
-    curve: Motion.curveOf(context, Motion.decelerate),
-  ),
   // Opens at the board's 540 (Theme to Margins; Page settings 500), over a
   // page that re-renders live; dragged up it shows every group.
   builder: (BuildContext ctx) => DraggableScrollableSheet(
@@ -172,8 +158,11 @@ class _ThemeSwatches extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final UnfurlColors c = context.colors;
-    final ReadingPrefs p = ref.watch(readingPrefsProvider);
-    final ReadingThemeId current = p.themeFor(darkChrome: c.isDark, amoledChrome: c.tone == Tone.amoled);
+    final ReadingThemeId current = ref.watch(
+      readingPrefsProvider.select(
+        (ReadingPrefs p) => p.themeFor(darkChrome: c.isDark, amoledChrome: c.tone == Tone.amoled),
+      ),
+    );
     // Seven presets (v2 · V2-02) run off the right edge; the cut-off sixth
     // swatch says there are more. The ring draws in the 4dp margin.
     return SingleChildScrollView(
@@ -228,50 +217,53 @@ class ThemeSwatch extends StatelessWidget {
       label: semantic,
       onTap: onTap,
       excludeSemantics: true,
-      child: GestureDetector(
-        onTap: onTap,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          spacing: 6,
-          children: <Widget>[
-            AnimatedContainer(
-              duration: Motion.of(context, Motion.fast),
-              width: size,
-              height: size,
-              // Room for the selection ring, which draws outside the circle.
-              margin: const EdgeInsets.all(4),
-              alignment: Alignment.center,
-              decoration: BoxDecoration(
-                color: theme.paper,
-                shape: BoxShape.circle,
-                border: selected ? null : Border.all(color: c.outline),
-                boxShadow: selected
-                    ? <BoxShadow>[
-                        BoxShadow(color: c.surfaceContainer, spreadRadius: 2),
-                        BoxShadow(color: c.primary, spreadRadius: 4),
-                      ]
+      child: Pressable(
+        kind: PressKind.chip,
+        child: GestureDetector(
+          onTap: onTap,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            spacing: 6,
+            children: <Widget>[
+              AnimatedContainer(
+                duration: Motion.of(context, Motion.fast),
+                width: size,
+                height: size,
+                // Room for the selection ring, which draws outside the circle.
+                margin: const EdgeInsets.all(4),
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: theme.paper,
+                  shape: BoxShape.circle,
+                  border: selected ? null : Border.all(color: c.outline),
+                  boxShadow: selected
+                      ? <BoxShadow>[
+                          BoxShadow(color: c.surfaceContainer, spreadRadius: 2),
+                          BoxShadow(color: c.primary, spreadRadius: 4),
+                        ]
+                      : null,
+                ),
+                child: letters
+                    ? Text(
+                        'Aa',
+                        style: TextStyle(
+                          fontFamily: kLiterata,
+                          fontSize: size * 0.29,
+                          fontWeight: FontWeight.w500,
+                          color: theme.ink,
+                        ),
+                      )
                     : null,
               ),
-              child: letters
-                  ? Text(
-                      'Aa',
-                      style: TextStyle(
-                        fontFamily: kLiterata,
-                        fontSize: size * 0.29,
-                        fontWeight: FontWeight.w500,
-                        color: theme.ink,
-                      ),
-                    )
-                  : null,
-            ),
-            if (label != null)
-              Text(
-                label!,
-                style: UnfurlType.label
-                    .copyWith(fontSize: 11, color: selected ? c.onSurface : c.onSurfaceVariant)
-                    .weight(selected ? 600 : 500),
-              ),
-          ],
+              if (label != null)
+                Text(
+                  label!,
+                  style: UnfurlType.label
+                      .copyWith(fontSize: 11, color: selected ? c.onSurface : c.onSurfaceVariant)
+                      .weight(selected ? 600 : 500),
+                ),
+            ],
+          ),
         ),
       ),
     );
@@ -284,7 +276,9 @@ class _ReadingSettings extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final UnfurlColors c = context.colors;
-    final ReadingPrefs p = ref.watch(readingPrefsProvider);
+    final p = ref.watch(
+      readingPrefsProvider.select((ReadingPrefs p) => (font: p.font, hyphenate: p.hyphenate, layout: p.layout)),
+    );
     final ReadingPrefsController ctl = ref.read(readingPrefsProvider.notifier);
     void set(ReadingPrefs Function(ReadingPrefs) f) => ctl.update(f);
     return Column(
@@ -308,28 +302,36 @@ class _ReadingSettings extends ConsumerWidget {
                     onTap: () => set((ReadingPrefs x) => x.copyWith(font: f)),
                     excludeSemantics: true,
                     // 44 to the eye, 48 to the finger.
-                    child: GestureDetector(
-                      behavior: HitTestBehavior.opaque,
-                      onTap: () => set((ReadingPrefs x) => x.copyWith(font: f)),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 2),
-                        child: Material(
-                          color: f == p.font ? c.primaryContainer : c.surfaceContainerHigh,
-                          shape: const StadiumBorder(),
-                          child: InkWell(
-                            customBorder: const StadiumBorder(),
-                            onTap: () => set((ReadingPrefs x) => x.copyWith(font: f)),
-                            child: Container(
-                              height: 44,
-                              padding: const EdgeInsets.symmetric(horizontal: Space.lg),
-                              alignment: Alignment.center,
-                              child: Text(
-                                f.label,
-                                style: TextStyle(
-                                  fontFamily: f.family,
-                                  fontSize: f == ReaderFont.openDyslexic ? 14 : 15.5,
-                                  fontWeight: FontWeight.w500,
-                                  color: f == p.font ? c.onPrimaryContainer : c.onSurface,
+                    child: Pressable(
+                      kind: PressKind.chip,
+                      child: GestureDetector(
+                        behavior: HitTestBehavior.opaque,
+                        onTap: () => set((ReadingPrefs x) => x.copyWith(font: f)),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 2),
+                          child: _SelectedShape(
+                            selected: f == p.font,
+                            builder: (BuildContext context, BorderRadius radius) => Material(
+                              color: f == p.font ? c.primaryContainer : c.surfaceContainerHigh,
+                              borderRadius: radius,
+                              clipBehavior: Clip.antiAlias,
+                              child: InkWell(
+                                splashFactory: NoSplash.splashFactory,
+                                overlayColor: pressedLayer(c),
+                                onTap: () => set((ReadingPrefs x) => x.copyWith(font: f)),
+                                child: Container(
+                                  height: 44,
+                                  padding: const EdgeInsets.symmetric(horizontal: Space.lg),
+                                  alignment: Alignment.center,
+                                  child: Text(
+                                    f.label,
+                                    style: TextStyle(
+                                      fontFamily: f.family,
+                                      fontSize: f == ReaderFont.openDyslexic ? 14 : 15.5,
+                                      fontWeight: FontWeight.w500,
+                                      color: f == p.font ? c.onPrimaryContainer : c.onSurface,
+                                    ),
+                                  ),
                                 ),
                               ),
                             ),
@@ -362,34 +364,62 @@ class _ReadingSettings extends ConsumerWidget {
             _Group(label: 'Align', child: AlignControl()),
           ],
         ),
-        const _Group(label: 'Layout', child: LayoutControl()),
-        _Group(
-          label: 'Page',
-          child: _Card(
+        // Below the sheet's opening height.
+        AfterSlide(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            spacing: Space.lg,
             children: <Widget>[
-              _SwitchRow(
-                label: 'Hyphenation',
-                value: p.hyphenate,
-                onChanged: (bool v) => set((ReadingPrefs x) => x.copyWith(hyphenate: v)),
+              const _Group(label: 'Layout', child: LayoutControl()),
+              _Group(
+                label: 'Page',
+                child: _Card(
+                  children: <Widget>[
+                    _SwitchRow(
+                      label: 'Hyphenation',
+                      value: p.hyphenate,
+                      onChanged: (bool v) => set((ReadingPrefs x) => x.copyWith(hyphenate: v)),
+                    ),
+                    const BrightnessRow(labelled: true),
+                  ],
+                ),
               ),
-              const BrightnessRow(labelled: true),
+              // Last, so leaving Paged moves nothing above it.
+              ShowHide(
+                visible: p.layout == ReaderLayout.paged,
+                child: const _Group(label: 'Page turn', child: PageTurnControl()),
+              ),
+              AppButton(
+                label: 'Reset to defaults',
+                icon: AppIcons.history,
+                type: AppButtonType.secondary,
+                height: IconSpec.tapTarget,
+                onPressed: ctl.reset,
+              ),
+              const SizedBox(height: Space.sm),
             ],
           ),
         ),
-        // Last, so leaving Paged moves nothing above it.
-        ShowHide(
-          visible: p.layout == ReaderLayout.paged,
-          child: const _Group(label: 'Page turn', child: PageTurnControl()),
-        ),
-        AppButton(
-          label: 'Reset to defaults',
-          icon: AppIcons.history,
-          type: AppButtonType.secondary,
-          height: IconSpec.tapTarget,
-          onPressed: ctl.reset,
-        ),
-        const SizedBox(height: Space.sm),
       ],
+    );
+  }
+}
+
+/// Picked is a 12 dp squircle, the rest pills (the chips' rule and spring).
+class _SelectedShape extends StatelessWidget {
+  const _SelectedShape({required this.selected, required this.builder});
+
+  final bool selected;
+  final Widget Function(BuildContext context, BorderRadius radius) builder;
+
+  @override
+  Widget build(BuildContext context) {
+    final MotionLevel level = Motion.levelOf(context);
+    return TweenAnimationBuilder<double>(
+      tween: Tween<double>(end: selected ? kSelectedRadius : 22),
+      duration: level == MotionLevel.expressive ? Motion.fastCurve.settle : Duration.zero,
+      curve: Motion.fastCurve.clamped,
+      builder: (BuildContext context, double r, Widget? _) => builder(context, BorderRadius.circular(r)),
     );
   }
 }
@@ -399,7 +429,11 @@ class _PageSettings extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final ReadingPrefs p = ref.watch(readingPrefsProvider);
+    final p = ref.watch(
+      readingPrefsProvider.select(
+        (ReadingPrefs p) => (pdfLayout: p.pdfLayout, pdfCrop: p.pdfCrop, pdfRecolour: p.pdfRecolour),
+      ),
+    );
     void set(ReadingPrefs Function(ReadingPrefs) f) => ref.read(readingPrefsProvider.notifier).update(f);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -448,8 +482,8 @@ class TextSizeControl extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final ReadingPrefs p = ref.watch(readingPrefsProvider);
-    final int at = ReadingPrefs.sizes.indexOf(p.size);
+    final double size = ref.watch(readingPrefsProvider.select((ReadingPrefs p) => p.size));
+    final int at = ReadingPrefs.sizes.indexOf(size);
     return _Track(
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -467,8 +501,8 @@ class TextSizeControl extends ConsumerWidget {
               child: ScaleTransition(scale: Tween<double>(begin: 0.7, end: 1).animate(a), child: child),
             ),
             child: Text(
-              '${p.size.round()}',
-              key: ValueKey<double>(p.size),
+              '${size.round()}',
+              key: ValueKey<double>(size),
               style: UnfurlType.monoTabular.copyWith(color: context.colors.onSurface),
             ),
           ),
@@ -599,12 +633,6 @@ class _StepButton extends StatefulWidget {
 }
 
 class _StepButtonState extends State<_StepButton> {
-  bool _down = false;
-
-  void _press({required bool down}) {
-    if (widget.onTap != null && down != _down) setState(() => _down = down);
-  }
-
   @override
   Widget build(BuildContext context) {
     final UnfurlColors c = context.colors;
@@ -614,32 +642,34 @@ class _StepButtonState extends State<_StepButton> {
       label: widget.semantic,
       onTap: widget.onTap,
       excludeSemantics: true,
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: widget.onTap,
-        onTapDown: (_) => _press(down: true),
-        onTapUp: (_) => _press(down: false),
-        onTapCancel: () => _press(down: false),
-        child: Padding(
+      // A pill that squares up a little while held; the state layer is the
+      // fill, so there is no splash.
+      child: Pressable(
+        kind: PressKind.button,
+        restRadius: 20,
+        enabled: widget.onTap != null,
+        builder: (BuildContext context, double radius, double pressed) => Padding(
           padding: const EdgeInsets.symmetric(vertical: Space.xs),
-          child: AnimatedScale(
-            scale: _down ? 0.85 : 1,
-            duration: Motion.of(context, Motion.instant),
-            curve: Motion.curveOf(context, Motion.spring),
-            child: AnimatedContainer(
-              duration: Motion.of(context, Motion.instant),
-              width: 48,
-              height: 40,
-              decoration: BoxDecoration(
-                color: _down ? c.surface : c.surface.withValues(alpha: 0),
-                borderRadius: Radii.fullR,
-              ),
-              alignment: Alignment.center,
-              child: Text(
-                widget.label,
-                style: UnfurlType.titleMedium
-                    .copyWith(fontSize: widget.size, color: widget.onTap == null ? c.onSurfaceMuted : c.icon)
-                    .weight(600),
+          child: Material(
+            color: c.surface.withValues(alpha: 0),
+            animationDuration: Duration.zero,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(radius)),
+            clipBehavior: Clip.antiAlias,
+            child: InkWell(
+              onTap: widget.onTap,
+              overlayColor: pressedLayer(c),
+              splashFactory: NoSplash.splashFactory,
+              child: SizedBox(
+                width: 48,
+                height: 40,
+                child: Center(
+                  child: Text(
+                    widget.label,
+                    style: UnfurlType.titleMedium
+                        .copyWith(fontSize: widget.size, color: widget.onTap == null ? c.onSurfaceMuted : c.icon)
+                        .weight(600),
+                  ),
+                ),
               ),
             ),
           ),
@@ -678,21 +708,28 @@ class _IconSegments<T> extends StatelessWidget {
               label: labels[i],
               onTap: () => onChanged(values[i]),
               excludeSemantics: true,
-              child: GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onTap: () => onChanged(values[i]),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(vertical: Space.xs),
-                  child: AnimatedContainer(
-                    duration: Motion.of(context, Motion.fast),
-                    width: IconSpec.tapTarget,
-                    height: 40,
-                    decoration: BoxDecoration(
-                      color: values[i] == selected ? c.surface : c.surface.withValues(alpha: 0),
-                      borderRadius: Radii.fullR,
-                      border: Border.all(color: values[i] == selected ? c.outline : c.outline.withValues(alpha: 0)),
+              child: Pressable(
+                kind: PressKind.chip,
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: () => onChanged(values[i]),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: Space.xs),
+                    // Picked is the accent, 12 dp, as every single choice; a
+                    // surface fill with an outline looks disabled.
+                    child: _SelectedShape(
+                      selected: values[i] == selected,
+                      builder: (BuildContext context, BorderRadius radius) => AnimatedContainer(
+                        duration: Motion.of(context, Motion.fast),
+                        width: IconSpec.tapTarget,
+                        height: 40,
+                        decoration: BoxDecoration(
+                          color: values[i] == selected ? c.primary : c.primary.withValues(alpha: 0),
+                          borderRadius: radius,
+                        ),
+                        child: AppIcon(icons[i], size: 20, color: values[i] == selected ? c.onPrimary : c.iconMuted),
+                      ),
                     ),
-                    child: AppIcon(icons[i], size: 20, color: values[i] == selected ? c.onSurface : c.iconMuted),
                   ),
                 ),
               ),
@@ -735,34 +772,10 @@ class _SwitchRow extends StatelessWidget {
   final bool value;
   final ValueChanged<bool> onChanged;
 
+  /// The whole row toggles, once (the kit's switch row).
   @override
-  Widget build(BuildContext context) {
-    final UnfurlColors c = context.colors;
-    return MergeSemantics(
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(minHeight: 52),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: Space.xs),
-          child: Row(
-            children: <Widget>[
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: <Widget>[
-                    Text(label, style: UnfurlType.titleMedium.copyWith(color: c.onSurface)),
-                    if (subtitle != null)
-                      Text(subtitle!, style: UnfurlType.bodySmall.copyWith(color: c.onSurfaceVariant)),
-                  ],
-                ),
-              ),
-              Switch(value: value, onChanged: onChanged),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
+  Widget build(BuildContext context) =>
+      ListRow(label: label, subtitle: subtitle, switchValue: value, onChanged: onChanged, minHeight: 52);
 }
 
 /// Screen brightness for reading, or the system's ("Auto").
@@ -785,8 +798,8 @@ class BrightnessRow extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final UnfurlColors c = context.colors;
-    final ReadingPrefs p = ref.watch(readingPrefsProvider);
-    final double v = p.brightness ?? 0.44;
+    final double? brightness = ref.watch(readingPrefsProvider.select((ReadingPrefs p) => p.brightness));
+    final double v = brightness ?? 0.44;
     return SizedBox(
       height: 52,
       child: Padding(
@@ -801,7 +814,7 @@ class BrightnessRow extends ConsumerWidget {
               child: SliderTheme(
                 data: SliderThemeData(
                   trackHeight: 6,
-                  activeTrackColor: p.brightness == null ? c.onSurfaceMuted : c.primary,
+                  activeTrackColor: brightness == null ? c.onSurfaceMuted : c.primary,
                   inactiveTrackColor: c.surfaceContainerHigh,
                   thumbColor: c.primary,
                   overlayColor: c.primary.withValues(alpha: 0.12),
@@ -820,18 +833,23 @@ class BrightnessRow extends ConsumerWidget {
             Semantics(
               button: true,
               label: 'Automatic brightness',
-              child: InkWell(
-                onTap: () {
-                  ref.read(readingPrefsProvider.notifier).update((ReadingPrefs s) => s.copyWith(clearBrightness: true));
-                  if (live) unawaited(Platform.setBrightness(null));
-                },
-                child: SizedBox(
-                  width: 56,
-                  height: IconSpec.tapTarget,
-                  child: Center(
-                    child: Text(
-                      p.brightness == null ? 'Auto' : (percent ? '${(v * 100).round()}%' : 'Auto'),
-                      style: UnfurlType.monoLabel.copyWith(color: p.brightness == null ? c.accent : c.onSurfaceVariant),
+              child: Pressable(
+                kind: PressKind.button,
+                child: InkWell(
+                  onTap: () {
+                    ref
+                        .read(readingPrefsProvider.notifier)
+                        .update((ReadingPrefs s) => s.copyWith(clearBrightness: true));
+                    if (live) unawaited(Platform.setBrightness(null));
+                  },
+                  child: SizedBox(
+                    width: 56,
+                    height: IconSpec.tapTarget,
+                    child: Center(
+                      child: Text(
+                        brightness == null ? 'Auto' : (percent ? '${(v * 100).round()}%' : 'Auto'),
+                        style: UnfurlType.monoLabel.copyWith(color: brightness == null ? c.accent : c.onSurfaceVariant),
+                      ),
                     ),
                   ),
                 ),
@@ -985,33 +1003,36 @@ class _ContentsSheetState extends State<ContentsSheet> {
             button: true,
             selected: r.current,
             child: Material(
-              color: r.current ? c.primaryContainer : Colors.transparent,
+              color: r.current ? c.primaryContainer : c.primaryContainer.withValues(alpha: 0),
               borderRadius: Radii.cardR,
-              child: InkWell(
-                borderRadius: Radii.cardR,
-                onTap: r.onTap,
-                child: Padding(
-                  padding: EdgeInsets.only(left: Space.screen - 8 + r.level * Space.lg, right: Space.md),
-                  child: Row(
-                    spacing: Space.md,
-                    children: <Widget>[
-                      Expanded(
-                        child: Text(
-                          r.title,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: UnfurlType.body
-                              .copyWith(height: 1.3, color: r.current ? c.onPrimaryContainer : c.onSurface)
-                              .weight(r.current ? 600 : 400),
+              child: Pressable(
+                kind: PressKind.row,
+                child: InkWell(
+                  borderRadius: Radii.cardR,
+                  onTap: r.onTap,
+                  child: Padding(
+                    padding: EdgeInsets.only(left: Space.screen - 8 + r.level * Space.lg, right: Space.md),
+                    child: Row(
+                      spacing: Space.md,
+                      children: <Widget>[
+                        Expanded(
+                          child: Text(
+                            r.title,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: UnfurlType.body
+                                .copyWith(height: 1.3, color: r.current ? c.onPrimaryContainer : c.onSurface)
+                                .weight(r.current ? 600 : 400),
+                          ),
                         ),
-                      ),
-                      Text(
-                        r.where,
-                        style: UnfurlType.monoLabel.copyWith(
-                          color: r.current ? c.onPrimaryContainer : c.onSurfaceVariant,
+                        Text(
+                          r.where,
+                          style: UnfurlType.monoLabel.copyWith(
+                            color: r.current ? c.onPrimaryContainer : c.onSurfaceVariant,
+                          ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
               ),
@@ -1045,35 +1066,44 @@ class _ContentsSheetState extends State<ContentsSheet> {
           children: <Widget>[
             for (int i = 0; i < widget.bookmarks.length; i++) ...<Widget>[
               if (i > 0) Divider(color: c.divider),
-              InkWell(
-                onTap: widget.bookmarks[i].onTap,
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: Space.lg, vertical: Space.md),
-                  child: Row(
-                    spacing: 14,
-                    children: <Widget>[
-                      AppIcon(AppIcons.bookmark, fill: true, color: c.primary),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: <Widget>[
-                            Text(widget.bookmarks[i].label, style: UnfurlType.titleMedium.copyWith(color: c.onSurface)),
-                            Text(
-                              widget.bookmarks[i].annotation.quote,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                fontFamily: kLiterata,
-                                fontSize: 13,
-                                height: 1.5,
-                                color: c.onSurfaceVariant,
+              Pressable(
+                kind: PressKind.row,
+                child: InkWell(
+                  onTap: widget.bookmarks[i].onTap,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: Space.lg, vertical: Space.md),
+                    child: Row(
+                      spacing: 14,
+                      children: <Widget>[
+                        AppIcon(AppIcons.bookmark, fill: true, color: c.primary),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: <Widget>[
+                              Text(
+                                widget.bookmarks[i].label,
+                                style: UnfurlType.titleMedium.copyWith(color: c.onSurface),
                               ),
-                            ),
-                          ],
+                              Text(
+                                widget.bookmarks[i].annotation.quote,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontFamily: kLiterata,
+                                  fontSize: 13,
+                                  height: 1.5,
+                                  color: c.onSurfaceVariant,
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
-                      ),
-                      Text(widget.bookmarks[i].where, style: UnfurlType.monoLabel.copyWith(color: c.onSurfaceVariant)),
-                    ],
+                        Text(
+                          widget.bookmarks[i].where,
+                          style: UnfurlType.monoLabel.copyWith(color: c.onSurfaceVariant),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ),
@@ -1098,16 +1128,19 @@ class _ContentsSheetState extends State<ContentsSheet> {
             Material(
               color: _color == null ? c.primaryContainer : c.surfaceContainerHigh,
               shape: const StadiumBorder(),
-              child: InkWell(
-                customBorder: const StadiumBorder(),
-                onTap: () => setState(() => _color = null),
-                child: Container(
-                  height: 36,
-                  padding: const EdgeInsets.symmetric(horizontal: 14),
-                  alignment: Alignment.center,
-                  child: Text(
-                    'All ${widget.highlights.length}',
-                    style: UnfurlType.titleSmall.copyWith(color: _color == null ? c.onPrimaryContainer : c.onSurface),
+              child: Pressable(
+                kind: PressKind.chip,
+                child: InkWell(
+                  customBorder: const StadiumBorder(),
+                  onTap: () => setState(() => _color = null),
+                  child: Container(
+                    height: 36,
+                    padding: const EdgeInsets.symmetric(horizontal: 14),
+                    alignment: Alignment.center,
+                    child: Text(
+                      'All ${widget.highlights.length}',
+                      style: UnfurlType.titleSmall.copyWith(color: _color == null ? c.onPrimaryContainer : c.onSurface),
+                    ),
                   ),
                 ),
               ),
@@ -1122,16 +1155,19 @@ class _ContentsSheetState extends State<ContentsSheet> {
                 child: Material(
                   color: _color == h.index ? c.primaryContainer : c.surfaceContainerHigh,
                   shape: const CircleBorder(),
-                  child: InkWell(
-                    customBorder: const CircleBorder(),
-                    onTap: () => setState(() => _color = h.index),
-                    child: SizedBox.square(
-                      dimension: IconSpec.tapTarget - 8,
-                      child: Center(
-                        child: Container(
-                          width: 14,
-                          height: 14,
-                          decoration: BoxDecoration(color: widget.theme.highlights[h.index], shape: BoxShape.circle),
+                  child: Pressable(
+                    kind: PressKind.chip,
+                    child: InkWell(
+                      customBorder: const CircleBorder(),
+                      onTap: () => setState(() => _color = h.index),
+                      child: SizedBox.square(
+                        dimension: IconSpec.tapTarget - 8,
+                        child: Center(
+                          child: Container(
+                            width: 14,
+                            height: 14,
+                            decoration: BoxDecoration(color: widget.theme.highlights[h.index], shape: BoxShape.circle),
+                          ),
                         ),
                       ),
                     ),
@@ -1155,34 +1191,40 @@ class _ContentsSheetState extends State<ContentsSheet> {
                       children: <Widget>[
                         for (int i = 0; i < rows.length; i++) ...<Widget>[
                           if (i > 0) Divider(color: c.divider),
-                          InkWell(
-                            onTap: rows[i].onTap,
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: Space.lg, vertical: Space.md),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.stretch,
-                                spacing: 6,
-                                children: <Widget>[
-                                  Text(rows[i].where, style: UnfurlType.monoLabel.copyWith(color: c.onSurfaceVariant)),
-                                  HighlightQuote(
-                                    text: rows[i].annotation.quote,
-                                    color: widget.theme.highlights[rows[i].annotation.color ?? 0],
-                                  ),
-                                  if (rows[i].annotation.note != null)
-                                    Row(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      spacing: 6,
-                                      children: <Widget>[
-                                        AppIcon(AppIcons.editNote, size: 18, color: c.onSurfaceVariant),
-                                        Expanded(
-                                          child: Text(
-                                            rows[i].annotation.note!,
-                                            style: UnfurlType.note.copyWith(color: c.onSurfaceVariant),
-                                          ),
-                                        ),
-                                      ],
+                          Pressable(
+                            kind: PressKind.row,
+                            child: InkWell(
+                              onTap: rows[i].onTap,
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(horizontal: Space.lg, vertical: Space.md),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                                  spacing: 6,
+                                  children: <Widget>[
+                                    Text(
+                                      rows[i].where,
+                                      style: UnfurlType.monoLabel.copyWith(color: c.onSurfaceVariant),
                                     ),
-                                ],
+                                    HighlightQuote(
+                                      text: rows[i].annotation.quote,
+                                      color: widget.theme.highlights[rows[i].annotation.color ?? 0],
+                                    ),
+                                    if (rows[i].annotation.note != null)
+                                      Row(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        spacing: 6,
+                                        children: <Widget>[
+                                          AppIcon(AppIcons.editNote, size: 18, color: c.onSurfaceVariant),
+                                          Expanded(
+                                            child: Text(
+                                              rows[i].annotation.note!,
+                                              style: UnfurlType.note.copyWith(color: c.onSurfaceVariant),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                  ],
+                                ),
                               ),
                             ),
                           ),
@@ -1407,7 +1449,7 @@ class _VoiceSheetState extends ConsumerState<_VoiceSheet> {
   @override
   Widget build(BuildContext context) {
     final UnfurlColors c = context.colors;
-    final String? chosen = ref.watch(readingPrefsProvider).ttsVoice;
+    final String? chosen = ref.watch(readingPrefsProvider.select((ReadingPrefs p) => p.ttsVoice));
     final String lang = Localizations.localeOf(context).languageCode;
     final List<Map<Object?, Object?>> voices = (_voices ?? const <Map<Object?, Object?>>[])
         .where((Map<Object?, Object?> v) => (v['locale'] as String? ?? '').startsWith(lang))
@@ -1458,21 +1500,24 @@ class _VoiceSheetState extends ConsumerState<_VoiceSheet> {
               ],
             ),
           ),
-        InkWell(
-          onTap: Platform.openTtsSettings,
-          child: SizedBox(
-            height: IconSpec.tapTarget,
-            child: Row(
-              spacing: Space.md,
-              children: <Widget>[
-                AppIcon(AppIcons.settings, size: 20, color: c.onSurfaceVariant),
-                Expanded(
-                  child: Text(
-                    'More voices in system text-to-speech settings',
-                    style: UnfurlType.note.copyWith(height: 1.5, color: c.onSurfaceVariant),
+        Pressable(
+          kind: PressKind.row,
+          child: InkWell(
+            onTap: Platform.openTtsSettings,
+            child: SizedBox(
+              height: IconSpec.tapTarget,
+              child: Row(
+                spacing: Space.md,
+                children: <Widget>[
+                  AppIcon(AppIcons.settings, size: 20, color: c.onSurfaceVariant),
+                  Expanded(
+                    child: Text(
+                      'More voices in system text-to-speech settings',
+                      style: UnfurlType.note.copyWith(height: 1.5, color: c.onSurfaceVariant),
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ),
@@ -1482,32 +1527,35 @@ class _VoiceSheetState extends ConsumerState<_VoiceSheet> {
 
   Widget _voiceRow(UnfurlColors c, Map<Object?, Object?> v, int i, bool on) {
     final String name = v['name']! as String;
-    return InkWell(
-      onTap: () {
-        ref.read(readingPrefsProvider.notifier).update((ReadingPrefs p) => p.copyWith(ttsVoice: name));
-        unawaited(Platform.setVoice(name));
-      },
-      child: SizedBox(
-        height: 56,
-        child: Padding(
-          padding: const EdgeInsets.only(left: Space.lg, right: Space.xs),
-          child: Row(
-            spacing: Space.md,
-            children: <Widget>[
-              AppIcon(on ? AppIcons.radioOn : AppIcons.radioOff, color: on ? c.primary : c.iconMuted),
-              Expanded(
-                child: Text(
-                  '${v['label']} · Voice ${i + 1}',
-                  style: UnfurlType.titleMedium.copyWith(color: c.onSurface).weight(on ? 600 : 400),
+    return Pressable(
+      kind: PressKind.row,
+      child: InkWell(
+        onTap: () {
+          ref.read(readingPrefsProvider.notifier).update((ReadingPrefs p) => p.copyWith(ttsVoice: name));
+          unawaited(Platform.setVoice(name));
+        },
+        child: SizedBox(
+          height: 56,
+          child: Padding(
+            padding: const EdgeInsets.only(left: Space.lg, right: Space.xs),
+            child: Row(
+              spacing: Space.md,
+              children: <Widget>[
+                AppIcon(on ? AppIcons.radioOn : AppIcons.radioOff, color: on ? c.primary : c.iconMuted),
+                Expanded(
+                  child: Text(
+                    '${v['label']} · Voice ${i + 1}',
+                    style: UnfurlType.titleMedium.copyWith(color: c.onSurface).weight(on ? 600 : 400),
+                  ),
                 ),
-              ),
-              AppIconButton(
-                icon: AppIcons.playCircle,
-                filled: false,
-                semanticLabel: 'Hear this voice',
-                onPressed: () => Platform.previewVoice(name, 'It is a truth universally acknowledged.'),
-              ),
-            ],
+                AppIconButton(
+                  icon: AppIcons.playCircle,
+                  filled: false,
+                  semanticLabel: 'Hear this voice',
+                  onPressed: () => Platform.previewVoice(name, 'It is a truth universally acknowledged.'),
+                ),
+              ],
+            ),
           ),
         ),
       ),

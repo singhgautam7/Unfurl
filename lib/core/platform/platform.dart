@@ -8,7 +8,7 @@ import 'package:flutter/services.dart';
 /// modified time.
 @immutable
 class DocRef {
-  const DocRef({required this.uri, required this.name, this.size = 0, this.modified = 0, this.mime});
+  const DocRef({required this.uri, required this.name, this.size = 0, this.modified = 0, this.mime, this.source});
 
   factory DocRef.fromMap(Map<Object?, Object?> m) => DocRef(
     uri: m['uri']! as String,
@@ -16,6 +16,7 @@ class DocRef {
     size: (m['size'] as int?) ?? 0,
     modified: (m['modified'] as int?) ?? 0,
     mime: m['mime'] as String?,
+    source: m['source'] == null ? null : FileSource.fromMap(m['source']! as Map<Object?, Object?>),
   );
 
   final String uri;
@@ -23,6 +24,12 @@ class DocRef {
   final int size;
   final int modified;
   final String? mime;
+
+  /// Set when the file just arrived from another app or the picker.
+  final FileSource? source;
+
+  DocRef withSource(FileSource? s) =>
+      DocRef(uri: uri, name: name, size: size, modified: modified, mime: mime, source: s ?? source);
 
   String get extension {
     final int dot = name.lastIndexOf('.');
@@ -35,6 +42,36 @@ class DocRef {
   @override
   int get hashCode => uri.hashCode;
 }
+
+/// Where a file came from, as far as Android said (`Sources.kt`).
+@immutable
+class FileSource {
+  const FileSource({this.authority, this.docId, this.sender, this.senderPackage, this.persisted = false});
+
+  factory FileSource.fromMap(Map<Object?, Object?> m) => FileSource(
+    authority: m['authority'] as String?,
+    docId: m['docId'] as String?,
+    sender: m['sender'] as String?,
+    senderPackage: m['senderPackage'] as String?,
+    persisted: (m['persisted'] as bool?) ?? false,
+  );
+
+  final String? authority;
+
+  /// Its exact location (`primary:Download/abc.pdf`); null when Android
+  /// didn't give one. Never guessed.
+  final String? docId;
+
+  /// The sending app's label and package.
+  final String? sender;
+  final String? senderPackage;
+
+  /// Android let Unfurl keep read access across restarts.
+  final bool persisted;
+}
+
+/// What Android says about a file that couldn't be read.
+typedef FileProbe = ({String? docId, bool? exists, String? covered, bool folderApp, int sdk});
 
 /// A granted folder tree.
 @immutable
@@ -243,13 +280,20 @@ abstract final class Platform {
     }
   }
 
-  static Future<DocRef?> pickFile(List<String> mimes) async {
-    final Map<Object?, Object?>? m = await _call<Map<Object?, Object?>>('pickFile', <String, Object?>{'mimes': mimes});
+  /// Android's file picker, opened at [initial] (a folder's document id).
+  static Future<DocRef?> pickFile(List<String> mimes, {String? initial}) async {
+    final Map<Object?, Object?>? m = await _call<Map<Object?, Object?>>('pickFile', <String, Object?>{
+      'mimes': mimes,
+      'initial': initial,
+    });
     return m == null ? null : DocRef.fromMap(m);
   }
 
-  static Future<PickedFolder?> pickFolder() async {
-    final Map<Object?, Object?>? m = await _call<Map<Object?, Object?>>('pickFolder');
+  /// Android's folder picker, opened at [initial] (a folder's document id).
+  static Future<PickedFolder?> pickFolder({String? initial}) async {
+    final Map<Object?, Object?>? m = await _call<Map<Object?, Object?>>('pickFolder', <String, Object?>{
+      'initial': initial,
+    });
     return m == null
         ? null
         : PickedFolder(uri: m['uri']! as String, name: m['name']! as String, path: (m['path'] as String?) ?? '');
@@ -266,11 +310,47 @@ abstract final class Platform {
     return m == null ? null : DocRef.fromMap(m);
   }
 
+  /// Why a file can't be read, as far as Android says: its exact location if
+  /// known, whether it is still there, and the same file inside a folder
+  /// already allowed ([FileProbe.covered]).
+  static Future<FileProbe> probeFile(String uri, String? docId) async {
+    final Map<Object?, Object?>? m = await _call<Map<Object?, Object?>>('probeFile', <String, Object?>{
+      'uri': uri,
+      'docId': docId,
+    });
+    return (
+      docId: (m?['docId'] as String?) ?? docId,
+      exists: m?['exists'] as bool?,
+      covered: m?['covered'] as String?,
+      folderApp: (m?['folderApp'] as bool?) ?? false,
+      sdk: (m?['sdk'] as int?) ?? 0,
+    );
+  }
+
+  /// The file at [docId] as a document of a granted folder; null when the
+  /// folder doesn't hold it.
+  static Future<String?> fileInFolder(String tree, String docId) =>
+      _call<String>('fileInFolder', <String, Object?>{'tree': tree, 'docId': docId});
+
+  /// Shows a folder in the phone's file manager.
+  static Future<bool> openFolder(String docId) async =>
+      await _call<bool>('openFolder', <String, Object?>{'docId': docId}) ?? false;
+
   /// A readable path (`/proc/self/fd/N`) for the document; close it with
   /// [closeFd]. Null when access is gone.
   static Future<int?> openFd(String uri) => _call<int>('openFd', <String, Object?>{'uri': uri});
 
   static Future<void> closeFd(int fd) => _call<bool>('closeFd', <String, Object?>{'fd': fd});
+
+  /// Total RAM in MB and Android's low-RAM flag, for the one-off device
+  /// class. Null when the platform can't answer.
+  static Future<({int totalMb, bool lowRam})?> deviceMemory() async {
+    final Map<Object?, Object?>? m = await _call<Map<Object?, Object?>>('deviceMemory');
+    final int? totalMb = m?['totalMb'] as int?;
+    // No figure: leave the device unknown rather than cache it as low.
+    if (totalMb == null || totalMb <= 0) return null;
+    return (totalMb: totalMb, lowRam: (m!['lowRam'] as bool?) ?? false);
+  }
 
   /// The file Unfurl was launched with, once.
   static Future<DocRef?> takeLaunchIntent() async {

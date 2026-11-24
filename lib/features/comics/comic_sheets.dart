@@ -12,6 +12,7 @@ import '../../core/theme/tokens.dart';
 import '../../core/theme/typography.dart';
 import '../../design_system/app_icon.dart';
 import '../../design_system/buttons.dart';
+import '../../design_system/containers.dart';
 import '../../design_system/option_tiles.dart';
 import '../files/files_widgets.dart';
 import '../reader/sheets.dart';
@@ -154,7 +155,7 @@ Future<void> showComicBookmarks(
         subtitle: rows.isEmpty ? 'No bookmarks yet' : (rows.length == 1 ? '1 page' : '${rows.length} pages'),
       ),
       for (final (Annotation a, int page) in rows)
-        InkWell(
+        PressableRow(
           onTap: () {
             Navigator.of(ctx).pop();
             onOpen(page);

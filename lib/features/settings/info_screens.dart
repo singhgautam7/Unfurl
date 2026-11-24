@@ -7,7 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/explorer.dart' show kAllFilesAccess;
-import '../../core/motion/motion.dart';
+import '../../core/motion/kit.dart';
 import '../../core/platform/platform.dart';
 import '../../core/providers.dart';
 import '../../core/router/router.dart';
@@ -22,6 +22,7 @@ import '../../design_system/buttons.dart';
 import '../../design_system/chips.dart';
 import '../../design_system/containers.dart';
 import '../../design_system/family_card.dart';
+import '../../design_system/header_preview.dart';
 import '../../design_system/states.dart';
 import '../reader/sheets.dart';
 import 'settings_controller.dart';
@@ -82,7 +83,7 @@ class ThemeScreen extends StatelessWidget {
       title: 'Theme',
       onBack: () => context.pop(),
       children: <Widget>[
-        const ThemeControls(),
+        const ThemeControls(look: true),
         const SizedBox(height: Space.section),
         const SectionHeader(label: 'Preview'),
         const SizedBox(height: Space.sm),
@@ -104,8 +105,10 @@ class ThemeScreen extends StatelessWidget {
                   ),
                 ),
               ),
-              Row(
+              // Wraps at large text instead of clipping the chip.
+              Wrap(
                 spacing: Space.sm,
+                runSpacing: Space.sm,
                 children: <Widget>[
                   AppButton(label: 'Resume', icon: AppIcons.play, height: 44, onPressed: () {}),
                   PillChip(label: 'Unread', selected: true, count: 3, onTap: () {}),
@@ -120,166 +123,181 @@ class ThemeScreen extends StatelessWidget {
 }
 
 /// Every theme switch, shared by Settings › Theme and the welcome flow.
-class ThemeControls extends ConsumerWidget {
-  const ThemeControls({super.key});
+class ThemeControls extends ConsumerStatefulWidget {
+  /// [look]: Settings › Theme adds the Look settings (haptics, the floating
+  /// header) under the theme. [modeOnly]: Light, Dark and System alone, as the
+  /// welcome setup page asks for nothing else.
+  const ThemeControls({this.look = false, this.modeOnly = false, super.key});
+
+  final bool look;
+  final bool modeOnly;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final UnfurlColors c = context.colors;
-    final AppSettings s = ref.watch(settingsProvider);
+  ConsumerState<ThemeControls> createState() => _ThemeControlsState();
+}
+
+class _ThemeControlsState extends ConsumerState<ThemeControls> {
+  /// Where the last tap landed: a theme change ripples out from it.
+  Offset? _tap;
+
+  /// A theme change, revealed as a ripple from the tap (handoff decision 15).
+  Future<void> _ripple(FutureOr<void> Function() change) => ThemeRipple.of(context).run(_tap, change);
+
+  Widget _mode(ThemeMode mode, SettingsController ctl) => SegmentedToggle<ThemeMode>(
+    options: const <(ThemeMode, String, IconData?)>[
+      (ThemeMode.light, 'Light', null),
+      (ThemeMode.dark, 'Dark', null),
+      (ThemeMode.system, 'System', null),
+    ],
+    selected: mode,
+    onChanged: (ThemeMode m) => _ripple(() => ctl.setThemeMode(m)),
+  );
+
+  @override
+  Widget build(BuildContext context) {
     final SettingsController ctl = ref.read(settingsProvider.notifier);
-    final Tone tone = s.toneFor(MediaQuery.platformBrightnessOf(context));
+    Widget listen(Widget child) => Listener(
+      behavior: HitTestBehavior.translucent,
+      onPointerDown: (PointerDownEvent e) => _tap = e.position,
+      child: child,
+    );
+    if (widget.modeOnly) {
+      return listen(_mode(ref.watch(settingsProvider.select((AppSettings s) => s.themeMode)), ctl));
+    }
+    // The theme page uses nearly every field, so it watches them all.
+    final AppSettings s = ref.watch(settingsProvider);
     final bool light = s.themeMode == ThemeMode.light;
-    final UnfurlColors? wallpaper = s.wallpaperSeed == null
-        ? null
-        : ThemeFamily.fromSeed(s.wallpaperSeed!).colors(tone, expressive: s.expressive);
-    Widget row({
-      required Widget leading,
-      required String title,
-      required String note,
-      required bool value,
-      required ValueChanged<bool>? onChanged,
-      bool selected = false,
-    }) => AnimatedOpacity(
-      opacity: onChanged == null ? Opacities.disabled : 1,
-      duration: Motion.of(context, Motion.fast),
-      child: Material(
-        color: c.surfaceContainer,
-        shape: RoundedRectangleBorder(
-          borderRadius: Radii.cardR,
-          side: BorderSide(color: selected ? c.primary : c.outline, width: selected ? 2 : 1),
-        ),
-        clipBehavior: Clip.antiAlias,
-        // The whole row flips the switch, not just the switch.
-        child: InkWell(
-          onTap: onChanged == null ? null : () => onChanged(!value),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: Space.md),
-            child: MergeSemantics(
+    final Tone tone = s.toneFor(MediaQuery.platformBrightnessOf(context));
+    return listen(
+      Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          _mode(s.themeMode, ctl),
+          const SizedBox(height: Space.md),
+          ListContainer(
+            children: <Widget>[
+              ListRow(
+                icon: AppIcons.palette,
+                label: 'Expressive colours',
+                subtitle: 'Tint backgrounds with your theme colour',
+                switchValue: s.expressive,
+                onChanged: (bool v) => _ripple(() => ctl.setExpressive(value: v)),
+              ),
+              // Dimmed in Light, where it can't act; choosing Dark turns it on.
+              ListRow(
+                icon: AppIcons.darkMode,
+                label: 'Pure black',
+                subtitle: light ? 'Used in dark mode' : 'Black background in dark mode, saves battery on OLED',
+                switchValue: s.amoled && !light,
+                enabled: !light,
+                onChanged: (bool v) => _ripple(() => ctl.setAmoled(value: v)),
+              ),
+            ],
+          ),
+          if (s.themeMode == ThemeMode.system)
+            Padding(
+              padding: const EdgeInsets.only(left: Space.lg, top: Space.sm),
               child: Row(
-                spacing: Space.md,
+                spacing: 6,
                 children: <Widget>[
-                  leading,
+                  AppIcon(AppIcons.info, size: 14, color: context.colors.onSurfaceVariant),
                   Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: <Widget>[
-                        Text(title, style: UnfurlType.titleMedium.copyWith(color: c.onSurface)),
-                        Text(note, style: UnfurlType.bodySmall.copyWith(color: c.onSurfaceVariant)),
-                      ],
+                    child: Text(
+                      'Applies when your phone is in dark mode',
+                      style: UnfurlType.bodySmall.copyWith(color: context.colors.onSurfaceVariant),
                     ),
                   ),
-                  Switch(value: value, onChanged: onChanged),
                 ],
               ),
             ),
-          ),
-        ),
-      ),
-    );
-    Widget swatch({Color? fill, List<Color> halves = const <Color>[]}) => Container(
-      width: 30,
-      height: 30,
-      clipBehavior: Clip.antiAlias,
-      decoration: BoxDecoration(
-        color: fill,
-        borderRadius: BorderRadius.circular(9),
-        border: Border.all(color: c.outline),
-      ),
-      child: Row(
-        children: <Widget>[for (final Color h in halves) Expanded(child: ColoredBox(color: h))],
-      ),
-    );
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: <Widget>[
-        SegmentedToggle<ThemeMode>(
-          options: const <(ThemeMode, String, IconData?)>[
-            (ThemeMode.light, 'Light', null),
-            (ThemeMode.dark, 'Dark', null),
-            (ThemeMode.system, 'System', null),
-          ],
-          selected: s.themeMode,
-          onChanged: ctl.setThemeMode,
-        ),
-        const SizedBox(height: Space.md),
-        row(
-          // The raised surface with the tint and without.
-          leading: swatch(
-            halves: <Color>[
-              for (final bool e in <bool>[true, false]) s.family.colors(tone, expressive: e).surfaceContainerHigh,
+          const SizedBox(height: Space.lg),
+          // Picking a family turns wallpaper colour off.
+          TwoColumnGrid(
+            children: <Widget>[
+              for (final ThemeFamily f in ThemeFamily.all)
+                FamilyCard(
+                  family: f,
+                  tone: tone,
+                  expressive: s.expressive,
+                  selected: !s.dynamicColor && s.familyId == f.id,
+                  onTap: () => _ripple(() async {
+                    await ctl.setDynamicColor(value: false);
+                    await ctl.setFamily(f.id);
+                  }),
+                ),
             ],
           ),
-          title: 'Expressive colours',
-          note: 'Tint backgrounds with your theme colour',
-          value: s.expressive,
-          onChanged: (bool v) => ctl.setExpressive(value: v),
-        ),
-        const SizedBox(height: Space.md),
-        // Always shown; dimmed in Light, where it can't act.
-        row(
-          leading: swatch(fill: s.family.colors(Tone.amoled).surface),
-          title: 'Pure black',
-          note: 'Black background in dark mode. Saves battery on OLED screens.',
-          value: s.amoled && !light,
-          onChanged: light ? null : (bool v) => ctl.setAmoled(value: v),
-        ),
-        if (s.themeMode == ThemeMode.system)
-          Padding(
-            padding: const EdgeInsets.only(left: Space.lg, top: Space.sm),
-            child: Row(
-              spacing: 6,
+          // Below Android 12 there is no wallpaper colour: no row at all.
+          if (s.wallpaperSeed != null) ...<Widget>[
+            const SizedBox(height: Space.lg),
+            ListContainer(
               children: <Widget>[
-                AppIcon(AppIcons.info, size: 14, color: c.onSurfaceVariant),
-                Expanded(
-                  child: Text(
-                    'Applies when your phone is in dark mode',
-                    style: UnfurlType.bodySmall.copyWith(color: c.onSurfaceVariant),
-                  ),
+                ListRow(
+                  icon: AppIcons.image,
+                  label: 'From your wallpaper',
+                  subtitle: 'Otherwise ${ThemeFamily.byId(s.familyId).name}',
+                  switchValue: s.dynamicColor,
+                  onChanged: (bool v) => _ripple(() => ctl.setDynamicColor(value: v)),
                 ),
               ],
             ),
-          ),
-        const SizedBox(height: Space.lg),
-        // Picking a family turns wallpaper colour off.
-        TwoColumnGrid(
-          children: <Widget>[
-            for (final ThemeFamily f in ThemeFamily.all)
-              FamilyCard(
-                family: f,
-                tone: tone,
-                expressive: s.expressive,
-                selected: !s.dynamicColor && s.familyId == f.id,
-                onTap: () async {
-                  await ctl.setDynamicColor(value: false);
-                  await ctl.setFamily(f.id);
+          ],
+          if (widget.look) ...<Widget>[
+            const SizedBox(height: Space.section),
+            const SectionHeader(label: 'Look'),
+            const SizedBox(height: Space.md),
+            ListContainer(
+              children: <Widget>[
+                ListRow(
+                  icon: AppIcons.touchApp,
+                  label: 'Haptics',
+                  subtitle: 'A light tap when you switch, select or confirm',
+                  switchValue: s.haptics,
+                  onChanged: (bool v) {
+                    unawaited(ctl.setHaptics(value: v));
+                    // The tick confirms the new state (it only sounds when on,
+                    // and never twice within 50 ms).
+                    Haptics.tick();
+                  },
+                ),
+                ListRow(
+                  icon: AppIcons.viewDay,
+                  label: 'Floating header',
+                  subtitle: s.floatingHeader
+                      ? 'The title bar becomes a pill as you scroll'
+                      : 'The title bar scrolls away with the page',
+                  switchValue: s.floatingHeader,
+                  onChanged: (bool v) => ctl.setFloatingHeader(value: v),
+                ),
+              ],
+            ),
+            const SizedBox(height: Space.lg),
+            const SectionHeader(label: 'Show the pill'),
+            const SizedBox(height: Space.sm),
+            for (final (PillMode m, String name) in _pillChoices) ...<Widget>[
+              HeaderPreviewCard(
+                label: name,
+                pillMode: m,
+                selected: s.floatingHeader && s.pillMode == m,
+                enabled: s.floatingHeader,
+                onTap: () {
+                  Haptics.tick();
+                  unawaited(ctl.setPillMode(m));
                 },
               ),
-          ],
-        ),
-        const SizedBox(height: Space.lg),
-        row(
-          leading: Row(
-            spacing: 4,
-            children: <Widget>[
-              if (wallpaper != null) ...<Widget>[
-                ThemeDot(wallpaper.primary, size: 26),
-                ThemeDot(wallpaper.primaryContainer, size: 26),
-              ] else
-                AppIcon(AppIcons.palette, color: c.onSurfaceVariant),
+              const SizedBox(height: Space.sm),
             ],
-          ),
-          title: 'From your wallpaper',
-          note: s.wallpaperSeed == null
-              ? 'Dynamic colour, Android 12+'
-              : 'Otherwise ${ThemeFamily.byId(s.familyId).name}',
-          selected: s.dynamicColor,
-          value: s.dynamicColor,
-          onChanged: s.wallpaperSeed == null ? null : (bool v) => ctl.setDynamicColor(value: v),
-        ),
-      ],
+          ],
+        ],
+      ),
     );
   }
+
+  static const List<(PillMode, String)> _pillChoices = <(PillMode, String)>[
+    (PillMode.always, 'Always'),
+    (PillMode.scrollUp, 'When scrolling up'),
+    (PillMode.scrollStop, 'When scrolling stops'),
+  ];
 }
 
 /// About, as Mull's: a note from the developer, what it stands for as four
@@ -301,7 +319,7 @@ class AboutScreen extends ConsumerWidget {
       'PDF, EPUB, Kindle, FB2 and HTML books get the full reader; comics their own viewer. Word, slides, sheets, Markdown, text and images open too.',
     ),
     (
-      AppIcons.visibility,
+      AppIcons.editOff,
       'Read only',
       'Unfurl never edits, moves or deletes a file. Notes and highlights stay in the app.',
     ),
@@ -342,9 +360,17 @@ class AboutScreen extends ConsumerWidget {
               const SizedBox(height: Space.xl),
               Text('Gautam Rajeev Singh', style: UnfurlType.titleMedium.copyWith(color: c.onSurface)),
               const SizedBox(height: Space.xs),
-              InkWell(
+              PressableRow(
+                semanticLabel: 'singhgautam.com',
                 onTap: () => unawaited(Platform.openUrl(portfolio)),
-                child: Text('singhgautam.com', style: UnfurlType.bodySmall.copyWith(color: c.onSurfaceVariant)),
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(minHeight: IconSpec.tapTarget),
+                  child: Align(
+                    alignment: AlignmentDirectional.centerStart,
+                    widthFactor: 1,
+                    child: Text('singhgautam.com', style: UnfurlType.bodySmall.copyWith(color: c.accent)),
+                  ),
+                ),
               ),
             ],
           ),
@@ -407,11 +433,21 @@ class AboutScreen extends ConsumerWidget {
             ListRow(
               icon: AppIcons.privacy,
               label: 'Privacy policy',
-              value: 'Offline only',
+              subtitle: 'Offline only',
               onTap: () => context.push(Routes.privacy),
             ),
-            ListRow(icon: AppIcons.key, label: 'Permissions', onTap: () => context.push(Routes.permissions)),
-            ListRow(icon: AppIcons.license, label: 'Licences', onTap: () => context.push(Routes.licences)),
+            ListRow(
+              icon: AppIcons.key,
+              label: 'Permissions',
+              subtitle: 'What Unfurl asks for',
+              onTap: () => context.push(Routes.permissions),
+            ),
+            ListRow(
+              icon: AppIcons.license,
+              label: 'Licences',
+              subtitle: 'Fonts and packages it uses',
+              onTap: () => context.push(Routes.licences),
+            ),
           ],
         ),
         const SizedBox(height: Space.xl),
@@ -518,7 +554,7 @@ class PermissionsScreen extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         spacing: Space.sm,
         children: <Widget>[
-          Text(title.toUpperCase(), style: UnfurlType.sectionHeader.copyWith(color: c.onSurfaceVariant)),
+          SectionHeader(label: title),
           Text(text, style: UnfurlType.body.copyWith(color: c.onSurface)),
         ],
       ),
